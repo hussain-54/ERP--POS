@@ -17,6 +17,8 @@ apps/api/dist/
 apps/desktop/dist/
 apps/desktop/release/
 apps/desktop/out/
+api/handler.cjs
+api/index.mjs
 *.exe
 *.blockmap
 *.nsis

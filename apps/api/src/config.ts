@@ -2,14 +2,22 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import dotenv from "dotenv";
 
-const here = path.dirname(fileURLToPath(import.meta.url));
-const root = path.resolve(here, "../../..");
+function loadEnvFiles(): void {
+  // On Vercel, platform env vars are injected — skip local file loading.
+  if (process.env.VERCEL === "1") return;
+  try {
+    const here = path.dirname(fileURLToPath(import.meta.url));
+    const root = path.resolve(here, "../../..");
+    dotenv.config({ path: path.join(root, ".env") });
+    const appEnv = process.env.APP_ENV ?? process.env.NODE_ENV ?? "development";
+    dotenv.config({ path: path.join(root, `.env.${appEnv}`), override: true });
+  } catch {
+    // import.meta unavailable in CJS bundle — ignore
+  }
+  dotenv.config();
+}
 
-/** Load env files: base → environment-specific → process overrides. */
-dotenv.config({ path: path.join(root, ".env") });
-const appEnv = process.env.APP_ENV ?? process.env.NODE_ENV ?? "development";
-dotenv.config({ path: path.join(root, `.env.${appEnv}`), override: true });
-dotenv.config(); // allow local shell overrides
+loadEnvFiles();
 
 export type AppEnvironment = "development" | "staging" | "production";
 

@@ -24,12 +24,19 @@ export async function apiFetch<T>(
   });
 
   if (!res.ok) {
-    let message = res.statusText;
+    let message = res.statusText || `HTTP ${res.status}`;
     try {
-      const body = (await res.json()) as { error?: string };
-      if (body.error) message = body.error;
+      const body = (await res.json()) as {
+        error?: string | { message?: string };
+        detail?: string;
+      };
+      if (typeof body.error === "string") message = body.error;
+      else if (body.error && typeof body.error === "object" && body.error.message) {
+        message = body.error.message;
+      } else if (body.detail) message = body.detail;
     } catch {
-      // ignore
+      // Non-JSON (often HTML SPA fallback when API is missing)
+      if (res.status >= 500) message = "Internal server error";
     }
     throw new ApiError(message, res.status);
   }

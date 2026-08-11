@@ -5,9 +5,9 @@
   "outputDirectory": "apps/web/dist",
   "framework": null,
   "functions": {
-    "api/index.mjs": {
+    "api/index.js": {
       "maxDuration": 30,
-      "includeFiles": "{apps/api/dist/**,packages/*/dist/**,node_modules/@electronic-erp/**}"
+      "includeFiles": "api/handler.cjs"
     }
   },
   "rewrites": [
