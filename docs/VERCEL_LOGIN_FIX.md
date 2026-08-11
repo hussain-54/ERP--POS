@@ -37,4 +37,4 @@ Redeploy (Deployments → … → Redeploy) so Vite rebuilds with the new `VITE_
 
 1. `https://<your-app>.vercel.app/health` → JSON ok  
 2. `https://<your-app>.vercel.app/login` → sign in with owner account  
-
+

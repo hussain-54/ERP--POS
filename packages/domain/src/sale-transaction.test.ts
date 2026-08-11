@@ -252,4 +252,52 @@ describe("SaleTransactionService", () => {
       }),
     ).rejects.toThrow(/Insufficient stock/i);
   });
+
+  it("posts walk-in payments without customer ledger and rejects unpaid walk-in", async () => {
+    const ports = {
+      findSaleByIdempotency: vi.fn(async () => null),
+      searchStockAvailable: vi.fn(async () => "50"),
+      postSaleRecord: vi.fn(async () => ({
+        id: "eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee",
+        invoiceNumber: "INV-WALK",
+      })),
+      postSaleItems: vi.fn(async () => undefined),
+      postDiscountAudits: vi.fn(async () => undefined),
+      postStockSale: vi.fn(async () => undefined),
+      postCustomerSaleLedger: vi.fn(async () => undefined),
+      postSplitPayment: vi.fn(async () => undefined),
+      postJournal: vi.fn(async () => undefined),
+      postCommission: vi.fn(async () => undefined),
+      postWarranties: vi.fn(async () => undefined),
+      postAnalytics: vi.fn(async () => undefined),
+    };
+    const service = new SaleTransactionService(ports);
+    const result = await service.postSale({
+      organizationId: org,
+      branchId: branch,
+      warehouseId: warehouse,
+      items: [{ productId: product, unitId: unit, qty: 1, unitPrice: 100, discount: 0, tax: 0 }],
+      payments: [{ paymentMethodId: method, amount: 100 }],
+      discounts: [],
+      idempotencyKey: "ffffffff-ffff-4fff-8fff-ffffffffffff",
+    });
+    expect(result.paidTotal).toBe(100);
+    expect(result.remainingTotal).toBe(0);
+    expect(ports.postCustomerSaleLedger).not.toHaveBeenCalled();
+    expect(ports.postSplitPayment).toHaveBeenCalledWith(
+      expect.objectContaining({ sourceType: "sale", customerId: undefined }),
+    );
+
+    await expect(
+      service.postSale({
+        organizationId: org,
+        branchId: branch,
+        warehouseId: warehouse,
+        items: [{ productId: product, unitId: unit, qty: 1, unitPrice: 100, discount: 0, tax: 0 }],
+        payments: [{ paymentMethodId: method, amount: 40 }],
+        discounts: [],
+        idempotencyKey: "aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee",
+      }),
+    ).rejects.toThrow(/Walk-in sales must be paid in full/i);
+  });
 });

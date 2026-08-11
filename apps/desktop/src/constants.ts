@@ -21,6 +21,8 @@ export const IpcChannels = {
   downloadUpdate: "desktop:downloadUpdate",
   quitAndInstall: "desktop:quitAndInstall",
   openExternal: "desktop:openExternal",
+  syncNow: "desktop:syncNow",
+  syncStatus: "desktop:syncStatus",
 } as const;
 
 export type IpcChannel = (typeof IpcChannels)[keyof typeof IpcChannels];

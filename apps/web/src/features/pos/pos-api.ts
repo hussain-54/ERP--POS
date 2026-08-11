@@ -67,4 +67,24 @@ export const posApi = {
       body: JSON.stringify(body),
     });
   },
+  currentShift(branchId: string) {
+    return apiFetch<{ item: Record<string, unknown> | null }>(
+      `/api/v1/pos/shifts/current?branchId=${branchId}`,
+      { token: token() },
+    );
+  },
+  openShift(body: { branchId: string; openingFloat: number; notes?: string }) {
+    return apiFetch("/api/v1/pos/shifts/open", {
+      method: "POST",
+      token: token(),
+      body: JSON.stringify(body),
+    });
+  },
+  closeShift(id: string, body: { closingCounted: number; notes?: string }) {
+    return apiFetch(`/api/v1/pos/shifts/${id}/close`, {
+      method: "POST",
+      token: token(),
+      body: JSON.stringify(body),
+    });
+  },
 };

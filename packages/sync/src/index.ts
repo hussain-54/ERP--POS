@@ -6,3 +6,4 @@ export * from "./sale-sync.js";
 export * from "./purchase-sync.js";
 export * from "./conflict-resolver.js";
 export * from "./memory-cloud.js";
+export * from "./http-cloud.js";

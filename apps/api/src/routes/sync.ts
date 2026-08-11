@@ -40,7 +40,7 @@ syncRouter.post("/push", async (req: AuthedRequest, res, next) => {
   try {
     authz(req).assert("sync.manage");
     const input = SyncPushRequestSchema.parse(req.body);
-    res.json(await repo(req).push(orgId(req), input));
+    res.json(await repo(req).push(orgId(req), input, req.authz?.userId ?? null));
   } catch (err) {
     next(err);
   }

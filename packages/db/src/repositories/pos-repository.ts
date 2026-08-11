@@ -427,15 +427,31 @@ export class PosRepository {
       customerName: customer ? String(customer.name) : null,
       customerMobile: customer ? (customer.mobile as string | null) : null,
       customerAddress: customer ? (customer.address as string | null) : null,
-      items: (items ?? []).map((i) => ({
-        name: i.is_manual ? String(i.manual_name) : String(i.product_id),
-        qty: i.qty,
-        rate: Number(i.unit_price),
-        discount: Number(i.discount_amount),
-        tax: Number(i.tax_amount),
-        total: Number(i.line_total),
-        warrantyDays: Number(i.warranty_days ?? 0),
-      })),
+      items: await Promise.all(
+        (items ?? []).map(async (i) => {
+          let name = i.is_manual ? String(i.manual_name ?? "Manual item") : String(i.product_id);
+          if (!i.is_manual && i.product_id) {
+            const { data: product } = await this.db
+              .from("products")
+              .select("name,sku")
+              .eq("id", i.product_id)
+              .maybeSingle();
+            if (product) name = `${product.name}${product.sku ? ` (${product.sku})` : ""}`;
+          }
+          return {
+            id: String(i.id),
+            productId: i.product_id ? String(i.product_id) : null,
+            unitId: String(i.unit_id),
+            name,
+            qty: i.qty,
+            rate: Number(i.unit_price),
+            discount: Number(i.discount_amount),
+            tax: Number(i.tax_amount),
+            total: Number(i.line_total),
+            warrantyDays: Number(i.warranty_days ?? 0),
+          };
+        }),
+      ),
       payments: [],
       logoUrl: null,
     };
@@ -668,6 +684,118 @@ export class PosRepository {
     const { error: lineErr } = await this.db.from("journal_entry_lines").insert(lines);
     if (lineErr) throw lineErr;
     return entry;
+  }
+
+  // --- cash shifts ---
+  async getOpenShift(organizationId: string, branchId: string) {
+    const { data, error } = await this.db
+      .from("pos_cash_shifts")
+      .select("*")
+      .eq("organization_id", organizationId)
+      .eq("branch_id", branchId)
+      .eq("status", "open")
+      .order("opened_at", { ascending: false })
+      .limit(1)
+      .maybeSingle();
+    if (error) throw error;
+    return data;
+  }
+
+  async openShift(input: {
+    organizationId: string;
+    branchId: string;
+    openingFloat: number;
+    notes?: string;
+    userId?: string | null;
+  }) {
+    const existing = await this.getOpenShift(input.organizationId, input.branchId);
+    if (existing) throw new Error("A cash shift is already open for this branch");
+    const { data, error } = await this.db
+      .from("pos_cash_shifts")
+      .insert({
+        organization_id: input.organizationId,
+        branch_id: input.branchId,
+        opened_by: input.userId ?? null,
+        opening_float: input.openingFloat,
+        notes: input.notes ?? null,
+        status: "open",
+      })
+      .select("*")
+      .single();
+    if (error) throw error;
+    return data;
+  }
+
+  async refreshShiftTotals(shiftId: string, organizationId: string, branchId: string) {
+    const { data: shift } = await this.db
+      .from("pos_cash_shifts")
+      .select("*")
+      .eq("id", shiftId)
+      .maybeSingle();
+    if (!shift) return null;
+    const openedAt = String(shift.opened_at);
+    const { data: sales } = await this.db
+      .from("sales")
+      .select("grand_total,paid_total,payment_status,created_at")
+      .eq("organization_id", organizationId)
+      .eq("branch_id", branchId)
+      .gte("created_at", openedAt)
+      .neq("status", "void");
+    const salesTotal = (sales ?? []).reduce((s, r) => s + Number(r.grand_total ?? 0), 0);
+    const cashSales = (sales ?? []).reduce((s, r) => s + Number(r.paid_total ?? 0), 0);
+    const expected = Number(shift.opening_float ?? 0) + cashSales - Number(shift.expense_total ?? 0);
+    const { data, error } = await this.db
+      .from("pos_cash_shifts")
+      .update({
+        sales_total: salesTotal,
+        cash_sales_total: cashSales,
+        expected_cash: expected,
+        updated_at: new Date().toISOString(),
+      })
+      .eq("id", shiftId)
+      .select("*")
+      .single();
+    if (error) throw error;
+    return data;
+  }
+
+  async closeShift(input: {
+    shiftId: string;
+    closingCounted: number;
+    userId?: string | null;
+    notes?: string;
+  }) {
+    const { data: shift } = await this.db
+      .from("pos_cash_shifts")
+      .select("*")
+      .eq("id", input.shiftId)
+      .eq("status", "open")
+      .maybeSingle();
+    if (!shift) throw new Error("Open shift not found");
+    const refreshed = await this.refreshShiftTotals(
+      input.shiftId,
+      String(shift.organization_id),
+      String(shift.branch_id),
+    );
+    const expected = Number(refreshed?.expected_cash ?? shift.opening_float ?? 0);
+    const variance = Math.round((input.closingCounted - expected) * 100) / 100;
+    const { data, error } = await this.db
+      .from("pos_cash_shifts")
+      .update({
+        status: "closed",
+        closed_by: input.userId ?? null,
+        closed_at: new Date().toISOString(),
+        closing_counted: input.closingCounted,
+        expected_cash: expected,
+        variance,
+        notes: input.notes ?? shift.notes,
+        updated_at: new Date().toISOString(),
+      })
+      .eq("id", input.shiftId)
+      .select("*")
+      .single();
+    if (error) throw error;
+    return data;
   }
 }
 

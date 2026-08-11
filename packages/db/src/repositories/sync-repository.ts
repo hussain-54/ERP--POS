@@ -4,8 +4,10 @@ import type {
   SyncPullRequest,
   SyncPushRequest,
 } from "@electronic-erp/contracts";
+import { CreateSaleReturnSchema, CreateSaleSchema } from "@electronic-erp/contracts";
 import { ValidationDomainError } from "@electronic-erp/domain";
 import type { DatabaseClient } from "../client.js";
+import { PosRepository } from "./pos-repository.js";
 
 type Row = Record<string, unknown>;
 
@@ -55,7 +57,7 @@ export class SyncRepository {
     return data;
   }
 
-  async push(organizationId: string, request: SyncPushRequest) {
+  async push(organizationId: string, request: SyncPushRequest, userId?: string | null) {
     const { data: device } = await this.db
       .from("devices")
       .select("*")
@@ -67,6 +69,7 @@ export class SyncRepository {
     let accepted = 0;
     let conflicts = 0;
     let duplicateSkipped = 0;
+    const pos = new PosRepository(this.db);
 
     for (const item of request.items) {
       const { data: ack } = await this.db
@@ -114,7 +117,62 @@ export class SyncRepository {
         }
       }
 
-      // Transactional entities: accept both (idempotent), append change log
+      // Apply business entities BEFORE ack so retries can still materialize after failures.
+      let resultPayload: Record<string, unknown> = { accepted: true };
+      try {
+        if (item.entityType === "sales") {
+          const parsed = CreateSaleSchema.parse({
+            ...item.payload,
+            organizationId,
+            idempotencyKey: item.idempotencyKey,
+            deviceId: String(item.payload.deviceId ?? request.deviceId),
+            operationId,
+            offlineTransactionId:
+              typeof item.payload.offlineTransactionId === "string"
+                ? item.payload.offlineTransactionId
+                : item.entityId,
+          });
+          const sale = await pos.postSale(parsed, userId);
+          resultPayload = {
+            accepted: true,
+            applied: "sale",
+            saleId: sale.id,
+            invoiceNumber: sale.invoiceNumber,
+          };
+        } else if (item.entityType === "sale_returns") {
+          const parsed = CreateSaleReturnSchema.parse({
+            ...item.payload,
+            organizationId,
+            idempotencyKey: item.idempotencyKey,
+            deviceId: String(item.payload.deviceId ?? request.deviceId),
+            operationId,
+          });
+          const ret = await pos.postReturn(parsed, userId);
+          resultPayload = {
+            accepted: true,
+            applied: "sale_return",
+            returnId: (ret as { id?: string }).id ?? item.entityId,
+          };
+        }
+      } catch (err) {
+        const message = err instanceof Error ? err.message : "Apply failed";
+        // Do NOT ack on failure — client must retry. Record a pending conflict for operators.
+        await this.db.from("sync_conflicts").insert({
+          organization_id: organizationId,
+          device_id: request.deviceId,
+          entity_type: item.entityType,
+          entity_id: item.entityId,
+          server_version: 0,
+          client_version: Number(item.payload.version ?? 1),
+          server_payload: { error: message },
+          client_payload: item.payload,
+          conflict_type: "manual",
+          resolution: "pending",
+        });
+        conflicts += 1;
+        continue;
+      }
+
       await this.db.from("sync_operation_acks").insert({
         organization_id: organizationId,
         device_id: request.deviceId,
@@ -123,7 +181,7 @@ export class SyncRepository {
         entity_type: item.entityType,
         entity_id: item.entityId,
         status: "accepted",
-        result_payload: { accepted: true },
+        result_payload: resultPayload,
       });
 
       await this.db.from("sync_change_log").insert({

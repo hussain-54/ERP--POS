@@ -56,6 +56,7 @@ export const FOUNDATION_PERMISSIONS = [
   "pos.discount_owner",
   "pos.view_invoices",
   "pos.configure",
+  "pos.shift",
   "purchases.read",
   "purchases.write",
   "purchases.return",

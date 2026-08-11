@@ -1,0 +1,45 @@
+/* POS terminal tokens — scoped; does not rebrand the whole ERP shell */
+.pos-terminal {
+  --pos-navy: #172033;
+  --pos-navy-2: #1e2a44;
+  --pos-primary: #2563eb;
+  --pos-primary-strong: #1d4ed8;
+  --pos-bg: #f5f7fa;
+  --pos-card: #ffffff;
+  --pos-border: #e5e7eb;
+  --pos-ink: #111827;
+  --pos-muted: #6b7280;
+  --pos-success: #16a34a;
+  --pos-warning: #f59e0b;
+  --pos-danger: #dc2626;
+  --pos-radius: 10px;
+  background: var(--pos-bg);
+  color: var(--pos-ink);
+  min-height: 100vh;
+}
+
+.pos-terminal .pos-sidebar {
+  background: linear-gradient(180deg, var(--pos-navy) 0%, var(--pos-navy-2) 100%);
+  color: #e8eef8;
+}
+
+.pos-terminal .pos-nav-active {
+  background: var(--pos-primary);
+  color: #fff;
+}
+
+.pos-terminal .pos-cta {
+  background: var(--pos-primary);
+  color: #fff;
+}
+
+.pos-terminal .pos-cta:hover {
+  background: var(--pos-primary-strong);
+}
+
+.pos-terminal .pos-grand {
+  font-size: 1.75rem;
+  font-weight: 700;
+  letter-spacing: -0.02em;
+  color: var(--pos-ink);
+}

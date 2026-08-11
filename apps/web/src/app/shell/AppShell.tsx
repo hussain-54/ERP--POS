@@ -19,6 +19,11 @@ export function AppShell() {
   const location = useLocation();
   const navigate = useNavigate();
 
+  const isPosTerminal =
+    location.pathname === "/pos" ||
+    location.pathname === "/held-sales" ||
+    location.pathname.startsWith("/pos/");
+
   const filteredNav = useMemo(() => {
     const q = query.trim().toLowerCase();
     if (!q) return ERP_MODULES;
@@ -38,6 +43,15 @@ export function AppShell() {
     group: m.group,
     onSelect: () => navigate(m.path),
   }));
+
+  if (isPosTerminal) {
+    return (
+      <div className="min-h-screen bg-[var(--erp-bg)]">
+        <Outlet />
+        <CommandPalette open={commandOpen} items={commandItems} onClose={() => setCommandOpen(false)} />
+      </div>
+    );
+  }
 
   return (
     <div className="min-h-screen lg:grid lg:grid-cols-[280px_1fr]">

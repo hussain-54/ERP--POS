@@ -13,6 +13,7 @@ import {
 } from "./paths.js";
 import { desktopReadiness } from "./readiness.js";
 import { SecureTokenStore } from "./secure-store.js";
+import { createDesktopSync, type DesktopSyncRuntime } from "./sync-runtime.js";
 import { DesktopUpdater } from "./updater.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -21,13 +22,13 @@ let mainWindow: BrowserWindow | null = null;
 let runtime: OfflineRuntime | null = null;
 let paths: DesktopPaths | null = null;
 let online = true;
+let syncRuntime: DesktopSyncRuntime | null = null;
 
 function resolvePreloadPath(): string {
   const cjs = path.join(__dirname, "preload.cjs");
   const js = path.join(__dirname, "preload.js");
   if (fs.existsSync(cjs)) return cjs;
   if (fs.existsSync(js)) return js;
-  // Fall back to package-root preload during unpackaged runs after copy step
   const rootCjs = path.join(__dirname, "..", "preload.cjs");
   return rootCjs;
 }
@@ -72,6 +73,9 @@ async function boot(): Promise<void> {
   const secure = new SecureTokenStore();
   const updater = new DesktopUpdater();
 
+  syncRuntime = createDesktopSync(runtime, secure, () => online);
+  syncRuntime?.start();
+
   registerIpcHandlers({
     runtime,
     paths,
@@ -81,6 +85,11 @@ async function boot(): Promise<void> {
     getOnline: () => online,
     setOnline: (value) => {
       online = value;
+      syncRuntime?.setOnline(value);
+    },
+    getSync: () => syncRuntime,
+    setSync: (sync) => {
+      syncRuntime = sync;
     },
   });
 
@@ -110,6 +119,7 @@ if (!gotLock) {
   });
 
   app.on("window-all-closed", () => {
+    syncRuntime?.stop();
     runtime?.sqlite.close();
     if (process.platform !== "darwin") app.quit();
   });

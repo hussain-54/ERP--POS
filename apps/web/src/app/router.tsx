@@ -24,6 +24,7 @@ import { CreditInstallmentsPage } from "@/features/parties/CreditInstallmentsPag
 import { PosPage } from "@/features/pos/PosPage";
 import { ReturnsPage } from "@/features/pos/ReturnsPage";
 import { InvoicesPage } from "@/features/pos/InvoicesPage";
+import { SalesmanPage } from "@/features/pos/SalesmanPage";
 import { PurchasesPage } from "@/features/purchases/PurchasesPage";
 import { PurchaseReturnsPage } from "@/features/purchases/PurchaseReturnsPage";
 import { TransfersPage } from "@/features/purchases/TransfersPage";
@@ -95,6 +96,7 @@ const implemented: Record<string, ReactNode> = {
   "/returns": <ReturnsPage />,
   "/invoices": <InvoicesPage />,
   "/held-sales": <PosPage />,
+  "/salesman": <SalesmanPage />,
   "/purchases": <PurchasesPage />,
   "/purchase-returns": <PurchaseReturnsPage />,
   "/deliveries": <DeliveriesPage />,

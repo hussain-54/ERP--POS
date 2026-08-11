@@ -163,7 +163,7 @@ enterpriseRouter.post("/tax/rates", requireAuth, async (req: AuthedRequest, res,
 
 enterpriseRouter.get("/tax/rates", requireAuth, async (req: AuthedRequest, res, next) => {
   try {
-    assertAny(req, ["tax.view", "tax.manage"]);
+    assertAny(req, ["tax.view", "tax.manage", "pos.sell"]);
     res.json({ items: await repo(req).listTaxRates(orgId(req)) });
   } catch (err) {
     next(err);

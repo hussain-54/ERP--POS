@@ -1,103 +1,125 @@
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { ProductSearchResult } from "@electronic-erp/contracts";
-import { Badge, Button, Card, Input, Select, useToast } from "@electronic-erp/ui";
+import { Badge, Button, Card, Input, useToast } from "@electronic-erp/ui";
 import { useAuth } from "@/features/auth/AuthContext";
 import { posApi } from "./pos-api";
 import { partiesApi } from "@/features/parties/parties-api";
 import { inventoryApi } from "@/features/inventory/inventory-api";
+import { enterpriseApi } from "@/features/enterprise/enterprise-api";
+import { purchasesApi } from "@/features/purchases/purchases-api";
+import { mapSalesmanEmployees, type SalesmanOption } from "./SalesmanPage";
 import { posHardware } from "./hardware";
 import { aiApi } from "@/features/ai/ai-api";
+import "./pos-tokens.css";
+import { PosSidebar } from "./components/PosSidebar";
+import { PosHeader } from "./components/PosHeader";
+import { PosProductPanel } from "./components/PosProductPanel";
+import { PosCustomerPanel } from "./components/PosCustomerPanel";
+import { PosCartPanel } from "./components/PosCartPanel";
+import { PosPaymentPanel } from "./components/PosPaymentPanel";
+import { PosApprovalDialog } from "./components/PosApprovalDialog";
+import { ReceiptPreview, type InvoicePreview } from "./components/ReceiptPreview";
+import { catalogApi } from "@/features/catalog/catalog-api";
+import {
+  calcTotals,
+  pickPrice,
+  taxForLineNet,
+  uuid,
+  type CartLine,
+  type LocaleMode,
+  type PaySplit,
+  type PosCustomerSummary,
+  type PosMode,
+  type PosTaxRate,
+  type PriceLevel,
+  type ProductTab,
+} from "./pos-types";
 
-type PriceLevel = "retail" | "wholesale" | "dealer";
-type PaySplit = { id: string; paymentMethodId: string; amount: string };
+const FAVORITES_KEY = "erp-pos-favorites";
+const FAVORITES_DATA_KEY = "erp-pos-favorites-data";
+const RECENT_KEY = "erp-pos-recent";
+const RECENT_DATA_KEY = "erp-pos-recent-data";
 
-type LocaleMode = "en" | "ur" | "en_ur";
-type PosMode = "easy" | "advanced";
-
-interface CartLine {
-  key: string;
-  productId?: string;
-  name: string;
-  nameUr?: string | null;
-  unitId: string;
-  qty: string;
-  unitPrice: number;
-  discount: number;
-  tax: number;
-  warrantyDays: number;
-  isManual?: boolean;
-  stock?: string;
+function loadIds(key: string): string[] {
+  try {
+    const raw = localStorage.getItem(key);
+    if (!raw) return [];
+    const parsed = JSON.parse(raw) as unknown;
+    return Array.isArray(parsed) ? parsed.filter((x) => typeof x === "string") : [];
+  } catch {
+    return [];
+  }
 }
 
-const labels = {
-  en: {
-    title: "Point of Sale",
-    search: "Search products",
-    cart: "Cart",
-    checkout: "Complete sale",
-    hold: "Hold bill",
-    resume: "Held bills",
-    customer: "Customer ID",
-    warehouse: "Warehouse ID",
-    empty: "Cart is empty",
-  },
-  ur: {
-    title: "پوائنٹ آف سیل",
-    search: "مصنوعات تلاش کریں",
-    cart: "کارٹ",
-    checkout: "فروخت مکمل کریں",
-    hold: "بل ہولڈ",
-    resume: "ہولڈ بلز",
-    customer: "کسٹمر آئی ڈی",
-    warehouse: "گودام آئی ڈی",
-    empty: "کارٹ خالی ہے",
-  },
-};
-
-function t(locale: LocaleMode, key: keyof typeof labels.en): string {
-  if (locale === "ur") return labels.ur[key];
-  if (locale === "en_ur") return `${labels.en[key]} / ${labels.ur[key]}`;
-  return labels.en[key];
+function saveIds(key: string, ids: string[]) {
+  localStorage.setItem(key, JSON.stringify(ids.slice(0, 40)));
 }
 
-function uuid() {
-  return crypto.randomUUID();
+function loadProducts(key: string): ProductSearchResult[] {
+  try {
+    const raw = localStorage.getItem(key);
+    if (!raw) return [];
+    const parsed = JSON.parse(raw) as unknown;
+    return Array.isArray(parsed) ? (parsed as ProductSearchResult[]) : [];
+  } catch {
+    return [];
+  }
+}
+
+function saveProducts(key: string, items: ProductSearchResult[]) {
+  localStorage.setItem(key, JSON.stringify(items.slice(0, 40)));
 }
 
 export function PosPage() {
   const toast = useToast();
-  const { branchId } = useAuth();
-  const [mode, setMode] = useState<PosMode>("advanced");
+  const { branchId, branches, setBranchId, user, hasPermission } = useAuth();
+  const [online, setOnline] = useState(
+    typeof navigator !== "undefined" ? navigator.onLine : true,
+  );
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
+  const [mobileNav, setMobileNav] = useState(false);
+  const [mode, setMode] = useState<PosMode>("easy");
   const [locale, setLocale] = useState<LocaleMode>("en");
   const [q, setQ] = useState("");
+  const [searching, setSearching] = useState(false);
+  const [tab, setTab] = useState<ProductTab>("recent");
   const [results, setResults] = useState<ProductSearchResult[]>([]);
+  const [recent, setRecent] = useState<ProductSearchResult[]>(() => loadProducts(RECENT_DATA_KEY));
+  const [favorites, setFavorites] = useState<ProductSearchResult[]>(() => loadProducts(FAVORITES_DATA_KEY));
+  const [favoriteIds, setFavoriteIds] = useState(() => new Set(loadIds(FAVORITES_KEY)));
+  const [categories, setCategories] = useState<Array<{ id: string; name: string }>>([]);
+  const [selectedCategoryId, setSelectedCategoryId] = useState<string | null>(null);
+  const [taxRate, setTaxRate] = useState<PosTaxRate | null>(null);
   const [cart, setCart] = useState<CartLine[]>([]);
   const [warehouseId, setWarehouseId] = useState("");
+  const [walkIn, setWalkIn] = useState(true);
   const [customerId, setCustomerId] = useState("");
+  const [customer, setCustomer] = useState<PosCustomerSummary | null>(null);
+  const [customerQuery, setCustomerQuery] = useState("");
+  const [customerHits, setCustomerHits] = useState<Array<{ id: string; name: string; mobile?: string | null }>>([]);
   const [invoiceDiscount, setInvoiceDiscount] = useState("0");
-  const [paymentMethodId, setPaymentMethodId] = useState("");
-  const [splits, setSplits] = useState<PaySplit[]>([]);
+  const [pendingInvoiceDiscount, setPendingInvoiceDiscount] = useState<string | null>(null);
+  const [approvalReason, setApprovalReason] = useState("");
+  const [approvalOpen, setApprovalOpen] = useState(false);
+  const [payments, setPayments] = useState<PaySplit[]>([]);
   const [priceLevel, setPriceLevel] = useState<PriceLevel>("retail");
   const [salesmanUserId, setSalesmanUserId] = useState("");
-  const [referenceName, setReferenceName] = useState("");
-  const [notes, setNotes] = useState("");
-  const [dueDate, setDueDate] = useState("");
+  const [salesmen, setSalesmen] = useState<SalesmanOption[]>([]);
+  const [commissionPercent, setCommissionPercent] = useState(0);
+  const [delivery, setDelivery] = useState(false);
   const [useInstallment, setUseInstallment] = useState(false);
   const [installmentCount, setInstallmentCount] = useState("3");
   const [downPayment, setDownPayment] = useState("0");
-  const [methods, setMethods] = useState<Array<Record<string, unknown>>>([]);
+  const [shift, setShift] = useState<Record<string, unknown> | null>(null);
+  const [notes, setNotes] = useState("");
+  const [methods, setMethods] = useState<Array<{ id: string; name: string; code?: string }>>([]);
   const [holds, setHolds] = useState<Array<Record<string, unknown>>>([]);
-  const [manual, setManual] = useState({
-    name: "",
-    itemCode: "",
-    description: "",
-    qty: "1",
-    unitId: "",
-    rate: "0",
-    discount: "0",
-    tax: "0",
-  });
+  const [busy, setBusy] = useState(false);
   const [lastInvoice, setLastInvoice] = useState<string | null>(null);
+  const [receipt, setReceipt] = useState<InvoicePreview | null>(null);
+  const [receiptFormat, setReceiptFormat] = useState<"80mm" | "58mm" | "a4">("80mm");
+  const [clock, setClock] = useState(() => new Date());
+  const [showHolds, setShowHolds] = useState(false);
   const [deviceId] = useState(() => {
     const key = "erp-pos-device-id";
     const existing = localStorage.getItem(key);
@@ -107,34 +129,90 @@ export function PosPage() {
     return id;
   });
 
-  const totals = useMemo(() => {
-    let subtotal = 0;
-    let discount = Number(invoiceDiscount || 0);
-    let tax = 0;
-    for (const line of cart) {
-      const qty = Number(line.qty);
-      subtotal += qty * line.unitPrice;
-      discount += line.discount;
-      tax += line.tax;
-    }
-    const grand = Math.max(0, Math.round((subtotal - discount + tax) * 100) / 100);
-    return { subtotal, discount, tax, grand };
-  }, [cart, invoiceDiscount]);
+  const searchRef = useRef<HTMLInputElement>(null);
+  const customerRef = useRef<HTMLInputElement>(null);
+  const discountRef = useRef<HTMLInputElement>(null);
+
+  const canDiscount =
+    hasPermission("pos.discount_cashier") ||
+    hasPermission("pos.discount_manager") ||
+    hasPermission("pos.discount_owner");
+  const canPriceOverride = hasPermission("pos.discount_manager") || hasPermission("pos.discount_owner");
+  const advanced = mode === "advanced";
+
+  const totals = useMemo(() => calcTotals(cart, invoiceDiscount), [cart, invoiceDiscount]);
+
+  useEffect(() => {
+    const t = window.setInterval(() => setClock(new Date()), 1000);
+    return () => window.clearInterval(t);
+  }, []);
+
+  useEffect(() => {
+    const on = () => setOnline(true);
+    const off = () => setOnline(false);
+    window.addEventListener("online", on);
+    window.addEventListener("offline", off);
+    return () => {
+      window.removeEventListener("online", on);
+      window.removeEventListener("offline", off);
+    };
+  }, []);
 
   useEffect(() => {
     void partiesApi.seedPaymentMethods().then((r) => {
-      setMethods(r.items);
-      const cash = r.items.find((m) => m.kind === "cash");
+      const mapped = r.items.map((m) => ({
+        id: String(m.id),
+        name: String(m.name ?? m.kind ?? "Method"),
+        code: m.kind != null ? String(m.kind) : undefined,
+      }));
+      setMethods(mapped);
+      const cash = mapped.find((m) => m.code === "cash") ?? mapped[0];
       if (cash) {
-        setPaymentMethodId(String(cash.id));
-        setSplits([{ id: uuid(), paymentMethodId: String(cash.id), amount: "" }]);
+        setPayments([{ id: uuid(), paymentMethodId: cash.id, amount: "" }]);
       }
     });
     void inventoryApi.listWarehouses().then((r) => {
       if (r.items[0]) setWarehouseId(String(r.items[0].id));
     });
+    void enterpriseApi
+      .listEmployees()
+      .then((r) => setSalesmen(mapSalesmanEmployees(r.items)))
+      .catch(() => undefined);
+    void enterpriseApi
+      .listTaxRates()
+      .then((r) => {
+        const items = r.items as Array<Record<string, unknown>>;
+        const preferred =
+          items.find((t) => t.is_default && t.is_active !== false) ??
+          items.find((t) => t.is_active !== false) ??
+          items[0];
+        if (preferred) {
+          setTaxRate({
+            id: String(preferred.id),
+            ratePercent: Number(preferred.rate_percent ?? 0),
+            pricingMode: (preferred.pricing_mode === "inclusive" ? "inclusive" : "exclusive") as
+              | "inclusive"
+              | "exclusive",
+            isExempt: Boolean(preferred.is_exempt),
+          });
+        }
+      })
+      .catch(() => undefined);
+    void catalogApi
+      .listTaxonomy("categories")
+      .then((r) => {
+        const items = (r as { items?: Array<Record<string, unknown>> }).items ?? [];
+        setCategories(
+          items.map((c) => ({
+            id: String(c.id),
+            name: String(c.name ?? c.code ?? "Category"),
+          })),
+        );
+      })
+      .catch(() => undefined);
     return posHardware.subscribeScanner((event) => {
       setQ(event.code);
+      setTab("results");
       void posApi
         .searchProducts({ q: event.code, warehouseId: warehouseId || undefined })
         .then((res) => {
@@ -145,112 +223,232 @@ export function PosPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  async function search() {
-    if (!q.trim()) return;
-    try {
-      const res = await posApi.searchProducts({ q, warehouseId: warehouseId || undefined });
-      setResults(res.items);
-    } catch (err) {
-      toast.push({
-        title: "Search failed",
-        description: err instanceof Error ? err.message : "Error",
-        tone: "danger",
-      });
+  useEffect(() => {
+    if (!branchId) return;
+    void posApi.listHolds(branchId).then((res) => setHolds(res.items)).catch(() => undefined);
+    void posApi
+      .currentShift(branchId)
+      .then((res) => setShift(res.item))
+      .catch(() => setShift(null));
+  }, [branchId]);
+
+  useEffect(() => {
+    if (tab !== "categories") return;
+    void (async () => {
+      setSearching(true);
+      try {
+        if (selectedCategoryId) {
+          const res = await catalogApi.listProducts({ categoryId: selectedCategoryId, pageSize: 40 });
+          // Map catalog products into search-shaped cards via POS search by name
+          const names = res.items.slice(0, 20).map((p) => p.name);
+          const found: ProductSearchResult[] = [];
+          for (const name of names.slice(0, 8)) {
+            const hit = await posApi.searchProducts({
+              q: name,
+              warehouseId: warehouseId || undefined,
+              limit: 5,
+            });
+            for (const item of hit.items) {
+              if (!found.some((f) => f.productId === item.productId)) found.push(item);
+            }
+          }
+          setResults(found);
+        } else {
+          setResults(recent);
+        }
+      } catch {
+        /* ignore */
+      } finally {
+        setSearching(false);
+      }
+    })();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [tab, selectedCategoryId, warehouseId]);
+
+  useEffect(() => {
+    if (!q.trim()) {
+      setResults([]);
+      return;
     }
+    const handle = window.setTimeout(() => {
+      void (async () => {
+        setSearching(true);
+        try {
+          const res = await posApi.searchProducts({
+            q,
+            warehouseId: warehouseId || undefined,
+            customerId: customerId || undefined,
+          });
+          setResults(res.items);
+          setTab("results");
+        } catch (err) {
+          toast.push({
+            title: "Search failed",
+            description: err instanceof Error ? err.message : "Error",
+            tone: "danger",
+          });
+        } finally {
+          setSearching(false);
+        }
+      })();
+    }, 220);
+    return () => window.clearTimeout(handle);
+  }, [q, warehouseId, customerId, toast]);
+
+  useEffect(() => {
+    if (walkIn || !customerQuery.trim()) {
+      setCustomerHits([]);
+      return;
+    }
+    const handle = window.setTimeout(() => {
+      void partiesApi.listCustomers(customerQuery).then((res) => {
+        setCustomerHits(
+          res.items.slice(0, 12).map((c) => ({
+            id: c.id,
+            name: c.name,
+            mobile: c.mobile ?? null,
+          })),
+        );
+      });
+    }, 250);
+    return () => window.clearTimeout(handle);
+  }, [customerQuery, walkIn]);
+
+  const rememberRecent = useCallback((p: ProductSearchResult) => {
+    setRecent((prev) => {
+      const next = [p, ...prev.filter((x) => x.productId !== p.productId)].slice(0, 24);
+      saveIds(RECENT_KEY, next.map((x) => x.productId));
+      saveProducts(RECENT_DATA_KEY, next);
+      return next;
+    });
+  }, []);
+
+  function toggleFavorite(p: ProductSearchResult) {
+    setFavorites((prev) => {
+      const exists = prev.some((x) => x.productId === p.productId);
+      const next = exists
+        ? prev.filter((x) => x.productId !== p.productId)
+        : [p, ...prev].slice(0, 40);
+      saveIds(FAVORITES_KEY, next.map((x) => x.productId));
+      saveProducts(FAVORITES_DATA_KEY, next);
+      setFavoriteIds(new Set(next.map((x) => x.productId)));
+      return next;
+    });
   }
 
-  function pickPrice(p: ProductSearchResult): number {
-    if (priceLevel === "wholesale") return p.wholesalePrice;
-    if (priceLevel === "dealer") return p.dealerPrice;
-    return p.retailPrice;
+  function lineTax(qty: number, unitPrice: number, discount: number) {
+    const net = Math.max(0, qty * unitPrice - discount);
+    return taxForLineNet(net, taxRate).tax;
   }
 
   function addProduct(p: ProductSearchResult) {
-    const price = pickPrice(p);
-    setCart((prev) => [
-      ...prev,
-      {
-        key: uuid(),
-        productId: p.productId,
-        name: p.name,
-        nameUr: p.nameUr,
-        unitId: p.unitId,
-        qty: "1",
-        unitPrice: price,
-        discount: 0,
-        tax: 0,
-        warrantyDays: p.warrantyDays,
-        stock: p.stockAvailable,
-      },
-    ]);
+    const price = pickPrice(p, priceLevel);
+    setCart((prev) => {
+      const existing = prev.find((x) => x.productId === p.productId && !x.isManual);
+      if (existing) {
+        return prev.map((x) => {
+          if (x.key !== existing.key) return x;
+          const qty = Number(x.qty || 0) + 1;
+          return { ...x, qty: String(qty), tax: lineTax(qty, x.unitPrice, x.discount) };
+        });
+      }
+      return [
+        ...prev,
+        {
+          key: uuid(),
+          productId: p.productId,
+          name: p.name,
+          nameUr: p.nameUr,
+          sku: p.sku,
+          unitId: p.unitId,
+          unitName: p.unitName,
+          qty: "1",
+          unitPrice: Number(price),
+          discount: 0,
+          tax: lineTax(1, Number(price), 0),
+          warrantyDays: p.warrantyDays,
+          stock: p.stockAvailable,
+        },
+      ];
+    });
+    rememberRecent(p);
   }
 
-  function addManual() {
-    if (!manual.name || !manual.unitId) {
-      toast.push({ title: "Manual item needs name and unit", tone: "danger" });
+  function addManualQuick() {
+    if (!warehouseId) {
+      toast.push({ title: "Warehouse required for manual item", tone: "danger" });
+      return;
+    }
+    const unitId = cart.find((c) => c.unitId)?.unitId;
+    if (!unitId) {
+      toast.push({
+        title: "Add a catalog item first",
+        description: "Manual lines need a unit from an existing product in this session",
+        tone: "info",
+      });
       return;
     }
     setCart((prev) => [
       ...prev,
       {
         key: uuid(),
-        name: manual.name,
-        unitId: manual.unitId,
-        qty: manual.qty,
-        unitPrice: Number(manual.rate),
-        discount: Number(manual.discount),
-        tax: Number(manual.tax),
+        name: "Manual item",
+        unitId,
+        qty: "1",
+        unitPrice: 0,
+        discount: 0,
+        tax: 0,
         warrantyDays: 0,
         isManual: true,
       },
     ]);
   }
 
-  async function recognizeCamera() {
-    // Hardware capture stays local; matching runs in the AI service layer (never in React).
-    const hw = await posHardware.recognizeFromCamera();
-    const hwHint = hw.ok
-      ? (hw.data?.candidates[0]?.label ?? hw.data?.candidates[0]?.productIdHint)
-      : undefined;
+  function clearSale() {
+    setCart([]);
+    setInvoiceDiscount("0");
+    setNotes("");
+    setDelivery(false);
+    setUseInstallment(false);
+    setPayments((prev) =>
+      prev[0]
+        ? [{ id: uuid(), paymentMethodId: prev[0].paymentMethodId, amount: "" }]
+        : [],
+    );
+    setLastInvoice(null);
+  }
+
+  function requestInvoiceDiscount(value: string) {
+    const amount = Number(value || 0);
+    const pct = totals.subtotal > 0 ? (amount / totals.subtotal) * 100 : 0;
+    const needsManager = pct > 5.001 && !hasPermission("pos.discount_manager") && !hasPermission("pos.discount_owner");
+    const needsOwner = pct > 15.001 && !hasPermission("pos.discount_owner");
+    if ((needsManager || needsOwner) && amount > 0) {
+      setPendingInvoiceDiscount(value);
+      setApprovalReason("");
+      setApprovalOpen(true);
+      return;
+    }
+    setInvoiceDiscount(value);
+  }
+
+  async function selectCustomer(id: string) {
+    setWalkIn(false);
+    setCustomerId(id);
+    setCustomerQuery("");
+    setCustomerHits([]);
     try {
-      const res = await aiApi.recognize({
-        warehouseId: warehouseId || undefined,
-        branchId: branchId || undefined,
-        hintText: hwHint || q || undefined,
-        source: "pos",
-        signals: { freeText: hwHint || q || undefined },
+      const c = await partiesApi.getCustomer(id);
+      setCustomer({
+        id: c.id,
+        name: c.name,
+        mobile: c.mobile ?? null,
+        customerType: c.customerType,
+        creditLimit: c.creditLimit != null ? String(c.creditLimit) : undefined,
+        outstanding: c.outstanding != null ? String(c.outstanding) : undefined,
       });
-      const decision = res.decision;
-      if (decision.status === "exact" && decision.bestMatch) {
-        setQ(decision.bestMatch.product.name);
-        await search();
-        toast.push({
-          title: "AI match (confirm before sell)",
-          description: `${decision.bestMatch.product.name} · conf ${decision.topConfidence.toFixed(2)} — not auto-added`,
-          tone: "success",
-        });
-        return;
-      }
-      const similar = decision.similar[0] ?? decision.candidates[0];
-      if (similar) {
-        setQ(similar.product.name);
-        await search();
-      }
-      toast.push({
-        title: `AI ${decision.status}`,
-        description: decision.explanations[0] ?? "Select manually from search results",
-        tone: "info",
-      });
-    } catch (err) {
-      if (hwHint) {
-        setQ(hwHint);
-        await search();
-      }
-      toast.push({
-        title: "AI recognition unavailable",
-        description: err instanceof Error ? err.message : hw.error ?? "Fallback search",
-        tone: "info",
-      });
+    } catch {
+      setCustomer({ id, name: id });
     }
   }
 
@@ -259,24 +457,28 @@ export function PosPage() {
       toast.push({ title: "Branch, warehouse and cart required", tone: "danger" });
       return;
     }
+    const paymentLines = payments
+      .filter((s) => s.paymentMethodId && Number(s.amount) > 0)
+      .map((s) => ({ paymentMethodId: s.paymentMethodId, amount: Number(s.amount) }));
+    const paid = paymentLines.reduce((s, p) => s + p.amount, 0);
+    const allowCredit = !walkIn && Boolean(customerId);
+    if (!paymentLines.length && !(allowCredit && totals.grand > 0)) {
+      toast.push({ title: "Enter payment amount or select customer for credit", tone: "danger" });
+      return;
+    }
+    if (!customerId && paid + 1e-9 < totals.grand) {
+      toast.push({ title: "Walk-in sales must be paid in full", tone: "danger" });
+      return;
+    }
+    setBusy(true);
     try {
-      const paymentLines =
-        mode === "advanced" && splits.length
-          ? splits
-              .filter((s) => s.paymentMethodId && Number(s.amount) > 0)
-              .map((s) => ({ paymentMethodId: s.paymentMethodId, amount: Number(s.amount) }))
-          : paymentMethodId
-            ? [{ paymentMethodId, amount: totals.grand }]
-            : [];
-
       const result = await posApi.postSale({
         branchId,
         warehouseId,
-        customerId: customerId || undefined,
+        customerId: walkIn ? undefined : customerId || undefined,
         salesmanUserId: salesmanUserId || undefined,
-        referenceName: referenceName || undefined,
-        notes: notes || undefined,
-        dueDate: dueDate || undefined,
+        commissionPercent: salesmanUserId ? commissionPercent : 0,
+        notes: [notes, delivery ? "Delivery required" : ""].filter(Boolean).join(" · ") || undefined,
         posMode: mode,
         localeMode: locale,
         items: cart.map((c) => ({
@@ -289,8 +491,6 @@ export function PosPage() {
           warrantyDays: c.warrantyDays,
           isManual: Boolean(c.isManual),
           manualName: c.isManual ? c.name : undefined,
-          manualItemCode: c.isManual ? manual.itemCode || undefined : undefined,
-          manualDescription: c.isManual ? manual.description || undefined : undefined,
         })),
         payments: paymentLines,
         discountTotal: Number(invoiceDiscount || 0),
@@ -301,13 +501,17 @@ export function PosPage() {
                   scope: "invoice",
                   kind: priceLevel === "wholesale" ? "wholesale" : "fixed",
                   amount: Number(invoiceDiscount),
-                  approverRole: "cashier",
-                  reason: "POS invoice discount",
+                  approverRole: hasPermission("pos.discount_owner")
+                    ? "owner"
+                    : hasPermission("pos.discount_manager")
+                      ? "manager"
+                      : "cashier",
+                  reason: approvalReason || "POS invoice discount",
                 },
               ]
             : [],
         createInstallment:
-          useInstallment && customerId
+          useInstallment && customerId && !walkIn
             ? {
                 downPayment: downPayment || "0",
                 installmentCount: Number(installmentCount || 1),
@@ -318,10 +522,49 @@ export function PosPage() {
         idempotencyKey: uuid(),
         operationId: uuid(),
       });
+
+      if (delivery) {
+        const deliveryItems = cart
+          .filter((c) => c.productId && !c.isManual)
+          .map((c) => ({
+            productId: c.productId!,
+            unitId: c.unitId,
+            qty: c.qty,
+          }));
+        if (deliveryItems.length) {
+          try {
+            await purchasesApi.createDelivery({
+              branchId,
+              warehouseId,
+              saleId: result.id,
+              customerId: walkIn ? undefined : customerId || undefined,
+              items: deliveryItems,
+              notes: notes || "Created from POS",
+              idempotencyKey: uuid(),
+              operationId: uuid(),
+            });
+            toast.push({
+              title: "Delivery note created",
+              description: "Open Deliveries to assign and dispatch",
+              tone: "success",
+            });
+          } catch (err) {
+            toast.push({
+              title: "Sale posted; delivery note failed",
+              description: err instanceof Error ? err.message : "Create delivery manually",
+              tone: "danger",
+            });
+          }
+        }
+      }
+
       setLastInvoice(result.invoiceNumber);
-      setCart([]);
-      // Hardware optional — never crash sale path when devices unavailable
+      clearSale();
       void posHardware.openDrawer({ reason: `sale ${result.invoiceNumber}` });
+      void posApi
+        .getInvoice(result.id)
+        .then((inv) => setReceipt(inv as InvoicePreview))
+        .catch(() => undefined);
       void posHardware.printThermal({
         type: "receipt_80",
         payload: `INV ${result.invoiceNumber}\nTotal ${result.totals.grandTotal}`,
@@ -338,38 +581,48 @@ export function PosPage() {
         description: err instanceof Error ? err.message : "Error",
         tone: "danger",
       });
+    } finally {
+      setBusy(false);
     }
   }
 
   async function holdBill() {
-    if (!branchId || !warehouseId) return;
+    if (!branchId || !warehouseId || !cart.length) return;
+    setBusy(true);
     try {
       await posApi.hold({
         branchId,
         warehouseId,
         holdLabel: `Hold ${new Date().toLocaleTimeString()}`,
-        cartSnapshot: { cart, customerId, invoiceDiscount, locale, mode, splits, notes },
+        cartSnapshot: {
+          cart,
+          customerId: walkIn ? "" : customerId,
+          walkIn,
+          invoiceDiscount,
+          locale,
+          mode,
+          payments,
+          notes,
+          delivery,
+          priceLevel,
+          salesmanUserId,
+        },
         deviceId,
       });
-      setCart([]);
+      clearSale();
       toast.push({ title: "Bill held", tone: "success" });
-      if (branchId) {
-        const res = await posApi.listHolds(branchId);
-        setHolds(res.items);
-      }
+      const res = await posApi.listHolds(branchId);
+      setHolds(res.items);
+      setShowHolds(true);
     } catch (err) {
       toast.push({
         title: "Hold failed",
         description: err instanceof Error ? err.message : "Error",
         tone: "danger",
       });
+    } finally {
+      setBusy(false);
     }
-  }
-
-  async function loadHolds() {
-    if (!branchId) return;
-    const res = await posApi.listHolds(branchId);
-    setHolds(res.items);
   }
 
   async function resume(id: string) {
@@ -377,335 +630,417 @@ export function PosPage() {
     const snap = (held as { cart_snapshot?: Record<string, unknown> }).cart_snapshot;
     if (snap?.cart && Array.isArray(snap.cart)) {
       setCart(snap.cart as CartLine[]);
-      if (typeof snap.customerId === "string") setCustomerId(snap.customerId);
       if (typeof snap.invoiceDiscount === "string") setInvoiceDiscount(snap.invoiceDiscount);
+      if (typeof snap.notes === "string") setNotes(snap.notes);
+      if (typeof snap.walkIn === "boolean") setWalkIn(snap.walkIn);
+      if (typeof snap.customerId === "string" && snap.customerId) {
+        void selectCustomer(snap.customerId);
+      }
+      if (Array.isArray(snap.payments)) setPayments(snap.payments as PaySplit[]);
+      if (typeof snap.priceLevel === "string") setPriceLevel(snap.priceLevel as PriceLevel);
+      if (typeof snap.salesmanUserId === "string") setSalesmanUserId(snap.salesmanUserId);
+      if (typeof snap.delivery === "boolean") setDelivery(snap.delivery);
     }
     toast.push({ title: "Bill resumed", tone: "success" });
-    await loadHolds();
+    if (branchId) {
+      const res = await posApi.listHolds(branchId);
+      setHolds(res.items);
+    }
+    setShowHolds(false);
   }
 
+  async function recognizeCamera() {
+    const hw = await posHardware.recognizeFromCamera();
+    const hwHint = hw.ok
+      ? (hw.data?.candidates[0]?.label ?? hw.data?.candidates[0]?.productIdHint)
+      : undefined;
+    try {
+      const res = await aiApi.recognize({
+        warehouseId: warehouseId || undefined,
+        branchId: branchId || undefined,
+        hintText: hwHint || q || undefined,
+        source: "pos",
+        signals: { freeText: hwHint || q || undefined },
+      });
+      const decision = res.decision;
+      if (decision.status === "exact" && decision.bestMatch) {
+        setQ(decision.bestMatch.product.name);
+        toast.push({
+          title: "AI match (confirm before sell)",
+          description: `${decision.bestMatch.product.name} · conf ${decision.topConfidence.toFixed(2)}`,
+          tone: "success",
+        });
+        return;
+      }
+      const similar = decision.similar[0] ?? decision.candidates[0];
+      if (similar) setQ(similar.product.name);
+      toast.push({
+        title: `AI ${decision.status}`,
+        description: decision.explanations[0] ?? "Select manually",
+        tone: "info",
+      });
+    } catch (err) {
+      if (hwHint) setQ(hwHint);
+      toast.push({
+        title: "AI recognition unavailable",
+        description: err instanceof Error ? err.message : hw.error ?? "Fallback search",
+        tone: "info",
+      });
+    }
+  }
+
+  useEffect(() => {
+    function onKey(e: KeyboardEvent) {
+      const tag = (e.target as HTMLElement | null)?.tagName;
+      const typing = tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT";
+      if (e.key === "F1") {
+        e.preventDefault();
+        searchRef.current?.focus();
+        return;
+      }
+      if (e.key === "F2") {
+        e.preventDefault();
+        if (e.shiftKey) setShowHolds((v) => !v);
+        else void holdBill();
+        return;
+      }
+      if (e.key === "F3") {
+        e.preventDefault();
+        setWalkIn(false);
+        customerRef.current?.focus();
+        return;
+      }
+      if (e.key === "F5") {
+        e.preventDefault();
+        discountRef.current?.focus();
+        return;
+      }
+      if (e.key === "F7" && !typing) {
+        e.preventDefault();
+        setCart([]);
+        return;
+      }
+      if (e.key === "F8" && !typing) {
+        e.preventDefault();
+        clearSale();
+        return;
+      }
+    }
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [cart, payments, branchId, warehouseId]);
+
+  useEffect(() => {
+    if (payments.length === 1 && totals.grand > 0 && !payments[0].amount) {
+      setPayments([{ ...payments[0], amount: String(totals.grand) }]);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [totals.grand]);
+
   return (
-    <div className="space-y-4" dir={locale === "ur" ? "rtl" : "ltr"}>
-      <div className="flex flex-wrap items-end justify-between gap-3">
-        <div>
-          <h1 className="text-2xl font-semibold">{t(locale, "title")}</h1>
-          <p className="text-sm text-[var(--erp-muted)]">
-            Real engines: products · inventory · customers · payments · ledger · accounting
-          </p>
-        </div>
-        <div className="flex flex-wrap gap-2">
-          <Select
-            label="Mode"
-            options={[
-              { value: "easy", label: "Easy Mode" },
-              { value: "advanced", label: "Advanced Mode" },
-            ]}
-            value={mode}
-            onChange={(e) => setMode(e.target.value as PosMode)}
-          />
-          <Select
-            label="Language"
-            options={[
-              { value: "en", label: "English" },
-              { value: "ur", label: "Urdu" },
-              { value: "en_ur", label: "Urdu + English" },
-            ]}
-            value={locale}
-            onChange={(e) => setLocale(e.target.value as LocaleMode)}
-          />
-        </div>
-      </div>
-
-      <div className="grid gap-4 xl:grid-cols-[1.2fr_1fr]">
-        <div className="space-y-4">
-          <Card>
-            <div className="grid gap-3 md:grid-cols-2">
-              <Input label={t(locale, "warehouse")} value={warehouseId} onChange={(e) => setWarehouseId(e.target.value)} />
-              <Input label={t(locale, "customer")} value={customerId} onChange={(e) => setCustomerId(e.target.value)} />
-            </div>
-            <div className="mt-3 grid gap-3 md:grid-cols-3">
-              <Select
-                label="Price level"
-                options={[
-                  { value: "retail", label: "Retail / sale rate" },
-                  { value: "wholesale", label: "Wholesale" },
-                  { value: "dealer", label: "Dealer" },
-                ]}
-                value={priceLevel}
-                onChange={(e) => setPriceLevel(e.target.value as PriceLevel)}
-              />
-              <Input
-                label="Salesman user ID"
-                value={salesmanUserId}
-                onChange={(e) => setSalesmanUserId(e.target.value)}
-              />
-              <Input
-                label="Reference"
-                value={referenceName}
-                onChange={(e) => setReferenceName(e.target.value)}
-              />
-            </div>
-            <div className="mt-3 flex flex-wrap gap-2">
-              <Input
-                label={t(locale, "search")}
-                value={q}
-                onChange={(e) => setQ(e.target.value)}
-                onKeyDown={(e) => {
-                  if (e.key === "Enter") void search();
-                }}
-                hint="Name, Urdu, SKU, barcode, QR, brand, company, category, model, size, color, watt…"
-              />
-              <Button className="mt-6" onClick={() => void search()}>
-                Search
-              </Button>
-              <Button className="mt-6" variant="secondary" onClick={() => void recognizeCamera()}>
-                Camera
-              </Button>
-            </div>
-            <ul className="mt-3 max-h-72 space-y-2 overflow-auto text-sm">
-              {results.map((p) => (
-                <li key={p.productId} className="flex items-center justify-between gap-2 rounded-lg border px-3 py-2">
-                  <div>
-                    <div className="font-medium">
-                      {locale === "ur" && p.nameUr ? p.nameUr : p.name}
-                      {locale === "en_ur" && p.nameUr ? ` / ${p.nameUr}` : ""}
-                    </div>
-                    <div className="text-[var(--erp-muted)]">
-                      {[p.brand, p.size, p.color, p.unitName].filter(Boolean).join(" · ")} · stock{" "}
-                      {p.stockAvailable}
-                    </div>
-                    <div className="text-xs">
-                      Retail {p.retailPrice} · Wholesale {p.wholesalePrice} · Dealer {p.dealerPrice}
-                    </div>
-                  </div>
-                  <Button size="sm" onClick={() => addProduct(p)}>
-                    Add
-                  </Button>
-                </li>
-              ))}
-            </ul>
-          </Card>
-
-          {mode === "advanced" ? (
-            <Card title="Manual item">
-              <div className="grid gap-3 md:grid-cols-2">
-                <Input label="Name" value={manual.name} onChange={(e) => setManual((p) => ({ ...p, name: e.target.value }))} />
-                <Input label="Item ID" value={manual.itemCode} onChange={(e) => setManual((p) => ({ ...p, itemCode: e.target.value }))} />
-                <Input label="Description" value={manual.description} onChange={(e) => setManual((p) => ({ ...p, description: e.target.value }))} />
-                <Input label="Unit ID" value={manual.unitId} onChange={(e) => setManual((p) => ({ ...p, unitId: e.target.value }))} />
-                <Input label="Qty" value={manual.qty} onChange={(e) => setManual((p) => ({ ...p, qty: e.target.value }))} />
-                <Input label="Rate" value={manual.rate} onChange={(e) => setManual((p) => ({ ...p, rate: e.target.value }))} />
-                <Input label="Discount" value={manual.discount} onChange={(e) => setManual((p) => ({ ...p, discount: e.target.value }))} />
-                <Input label="Tax" value={manual.tax} onChange={(e) => setManual((p) => ({ ...p, tax: e.target.value }))} />
-              </div>
-              <Button className="mt-3" variant="secondary" onClick={addManual}>
-                Add manual line
-              </Button>
-            </Card>
-          ) : null}
-        </div>
-
-        <div className="space-y-4">
-          <Card title={t(locale, "cart")}>
-            <ul className="space-y-2 text-sm">
-              {cart.map((line) => (
-                <li key={line.key} className="rounded-lg border px-3 py-2">
-                  <div className="flex justify-between gap-2">
-                    <strong>
-                      {locale === "ur" && line.nameUr ? line.nameUr : line.name}
-                    </strong>
-                    <button
-                      type="button"
-                      className="text-[var(--erp-danger)]"
-                      onClick={() => setCart((prev) => prev.filter((x) => x.key !== line.key))}
-                    >
-                      Remove
-                    </button>
-                  </div>
-                  <div className="mt-2 grid grid-cols-3 gap-2">
-                    <Input
-                      label="Qty"
-                      value={line.qty}
-                      onChange={(e) =>
-                        setCart((prev) =>
-                          prev.map((x) => (x.key === line.key ? { ...x, qty: e.target.value } : x)),
-                        )
-                      }
-                    />
-                    <Input
-                      label="Rate"
-                      value={String(line.unitPrice)}
-                      onChange={(e) =>
-                        setCart((prev) =>
-                          prev.map((x) =>
-                            x.key === line.key ? { ...x, unitPrice: Number(e.target.value || 0) } : x,
-                          ),
-                        )
-                      }
-                    />
-                    <Input
-                      label="Disc"
-                      value={String(line.discount)}
-                      onChange={(e) =>
-                        setCart((prev) =>
-                          prev.map((x) =>
-                            x.key === line.key ? { ...x, discount: Number(e.target.value || 0) } : x,
-                          ),
-                        )
-                      }
-                    />
-                  </div>
-                  {line.stock != null ? (
-                    <div className="mt-1 text-xs text-[var(--erp-muted)]">Stock {line.stock}</div>
-                  ) : null}
-                </li>
-              ))}
-              {!cart.length ? <li className="text-[var(--erp-muted)]">{t(locale, "empty")}</li> : null}
-            </ul>
-
-            {mode === "advanced" ? (
-              <div className="mt-3">
-                <Input
-                  label="Invoice discount"
-                  value={invoiceDiscount}
-                  onChange={(e) => setInvoiceDiscount(e.target.value)}
-                  hint="Cashier max 5% equivalent — enforced server-side with audit"
-                />
-              </div>
-            ) : null}
-
-            <div className="mt-4 space-y-1 text-sm">
-              <div className="flex justify-between">
-                <span>Subtotal</span>
-                <span>{totals.subtotal.toFixed(2)}</span>
-              </div>
-              <div className="flex justify-between">
-                <span>Discount</span>
-                <span>{totals.discount.toFixed(2)}</span>
-              </div>
-              <div className="flex justify-between">
-                <span>Tax</span>
-                <span>{totals.tax.toFixed(2)}</span>
-              </div>
-              <div className="flex justify-between text-base font-semibold">
-                <span>Total</span>
-                <span>{totals.grand.toFixed(2)}</span>
-              </div>
-            </div>
-
-            {mode === "easy" ? (
-              <div className="mt-3">
-                <Select
-                  label="Payment method"
-                  options={methods.map((m) => ({ value: String(m.id), label: String(m.name) }))}
-                  value={paymentMethodId}
-                  onChange={(e) => setPaymentMethodId(e.target.value)}
-                />
-              </div>
-            ) : (
-              <div className="mt-3 space-y-2">
-                <div className="text-sm font-medium">Split payments / credit</div>
-                {splits.map((s) => (
-                  <div key={s.id} className="grid grid-cols-2 gap-2">
-                    <Select
-                      label="Method"
-                      options={methods.map((m) => ({ value: String(m.id), label: String(m.name) }))}
-                      value={s.paymentMethodId}
-                      onChange={(e) =>
-                        setSplits((prev) =>
-                          prev.map((x) =>
-                            x.id === s.id ? { ...x, paymentMethodId: e.target.value } : x,
-                          ),
-                        )
-                      }
-                    />
-                    <Input
-                      label="Amount"
-                      value={s.amount}
-                      onChange={(e) =>
-                        setSplits((prev) =>
-                          prev.map((x) => (x.id === s.id ? { ...x, amount: e.target.value } : x)),
-                        )
-                      }
-                      hint="Leave unpaid remainder as customer credit"
-                    />
-                  </div>
-                ))}
-                <Button
-                  size="sm"
-                  variant="secondary"
-                  onClick={() =>
-                    setSplits((prev) => [
-                      ...prev,
-                      { id: uuid(), paymentMethodId: paymentMethodId, amount: "" },
-                    ])
+    <div className="pos-terminal min-h-screen" dir={locale === "ur" ? "rtl" : "ltr"}>
+      <div className="flex min-h-screen">
+        <div className="hidden lg:flex">
+          <PosSidebar
+            collapsed={sidebarCollapsed}
+            onToggle={() => setSidebarCollapsed((v) => !v)}
+            holdCount={holds.length}
+            drawerSummary={
+              shift
+                ? {
+                    opening: Number(shift.opening_float ?? 0).toFixed(2),
+                    inHand: Number(shift.expected_cash ?? shift.opening_float ?? 0).toFixed(2),
+                    sales: Number(shift.sales_total ?? 0).toFixed(2),
+                    expenses: Number(shift.expense_total ?? 0).toFixed(2),
+                    expected: Number(shift.expected_cash ?? 0).toFixed(2),
                   }
-                >
-                  Add payment split
+                : undefined
+            }
+            onCloseShift={() => {
+              void (async () => {
+                if (!branchId) return;
+                if (!shift) {
+                  try {
+                    const opened = await posApi.openShift({ branchId, openingFloat: 0 });
+                    setShift(opened as Record<string, unknown>);
+                    toast.push({ title: "Shift opened", tone: "success" });
+                  } catch (err) {
+                    toast.push({
+                      title: "Open shift failed",
+                      description: err instanceof Error ? err.message : "Apply migration pos_cash_shifts",
+                      tone: "danger",
+                    });
+                  }
+                  return;
+                }
+                try {
+                  const counted = Number(shift.expected_cash ?? shift.opening_float ?? 0);
+                  await posApi.closeShift(String(shift.id), { closingCounted: counted });
+                  setShift(null);
+                  toast.push({ title: "Shift closed", tone: "success" });
+                } catch (err) {
+                  toast.push({
+                    title: "Close shift failed",
+                    description: err instanceof Error ? err.message : "Error",
+                    tone: "danger",
+                  });
+                }
+              })();
+            }}
+          />
+        </div>
+
+        {mobileNav ? (
+          <div className="fixed inset-0 z-40 flex lg:hidden">
+            <PosSidebar
+              collapsed={false}
+              onToggle={() => setMobileNav(false)}
+              holdCount={holds.length}
+            />
+            <button type="button" className="flex-1 bg-black/40" onClick={() => setMobileNav(false)} aria-label="Close menu" />
+          </div>
+        ) : null}
+
+        <div className="flex min-w-0 flex-1 flex-col">
+          <PosHeader
+            branchId={branchId}
+            branches={branches}
+            onBranchChange={setBranchId}
+            cashierName={user?.fullName ?? "Cashier"}
+            online={online}
+            holdCount={holds.length}
+            mode={mode}
+            locale={locale}
+            onModeChange={setMode}
+            onLocaleChange={setLocale}
+            onMenu={() => setMobileNav(true)}
+            clock={clock}
+            shiftOpen={Boolean(shift)}
+          />
+
+          <div className="grid min-h-0 flex-1 gap-3 p-3 xl:grid-cols-[minmax(0,1.35fr)_minmax(320px,0.9fr)]">
+            <div className="flex min-h-0 flex-col gap-3">
+              <div className="flex flex-wrap gap-2">
+                <Button size="sm" variant="secondary" onClick={() => void recognizeCamera()}>
+                  Camera AI
                 </Button>
-                <Input label="Notes" value={notes} onChange={(e) => setNotes(e.target.value)} />
-                <Input
-                  label="Due date (credit)"
-                  value={dueDate}
-                  onChange={(e) => setDueDate(e.target.value)}
-                  hint="YYYY-MM-DD"
-                />
-                <label className="flex items-center gap-2 text-sm">
-                  <input
-                    type="checkbox"
-                    checked={useInstallment}
-                    onChange={(e) => setUseInstallment(e.target.checked)}
-                  />
-                  Create installment plan
-                </label>
-                {useInstallment ? (
-                  <div className="grid grid-cols-2 gap-2">
-                    <Input
-                      label="Down payment"
-                      value={downPayment}
-                      onChange={(e) => setDownPayment(e.target.value)}
-                    />
-                    <Input
-                      label="Installments"
-                      value={installmentCount}
-                      onChange={(e) => setInstallmentCount(e.target.value)}
-                    />
-                  </div>
-                ) : null}
+                {warehouseId ? (
+                  <Badge tone="neutral">WH {warehouseId.slice(0, 8)}</Badge>
+                ) : (
+                  <Badge tone="warning">No warehouse</Badge>
+                )}
+                {lastInvoice ? <Badge tone="success">Last {lastInvoice}</Badge> : null}
               </div>
-            )}
-
-            <div className="mt-4 flex flex-wrap gap-2">
-              <Button onClick={() => void checkout()}>{t(locale, "checkout")}</Button>
-              <Button variant="secondary" onClick={() => void holdBill()}>
-                {t(locale, "hold")}
-              </Button>
-              <Button variant="ghost" onClick={() => void loadHolds()}>
-                {t(locale, "resume")}
-              </Button>
+              <PosProductPanel
+                query={q}
+                onQueryChange={setQ}
+                searching={searching}
+                products={results}
+                favorites={favorites}
+                recent={recent}
+                categories={categories}
+                selectedCategoryId={selectedCategoryId}
+                onSelectCategory={(id) => {
+                  setSelectedCategoryId(id);
+                  setTab("categories");
+                }}
+                favoriteIds={favoriteIds}
+                onToggleFavorite={toggleFavorite}
+                tab={tab}
+                onTabChange={setTab}
+                locale={locale}
+                onAdd={addProduct}
+                searchRef={searchRef}
+              />
             </div>
-            {lastInvoice ? (
-              <div className="mt-3">
-                <Badge tone="success">Invoice {lastInvoice}</Badge>
-              </div>
-            ) : null}
-          </Card>
 
-          <Card title="Held bills">
-            <ul className="space-y-2 text-sm">
-              {holds.map((h) => (
-                <li key={String(h.id)} className="flex justify-between gap-2 border-b py-2">
-                  <span>{String(h.hold_label ?? h.id)}</span>
-                  <Button size="sm" onClick={() => void resume(String(h.id))}>
-                    Resume
-                  </Button>
-                </li>
-              ))}
-              {!holds.length ? <li className="text-[var(--erp-muted)]">No held bills loaded</li> : null}
-            </ul>
-          </Card>
+            <div className="flex min-h-0 flex-col gap-3">
+              <PosCustomerPanel
+                customer={customer}
+                walkIn={walkIn}
+                customers={customerHits}
+                customerQuery={customerQuery}
+                onCustomerQuery={setCustomerQuery}
+                onSelectCustomer={(id) => void selectCustomer(id)}
+                onWalkIn={() => {
+                  setWalkIn(true);
+                  setCustomerId("");
+                  setCustomer(null);
+                  setCustomerQuery("");
+                }}
+                priceLevel={priceLevel}
+                onPriceLevel={setPriceLevel}
+                salesmanId={salesmanUserId}
+                salesmen={salesmen.map((s) => ({ id: s.id, name: `${s.name} (${s.commissionPercent}%)` }))}
+                onSalesman={(id) => {
+                  setSalesmanUserId(id);
+                  const match = salesmen.find((s) => s.id === id);
+                  setCommissionPercent(match?.commissionPercent ?? 0);
+                }}
+                delivery={delivery}
+                onDelivery={setDelivery}
+                customerRef={customerRef}
+                advanced={advanced}
+              />
+
+              <PosCartPanel
+                cart={cart}
+                advanced={advanced}
+                locale={locale}
+                onQty={(key, qty) =>
+                  setCart((prev) =>
+                    prev.map((x) =>
+                      x.key === key
+                        ? { ...x, qty, tax: lineTax(Number(qty || 0), x.unitPrice, x.discount) }
+                        : x,
+                    ),
+                  )
+                }
+                onPrice={(key, unitPrice) => {
+                  if (!canPriceOverride) {
+                    setApprovalOpen(true);
+                    setPendingInvoiceDiscount(null);
+                    setApprovalReason(`price:${key}:${unitPrice}`);
+                    return;
+                  }
+                  setCart((prev) =>
+                    prev.map((x) =>
+                      x.key === key
+                        ? { ...x, unitPrice, tax: lineTax(Number(x.qty || 0), unitPrice, x.discount) }
+                        : x,
+                    ),
+                  );
+                }}
+                onDiscount={(key, discount) =>
+                  setCart((prev) =>
+                    prev.map((x) =>
+                      x.key === key
+                        ? { ...x, discount, tax: lineTax(Number(x.qty || 0), x.unitPrice, discount) }
+                        : x,
+                    ),
+                  )
+                }
+                onRemove={(key) => setCart((prev) => prev.filter((x) => x.key !== key))}
+                onClear={() => setCart([])}
+                onManual={addManualQuick}
+                canDiscount={canDiscount}
+                canPriceOverride={canPriceOverride}
+              />
+
+              <PosPaymentPanel
+                totals={totals}
+                invoiceDiscount={invoiceDiscount}
+                onInvoiceDiscount={requestInvoiceDiscount}
+                canInvoiceDiscount={canDiscount}
+                discountRef={discountRef}
+                methods={methods}
+                payments={payments}
+                onPayments={setPayments}
+                notes={notes}
+                onNotes={setNotes}
+                busy={busy}
+                canPay={Boolean(branchId && warehouseId && cart.length)}
+                allowCreditDue={!walkIn && Boolean(customerId)}
+                onHold={() => void holdBill()}
+                onPay={() => void checkout()}
+                onCancel={clearSale}
+                advanced={advanced}
+                useInstallment={useInstallment}
+                onUseInstallment={setUseInstallment}
+                installmentCount={installmentCount}
+                onInstallmentCount={setInstallmentCount}
+                downPayment={downPayment}
+                onDownPayment={setDownPayment}
+              />
+
+              {(showHolds || holds.length > 0) && (
+                <Card className="border-[var(--pos-border)] bg-[var(--pos-card)] p-3 shadow-sm">
+                  <div className="mb-2 flex items-center justify-between">
+                    <h3 className="text-sm font-semibold">Held bills</h3>
+                    <Button size="sm" variant="ghost" onClick={() => setShowHolds((v) => !v)}>
+                      {showHolds ? "Hide" : "Show"}
+                    </Button>
+                  </div>
+                  {showHolds ? (
+                    <ul className="max-h-40 space-y-2 overflow-auto text-sm">
+                      {holds.map((h) => (
+                        <li key={String(h.id)} className="flex items-center justify-between gap-2 border-b border-[var(--pos-border)] py-1.5">
+                          <span className="truncate">{String(h.hold_label ?? h.id)}</span>
+                          <Button size="sm" onClick={() => void resume(String(h.id))}>
+                            Resume
+                          </Button>
+                        </li>
+                      ))}
+                      {!holds.length ? (
+                        <li className="text-[var(--pos-muted)]">No held bills</li>
+                      ) : null}
+                    </ul>
+                  ) : null}
+                </Card>
+              )}
+
+              {advanced ? (
+                <Card className="border-[var(--pos-border)] bg-[var(--pos-card)] p-3 text-xs text-[var(--pos-muted)] shadow-sm">
+                  <div className="mb-1 font-medium text-[var(--pos-ink)]">Warehouse</div>
+                  <Input value={warehouseId} onChange={(e) => setWarehouseId(e.target.value)} aria-label="Warehouse ID" />
+                </Card>
+              ) : null}
+
+              {receipt ? (
+                <ReceiptPreview
+                  invoice={receipt}
+                  format={receiptFormat}
+                  onFormatChange={setReceiptFormat}
+                  onClose={() => setReceipt(null)}
+                />
+              ) : null}
+            </div>
+          </div>
         </div>
       </div>
+
+      <PosApprovalDialog
+        open={approvalOpen}
+        title="Manager approval required"
+        description={
+          pendingInvoiceDiscount != null
+            ? "Invoice discount exceeds cashier limit (5%). A manager/owner session is required."
+            : "Price override requires manager/owner discount permission."
+        }
+        reason={approvalReason.startsWith("price:") ? "Price override requested" : approvalReason}
+        onReasonChange={(v) => {
+          if (!approvalReason.startsWith("price:")) setApprovalReason(v);
+          else setApprovalReason(approvalReason);
+        }}
+        canApprove={hasPermission("pos.discount_manager") || hasPermission("pos.discount_owner")}
+        onCancel={() => {
+          setApprovalOpen(false);
+          setPendingInvoiceDiscount(null);
+        }}
+        onApprove={() => {
+          if (!approvalReason.trim() && pendingInvoiceDiscount != null) return;
+          if (pendingInvoiceDiscount != null) {
+            setInvoiceDiscount(pendingInvoiceDiscount);
+            setPendingInvoiceDiscount(null);
+          } else if (approvalReason.startsWith("price:")) {
+            const parts = approvalReason.split(":");
+            const key = parts[1];
+            const unitPrice = Number(parts[2] || 0);
+            if (key) {
+              setCart((prev) =>
+                prev.map((x) =>
+                  x.key === key
+                    ? { ...x, unitPrice, tax: lineTax(Number(x.qty || 0), unitPrice, x.discount) }
+                    : x,
+                ),
+              );
+            }
+          }
+          setApprovalOpen(false);
+          setApprovalReason("");
+        }}
+      />
     </div>
   );
 }

@@ -49,6 +49,10 @@ function moneyNumber(v: number | string | undefined, fallback = 0): number {
 /**
  * Central sale orchestration — UI must NOT duplicate stock/ledger/payment/accounting writes.
  * All side effects go through ports implemented by the POS repository.
+ *
+ * ATOMICITY LIMIT: steps are sequential Supabase writes (not one Postgres transaction).
+ * Idempotency keys reduce duplicate risk; a mid-chain failure can leave partial side effects.
+ * A single RPC wrapping the full chain is the intended hardening path — do not claim ACID yet.
  */
 export class SaleTransactionService {
   constructor(private readonly ports: SaleTransactionPorts) {}
@@ -129,6 +133,9 @@ export class SaleTransactionService {
       throw new ValidationDomainError("Payment total exceeds grand total");
     }
     const remainingTotal = Math.round((totals.grandTotal - paidTotal) * 100) / 100;
+    if (!input.customerId && remainingTotal > 0.009) {
+      throw new ValidationDomainError("Walk-in sales must be paid in full");
+    }
     const paymentStatus =
       paidTotal <= 0 ? "unpaid" : remainingTotal <= 0.009 ? "paid" : "partial";
 
@@ -210,7 +217,8 @@ export class SaleTransactionService {
       });
     }
 
-    // Customer ledger (full invoice as receivable), then payments reduce it
+    // Customer ledger (full invoice as receivable), then payments reduce it.
+    // Walk-in (no customer): skip AR ledger; still post payment rows + journal cash.
     if (input.customerId) {
       await this.ports.postCustomerSaleLedger({
         organizationId: input.organizationId,
@@ -221,7 +229,7 @@ export class SaleTransactionService {
       });
     }
 
-    if ((input.payments ?? []).length && input.customerId) {
+    if ((input.payments ?? []).length) {
       await this.ports.postSplitPayment({
         organizationId: input.organizationId,
         branchId: input.branchId,

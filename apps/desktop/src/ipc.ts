@@ -9,6 +9,7 @@ import {
 } from "./first-run.js";
 import type { DesktopPaths } from "./paths.js";
 import type { SecureTokenStore } from "./secure-store.js";
+import { createDesktopSync, type DesktopSyncRuntime } from "./sync-runtime.js";
 import type { DesktopUpdater } from "./updater.js";
 import { desktopReadiness } from "./readiness.js";
 
@@ -20,6 +21,12 @@ export interface DesktopServices {
   updater: DesktopUpdater;
   getOnline: () => boolean;
   setOnline: (online: boolean) => void;
+  getSync: () => DesktopSyncRuntime | null;
+  setSync: (sync: DesktopSyncRuntime | null) => void;
+}
+
+function cloudDeviceId(runtime: OfflineRuntime): string {
+  return runtime.localDb.getDevice()?.id ?? runtime.deviceId;
 }
 
 export function registerIpcHandlers(services: DesktopServices): void {
@@ -31,16 +38,32 @@ export function registerIpcHandlers(services: DesktopServices): void {
     updater,
     getOnline,
     setOnline,
+    getSync,
+    setSync,
   } = services;
+
+  function ensureSync(): DesktopSyncRuntime | null {
+    let sync = getSync();
+    if (!sync) {
+      sync = createDesktopSync(runtime, secure, getOnline);
+      if (sync) {
+        setSync(sync);
+        sync.start();
+      }
+    }
+    return sync;
+  }
 
   ipcMain.handle(IpcChannels.getStatus, async () => {
     const ready = desktopReadiness();
+    const sync = getSync();
     return {
       ...ready,
-      deviceId: runtime.deviceId,
+      deviceId: cloudDeviceId(runtime),
       migrationsApplied: runtime.migrationsApplied,
       integrity: runtime.integrity,
       online: getOnline(),
+      sync: sync?.getProgress() ?? null,
     };
   });
 
@@ -51,7 +74,6 @@ export function registerIpcHandlers(services: DesktopServices): void {
     logsDir: paths.logsDir,
     configDir: paths.configDir,
     cacheDir: paths.cacheDir,
-    // Never expose full install layout beyond root for diagnostics
     installRoot: paths.installRoot,
   }));
 
@@ -107,6 +129,12 @@ export function registerIpcHandlers(services: DesktopServices): void {
         "secure.accessToken",
         secure.encryptString(accessToken),
       );
+      await runtime.localDb.setSetting("sync.apiUrl", apiUrl);
+
+      getSync()?.stop();
+      const sync = createDesktopSync(runtime, secure, getOnline);
+      setSync(sync);
+      sync?.start();
 
       return { ok: true, device };
     },
@@ -114,6 +142,7 @@ export function registerIpcHandlers(services: DesktopServices): void {
 
   ipcMain.handle(IpcChannels.setConnectivity, async (_evt, online: boolean) => {
     setOnline(Boolean(online));
+    ensureSync()?.setOnline(Boolean(online));
     return getFirstRunState(runtime, getOnline());
   });
 
@@ -129,16 +158,26 @@ export function registerIpcHandlers(services: DesktopServices): void {
       if (!state.provisioned) {
         throw new Error("Device is not provisioned — cannot post offline sales");
       }
-      return runtime.pos.postSale({
+      const sale = await runtime.pos.postSale({
         sale: payload.sale,
-        deviceId: runtime.deviceId,
+        deviceId: cloudDeviceId(runtime),
       });
+      if (getOnline()) void ensureSync()?.syncNow().catch(() => undefined);
+      return sale;
     },
   );
 
   ipcMain.handle(IpcChannels.listPendingSales, async () =>
     runtime.pos.listPendingSales(),
   );
+
+  ipcMain.handle(IpcChannels.syncNow, async () => {
+    const sync = ensureSync();
+    if (!sync) throw new Error("Sync not available — provision device with apiUrl + token first");
+    return sync.syncNow();
+  });
+
+  ipcMain.handle(IpcChannels.syncStatus, async () => ensureSync()?.getProgress() ?? null);
 
   ipcMain.handle(IpcChannels.hardwareStatus, async () => hardware.listStatuses());
 
