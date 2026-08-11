@@ -25,7 +25,11 @@ export const config = {
   corsOrigin: process.env.API_CORS_ORIGIN ?? "http://localhost:5173",
   supabaseUrl: process.env.SUPABASE_URL ?? process.env.VITE_SUPABASE_URL ?? "",
   supabaseAnonKey:
-    process.env.SUPABASE_ANON_KEY ?? process.env.VITE_SUPABASE_ANON_KEY ?? "",
+    process.env.SUPABASE_ANON_KEY ??
+    process.env.VITE_SUPABASE_ANON_KEY ??
+    process.env.VITE_SUPABASE_PUBLISHABLE_KEY ??
+    process.env.SUPABASE_PUBLISHABLE_KEY ??
+    "",
   supabaseServiceRoleKey: process.env.SUPABASE_SERVICE_ROLE_KEY ?? "",
   nodeEnv: process.env.NODE_ENV ?? "development",
   appEnv: resolveAppEnv(),

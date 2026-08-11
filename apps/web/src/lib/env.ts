@@ -2,8 +2,15 @@
 function resolveApiUrl(): string {
   const raw = String(import.meta.env.VITE_API_URL ?? "").trim().replace(/\/$/, "");
   if (import.meta.env.PROD) {
-    // Common misconfig: VITE_API_URL=http://localhost:4000 baked into Vercel build
-    if (!raw || /localhost|127\.0\.0\.1/i.test(raw)) return "";
+    // Misconfigs that must never be used from a Vercel/browser bundle
+    if (
+      !raw ||
+      /localhost|127\.0\.0\.1/i.test(raw) ||
+      /api\.example\.com/i.test(raw) ||
+      /your-api|example\.com/i.test(raw)
+    ) {
+      return "";
+    }
     return raw;
   }
   return raw || "http://localhost:4000";
