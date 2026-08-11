@@ -8,7 +8,7 @@
     "postinstall": "node scripts/link-workspaces.cjs",
     "dev:web": "npm run dev --prefix apps/web",
     "dev:api": "npm run dev --prefix apps/api",
-    "build:packages": "npm run build --prefix packages/contracts && npm run build --prefix packages/domain && npm run build --prefix packages/ai && node scripts/link-workspaces.cjs && npm run build --prefix packages/db && npm run build --prefix packages/sync && npm run build --prefix packages/hardware && npm run build --prefix packages/offline && npm run build --prefix packages/ui && node scripts/link-workspaces.cjs",
+    "build:packages": "node scripts/clean-package-dists.cjs && npm run build --prefix packages/contracts && npm run build --prefix packages/domain && npm run build --prefix packages/ai && node scripts/link-workspaces.cjs && npm run build --prefix packages/db && npm run build --prefix packages/sync && npm run build --prefix packages/hardware && npm run build --prefix packages/offline && npm run build --prefix packages/ui && node scripts/link-workspaces.cjs",
     "build:web": "npm run build:packages && npm run build --prefix apps/web",
     "build:desktop": "npm run desktop:prepare",
     "build": "npm run build:packages && npm run build --prefix apps/api && npm run build --prefix apps/web",

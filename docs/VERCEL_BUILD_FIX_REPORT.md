@@ -110,4 +110,27 @@ Pushed to `origin/main` (no force).
 
 ---
 
+## 12. Follow-up: TS6305 on Vercel (`build:web`)
+
+**Symptom:** After the `cmd.exe` fix, `npm run build:web` failed with many:
+
+`TS6305: Output file '.../packages/contracts/dist/index.d.ts' has not been built from source file '.../packages/contracts/src/index.ts'`
+
+plus cascading `implicitly has an 'any' type` in `@electronic-erp/domain`.
+
+**Cause:** `packages/*/tsconfig.tsbuildinfo` was committed while `dist/` is gitignored. On a clean Vercel checkout, TypeScript project references trusted stale incremental state that claimed `.d.ts` outputs existed; they did not → TS6305.
+
+**Fix:**
+
+| File | Change |
+|------|--------|
+| `packages/*/tsconfig.tsbuildinfo` | Removed from git index (stop tracking) |
+| `.gitignore` | Explicitly ignore `**/tsconfig.tsbuildinfo` / `packages/*/tsconfig.tsbuildinfo` |
+| `scripts/clean-package-dists.cjs` | Wipe `packages/*/dist` + tsbuildinfo before package builds |
+| `package.json` `build:packages` | Run clean script first |
+
+Verified locally: `npm run build:web` ✅ and `npm run build:desktop` ✅ after a clean package wipe.
+
+---
+
 **STOP.** Do not start Phase 19 until instructed.

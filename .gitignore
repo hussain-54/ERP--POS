@@ -10,6 +10,8 @@ release/
 out/
 coverage/
 *.tsbuildinfo
+**/tsconfig.tsbuildinfo
+packages/*/tsconfig.tsbuildinfo
 apps/web/dist/
 apps/api/dist/
 apps/desktop/dist/
