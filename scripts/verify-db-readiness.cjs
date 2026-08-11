@@ -32,6 +32,7 @@ const expected = [
   "20260810000015_hr_tax_documents_notifications.sql",
   "20260810000016_security_backup_api_import.sql",
   "20260810000017_phase17_performance_indexes.sql",
+  "20260811000018_fix_auth_rls_helpers.sql",
 ];
 
 let failed = false;

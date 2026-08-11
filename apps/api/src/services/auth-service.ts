@@ -64,7 +64,12 @@ export class AuthService {
 
     const userClient = createUserClient(data.session.access_token);
     const repo = new UserRepository(userClient);
-    const profile = await repo.findByAuthUserId(data.user.id);
+    const serviceClient = createServiceClient();
+    let profile = await repo.findByAuthUserId(data.user.id);
+    // Fallback: service role bypasses RLS if helpers are not yet SECURITY DEFINER
+    if (!profile && serviceClient) {
+      profile = await new UserRepository(serviceClient).findByAuthUserId(data.user.id);
+    }
     if (!profile) {
       if (infra) {
         await infra.recordLoginAttempt({
@@ -105,9 +110,11 @@ export class AuthService {
       }
     }
 
+    // Prefer service client for permission/branch reads when available (RLS-safe bootstrap)
+    const authzRepo = serviceClient ? new UserRepository(serviceClient) : repo;
     const [permissions, branches] = await Promise.all([
-      repo.listPermissionKeys(profile.id),
-      repo.listBranchIds(profile.id),
+      authzRepo.listPermissionKeys(profile.id),
+      authzRepo.listBranchIds(profile.id),
     ]);
 
     if (infra) {

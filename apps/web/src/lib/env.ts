@@ -1,5 +1,16 @@
+/** Resolve API base URL. Production on Vercel uses same-origin `/api/v1` (empty base). */
+function resolveApiUrl(): string {
+  const raw = String(import.meta.env.VITE_API_URL ?? "").trim().replace(/\/$/, "");
+  if (import.meta.env.PROD) {
+    // Common misconfig: VITE_API_URL=http://localhost:4000 baked into Vercel build
+    if (!raw || /localhost|127\.0\.0\.1/i.test(raw)) return "";
+    return raw;
+  }
+  return raw || "http://localhost:4000";
+}
+
 export const env = {
-  apiUrl: import.meta.env.VITE_API_URL ?? "http://localhost:4000",
+  apiUrl: resolveApiUrl(),
   supabaseUrl: import.meta.env.VITE_SUPABASE_URL ?? "",
   // Prefer anon key; accept publishable alias from Phase 19 / Supabase docs
   supabaseAnonKey:

@@ -43,6 +43,7 @@ export function supabaseConfigured(): boolean {
 /** Fail fast in staging/production when required secrets/config are missing. */
 export function assertProductionConfig(): void {
   if (config.appEnv === "development") return;
+  const onVercel = process.env.VERCEL === "1";
   const missing: string[] = [];
   if (!config.supabaseUrl || config.supabaseUrl.includes("your-project")) {
     missing.push("SUPABASE_URL");
@@ -53,7 +54,8 @@ export function assertProductionConfig(): void {
   if (!config.supabaseServiceRoleKey || config.supabaseServiceRoleKey.includes("your-service")) {
     missing.push("SUPABASE_SERVICE_ROLE_KEY");
   }
-  if (!process.env.API_CORS_ORIGIN) {
+  // Co-hosted Vercel API derives CORS from VERCEL_URL; dedicated hosts still need API_CORS_ORIGIN
+  if (!process.env.API_CORS_ORIGIN && !onVercel) {
     missing.push("API_CORS_ORIGIN");
   }
   if (missing.length) {
@@ -61,7 +63,11 @@ export function assertProductionConfig(): void {
       `[config] ${config.appEnv} requires env: ${missing.join(", ")}. Copy from .env.${config.appEnv}.example`,
     );
   }
-  if (config.corsOrigin.includes("localhost") && config.appEnv === "production") {
+  if (
+    config.appEnv === "production" &&
+    config.corsOrigin.includes("localhost") &&
+    !onVercel
+  ) {
     throw new Error("[config] production API_CORS_ORIGIN must not be localhost");
   }
 }

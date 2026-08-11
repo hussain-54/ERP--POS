@@ -1,5 +1,5 @@
 import express from "express";
-import cors from "cors";
+import cors, { type CorsOptions } from "cors";
 import { randomUUID } from "node:crypto";
 import { config } from "./config.js";
 import { healthRouter } from "./routes/health.js";
@@ -23,11 +23,48 @@ import { errorHandler, notFoundHandler } from "./middleware/error-handler.js";
 import { requireAuth, type AuthedRequest } from "./middleware/auth.js";
 import { log } from "./lib/logger.js";
 
+function resolveCorsOrigin(): CorsOptions["origin"] {
+  const configured = config.corsOrigin
+    .split(",")
+    .map((s) => s.trim())
+    .filter(Boolean);
+  const allowed = new Set(configured);
+  if (process.env.VERCEL_URL) {
+    allowed.add(`https://${process.env.VERCEL_URL}`);
+  }
+  if (process.env.VERCEL_PROJECT_PRODUCTION_URL) {
+    allowed.add(`https://${process.env.VERCEL_PROJECT_PRODUCTION_URL}`);
+  }
+
+  return (origin, callback) => {
+    // Same-origin / non-browser / serverless probe
+    if (!origin) {
+      callback(null, true);
+      return;
+    }
+    if (allowed.has("*") || allowed.has(origin)) {
+      callback(null, true);
+      return;
+    }
+    try {
+      const host = new URL(origin).hostname;
+      // Preview + production *.vercel.app when API is co-hosted
+      if (host.endsWith(".vercel.app") || process.env.VERCEL === "1") {
+        callback(null, true);
+        return;
+      }
+    } catch {
+      // fall through
+    }
+    callback(new Error(`CORS blocked for origin: ${origin}`));
+  };
+}
+
 export function createApp() {
   const app = express();
   app.use(
     cors({
-      origin: config.corsOrigin,
+      origin: resolveCorsOrigin(),
       credentials: true,
     }),
   );
