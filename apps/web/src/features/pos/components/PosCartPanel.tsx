@@ -6,6 +6,7 @@ import {
   POSEmptyState,
   POSIconButton,
   POSInput,
+  POSSelect,
   POSTable,
   POSTableBody,
   POSTableHead,
@@ -18,13 +19,17 @@ interface Props {
   advanced: boolean;
   locale: "en" | "ur" | "en_ur";
   onQty: (key: string, qty: string) => void;
+  onIncrease: (key: string) => void;
+  onDecrease: (key: string) => void;
   onPrice: (key: string, price: number) => void;
   onDiscount: (key: string, discount: number) => void;
+  onUnitChange: (key: string, unitId: string) => void;
   onRemove: (key: string) => void;
   onClear: () => void;
   onManual: () => void;
   canDiscount: boolean;
   canPriceOverride: boolean;
+  cartError?: string | null;
 }
 
 export function PosCartPanel({
@@ -32,13 +37,17 @@ export function PosCartPanel({
   advanced,
   locale,
   onQty,
+  onIncrease,
+  onDecrease,
   onPrice,
   onDiscount,
+  onUnitChange,
   onRemove,
   onClear,
   onManual,
   canDiscount,
   canPriceOverride,
+  cartError,
 }: Props) {
   return (
     <POSCard padding="none" className="flex min-h-0 flex-1 flex-col overflow-hidden">
@@ -59,6 +68,12 @@ export function PosCartPanel({
           </POSButton>
         </div>
       </div>
+
+      {cartError ? (
+        <div className="border-b border-[var(--pos-danger)]/30 bg-[var(--pos-danger-soft)] px-3 py-1.5 text-xs text-[var(--pos-danger)]">
+          {cartError}
+        </div>
+      ) : null}
 
       <div className="min-h-0 flex-1 overflow-auto">
         {cart.length === 0 ? (
@@ -85,6 +100,7 @@ export function PosCartPanel({
                     : locale === "en_ur" && line.nameUr
                       ? `${line.name} / ${line.nameUr}`
                       : line.name;
+                const unitOptions = line.unitOptions ?? [];
                 return (
                   <tr key={line.key} className="align-top hover:bg-[var(--pos-muted-bg)]/60">
                     <POSTd>
@@ -97,17 +113,40 @@ export function PosCartPanel({
                       </div>
                     </POSTd>
                     <POSTd>
-                      <POSInput
-                        className="w-14"
-                        value={line.qty}
-                        onChange={(e) => onQty(line.key, e.target.value)}
-                        aria-label="Quantity"
-                      />
+                      <div className="flex items-center gap-0.5">
+                        <POSIconButton label="Decrease" onClick={() => onDecrease(line.key)}>
+                          −
+                        </POSIconButton>
+                        <POSInput
+                          className="w-14"
+                          value={line.qty}
+                          onChange={(e) => onQty(line.key, e.target.value)}
+                          aria-label="Quantity"
+                          inputMode={
+                            (line.unitSymbolPlaces ?? 0) > 0 ? "decimal" : "numeric"
+                          }
+                        />
+                        <POSIconButton label="Increase" onClick={() => onIncrease(line.key)}>
+                          +
+                        </POSIconButton>
+                      </div>
                     </POSTd>
                     <POSTd>
-                      <span className="text-xs text-[var(--pos-muted)]">
-                        {line.unitName ?? "—"}
-                      </span>
+                      {unitOptions.length > 1 ? (
+                        <POSSelect
+                          aria-label="Unit"
+                          value={line.unitId}
+                          onChange={(e) => onUnitChange(line.key, e.target.value)}
+                          options={unitOptions.map((u) => ({
+                            value: u.unitId,
+                            label: u.unitName,
+                          }))}
+                        />
+                      ) : (
+                        <span className="text-xs text-[var(--pos-muted)]">
+                          {line.unitName ?? "—"}
+                        </span>
+                      )}
                     </POSTd>
                     <POSTd>
                       {advanced ? (

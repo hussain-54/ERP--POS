@@ -138,7 +138,7 @@ export class PosRepository {
 
     const results: ProductSearchResult[] = [];
     for (const row of byId.values()) {
-      let stockAvailable = "0";
+      let stockAvailable: string | undefined;
       if (query.warehouseId) {
         const balances = await this.inventory.listBalances(organizationId, {
           warehouseId: query.warehouseId,
@@ -166,7 +166,7 @@ export class PosRepository {
         .maybeSingle();
       const { data: unit } = await this.db
         .from("units")
-        .select("name")
+        .select("name,symbol_places")
         .eq("id", row.base_unit_id)
         .maybeSingle();
 
@@ -187,13 +187,25 @@ export class PosRepository {
         ampere: spec?.ampere != null ? String(spec.ampere) : null,
         unitId: String(row.base_unit_id),
         unitName: unit?.name ?? null,
-        stockAvailable,
+        unitSymbolPlaces: Number(unit?.symbol_places ?? 0),
+        ...(stockAvailable != null ? { stockAvailable } : {}),
         retailPrice: Number(row.retail_price ?? 0),
         wholesalePrice: Number(row.wholesale_price ?? 0),
         dealerPrice: Number(row.dealer_price ?? 0),
         warrantyDays: Number(row.warranty_days ?? 0),
       });
     }
+    // Prefer exact barcode/SKU matches first for enter-to-add / scanner UX
+    const qLower = q.toLowerCase();
+    results.sort((a, b) => {
+      const score = (r: (typeof results)[0]) => {
+        if (r.barcode && r.barcode.toLowerCase() === qLower) return 0;
+        if (r.sku.toLowerCase() === qLower) return 1;
+        if (r.barcode && r.barcode.toLowerCase().includes(qLower)) return 2;
+        return 3;
+      };
+      return score(a) - score(b);
+    });
     return results.slice(0, query.limit ?? 20);
   }
 

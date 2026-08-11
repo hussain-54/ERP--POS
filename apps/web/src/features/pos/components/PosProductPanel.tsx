@@ -1,4 +1,6 @@
+import { useEffect, useMemo, useState } from "react";
 import type { ProductSearchResult } from "@electronic-erp/contracts";
+import { pickExactProductMatch } from "@electronic-erp/domain";
 import type { ProductTab } from "../pos-types";
 import {
   POSBadge,
@@ -29,14 +31,12 @@ interface Props {
   tab: ProductTab;
   onTabChange: (t: ProductTab) => void;
   locale: "en" | "ur" | "en_ur";
-  onAdd: (p: ProductSearchResult) => void;
+  onAdd: (p: ProductSearchResult) => boolean | void;
   searchRef: React.RefObject<HTMLInputElement | null>;
-  /** Quick actions — wired from PosPage */
   onCamera?: () => void;
   onBarcodeScanHint?: () => void;
   onQrScan?: () => void;
   onManualEntry?: () => void;
-  priceLevelLabel?: string;
 }
 
 function productTitle(p: ProductSearchResult, locale: Props["locale"]) {
@@ -51,21 +51,30 @@ function ProductCard({
   onAdd,
   favorited,
   onToggleFavorite,
+  highlighted,
 }: {
   p: ProductSearchResult;
   locale: Props["locale"];
   onAdd: (p: ProductSearchResult) => void;
   favorited: boolean;
   onToggleFavorite: (p: ProductSearchResult) => void;
+  highlighted?: boolean;
 }) {
   const title = productTitle(p, locale);
-  const stock = Number(p.stockAvailable);
-  const low = stock <= 0;
+  const stock = p.stockAvailable != null ? Number(p.stockAvailable) : null;
+  const low = stock != null && stock <= 0;
   const meta = [p.brand, p.model, p.category].filter(Boolean).join(" · ");
   const initial = (title.trim()[0] ?? "?").toUpperCase();
 
   return (
-    <div className="group relative flex flex-col overflow-hidden rounded-[var(--pos-radius)] border border-[var(--pos-border)] bg-[var(--pos-card)] text-left shadow-[var(--pos-shadow)] transition hover:border-[var(--pos-primary)] hover:shadow-[var(--pos-shadow-md)]">
+    <div
+      className={`group relative flex flex-col overflow-hidden rounded-[var(--pos-radius)] border bg-[var(--pos-card)] text-left shadow-[var(--pos-shadow)] transition ${
+        highlighted
+          ? "border-[var(--pos-primary)] ring-2 ring-[var(--pos-ring)]"
+          : "border-[var(--pos-border)] hover:border-[var(--pos-primary)] hover:shadow-[var(--pos-shadow-md)]"
+      }`}
+      data-product-id={p.productId}
+    >
       <button
         type="button"
         className="absolute right-2 top-2 z-10"
@@ -85,7 +94,6 @@ function ProductCard({
         onClick={() => onAdd(p)}
         className="flex flex-1 flex-col text-left focus:outline-none focus-visible:shadow-[var(--pos-focus)]"
       >
-        {/* Image slot: search API has no image URL yet — placeholder, not fake product photos */}
         <div className="relative flex aspect-[4/3] items-center justify-center bg-gradient-to-br from-[var(--pos-muted-bg)] to-[var(--pos-border)] px-3">
           <span
             className="flex h-14 w-14 items-center justify-center rounded-full bg-[var(--pos-workspace)] text-xl font-bold text-[var(--pos-primary)] shadow-[var(--pos-shadow)]"
@@ -111,7 +119,9 @@ function ProductCard({
               <div className="text-base font-semibold tabular-nums text-[var(--pos-ink)]">
                 Rs {Number(p.retailPrice).toFixed(0)}
               </div>
-              <div className="text-[10px] text-[var(--pos-muted)]">Stock {p.stockAvailable}</div>
+              <div className="text-[10px] text-[var(--pos-muted)]">
+                {stock != null ? `Stock ${p.stockAvailable}` : "Stock —"}
+              </div>
             </div>
             <span className="rounded-[var(--pos-radius-sm)] bg-[var(--pos-primary)] px-2 py-1 text-xs font-medium text-white opacity-90 group-hover:opacity-100">
               Add
@@ -145,16 +155,25 @@ export function PosProductPanel({
   onQrScan,
   onManualEntry,
 }: Props) {
-  const list =
-    tab === "favorites"
-      ? favorites
-      : tab === "categories"
-        ? products
-        : tab === "recent"
-          ? recent
-          : products.length
-            ? products
-            : recent;
+  const list = useMemo(
+    () =>
+      tab === "favorites"
+        ? favorites
+        : tab === "categories"
+          ? products
+          : tab === "recent"
+            ? recent
+            : products.length
+              ? products
+              : recent,
+    [tab, favorites, products, recent],
+  );
+
+  const [highlight, setHighlight] = useState(0);
+
+  useEffect(() => {
+    setHighlight(0);
+  }, [list, query, tab]);
 
   const tabs: { id: ProductTab; label: string }[] = [
     { id: "recent", label: "Recent" },
@@ -162,6 +181,12 @@ export function PosProductPanel({
     { id: "categories", label: "Categories" },
     { id: "results", label: "Search" },
   ];
+
+  function addHighlightedOrExact() {
+    const exact = pickExactProductMatch(list, query);
+    const target = exact ?? list[highlight] ?? list[0];
+    if (target) onAdd(target);
+  }
 
   return (
     <section className="flex min-h-0 flex-1 flex-col gap-3">
@@ -177,8 +202,20 @@ export function PosProductPanel({
                 onQueryChange(e.target.value);
                 onTabChange("results");
               }}
+              onKeyDown={(e) => {
+                if (e.key === "ArrowDown") {
+                  e.preventDefault();
+                  setHighlight((i) => Math.min(i + 1, Math.max(0, list.length - 1)));
+                } else if (e.key === "ArrowUp") {
+                  e.preventDefault();
+                  setHighlight((i) => Math.max(0, i - 1));
+                } else if (e.key === "Enter") {
+                  e.preventDefault();
+                  addHighlightedOrExact();
+                }
+              }}
               autoComplete="off"
-              hint="Searches name · Urdu · SKU · barcode · brand · model · category"
+              hint="↑↓ navigate · Enter add · searches name · Urdu · SKU · barcode · brand · model · category"
             />
           </div>
           <POSBadge tone={searching ? "warning" : "neutral"}>
@@ -190,12 +227,7 @@ export function PosProductPanel({
           <POSButton size="sm" variant="secondary" onClick={onCamera} title="Camera recognition">
             Camera
           </POSButton>
-          <POSButton
-            size="sm"
-            variant="ghost"
-            onClick={onBarcodeScanHint}
-            title="USB barcode scanner (keyboard wedge) is always listening when focused outside inputs"
-          >
+          <POSButton size="sm" variant="ghost" onClick={onBarcodeScanHint} title="Barcode scanner">
             Barcode
           </POSButton>
           <POSButton size="sm" variant="ghost" onClick={onQrScan} title="QR / camera scanner">
@@ -268,7 +300,7 @@ export function PosProductPanel({
           </POSCard>
         ) : (
           <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-5">
-            {list.map((p) => (
+            {list.map((p, index) => (
               <ProductCard
                 key={p.productId}
                 p={p}
@@ -276,6 +308,7 @@ export function PosProductPanel({
                 onAdd={onAdd}
                 favorited={favoriteIds.has(p.productId)}
                 onToggleFavorite={onToggleFavorite}
+                highlighted={index === highlight}
               />
             ))}
           </div>

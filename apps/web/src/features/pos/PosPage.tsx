@@ -98,14 +98,18 @@ export function PosPage() {
     addProduct: sessionAddProduct,
     addManual,
     setQty,
+    increaseQty,
+    decreaseQty,
     setPrice,
     setLineDiscount,
+    changeUnit,
     removeLine,
     clearCart,
     selectWalkIn,
     applyCustomer,
     replaceCart,
     setWalkIn,
+    lastCartError,
   } = session;
 
   const [online, setOnline] = useState(
@@ -364,7 +368,15 @@ export function PosPage() {
   }
 
   function addProduct(p: ProductSearchResult) {
-    sessionAddProduct(p);
+    const result = sessionAddProduct(p);
+    if (!result.ok) {
+      toast.push({
+        title: "Cannot add product",
+        description: result.error ?? "Check stock or quantity",
+        tone: "danger",
+      });
+      return;
+    }
     rememberRecent(p);
   }
 
@@ -948,6 +960,8 @@ export function PosPage() {
                 advanced={advanced}
                 locale={locale}
                 onQty={(key, qty) => setQty(key, qty)}
+                onIncrease={(key) => increaseQty(key)}
+                onDecrease={(key) => decreaseQty(key)}
                 onPrice={(key, unitPrice) => {
                   if (!canPriceOverride) {
                     setApprovalOpen(true);
@@ -958,11 +972,13 @@ export function PosPage() {
                   setPrice(key, unitPrice);
                 }}
                 onDiscount={(key, discount) => setLineDiscount(key, discount)}
+                onUnitChange={(key, unitId) => changeUnit(key, unitId)}
                 onRemove={(key) => removeLine(key)}
                 onClear={() => clearCart()}
                 onManual={addManualQuick}
                 canDiscount={canDiscount}
                 canPriceOverride={canPriceOverride}
+                cartError={lastCartError}
               />
 
               <PosPaymentPanel

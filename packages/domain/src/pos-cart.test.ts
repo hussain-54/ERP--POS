@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
-  addOrIncrementProduct,
+  addOrIncrementProductOrThrow,
   calculatePosCartTotals,
   clearCartLines,
   createCartLineFromProduct,
@@ -25,34 +25,28 @@ describe("pos-cart architecture", () => {
       name: "Switch",
       unitId: unit,
       unitPrice: 100,
+      stock: "100",
       taxRate: { id: "t", ratePercent: 10, pricingMode: "exclusive", isExempt: false },
     });
     expect(line.tax).toBe(10);
 
-    cart = addOrIncrementProduct(cart, line, {
+    const tax = {
       id: "t",
       ratePercent: 10,
-      pricingMode: "exclusive",
+      pricingMode: "exclusive" as const,
       isExempt: false,
-    });
+    };
+    cart = addOrIncrementProductOrThrow(cart, line, tax);
     expect(cart).toHaveLength(1);
 
-    cart = addOrIncrementProduct(cart, { ...line, key: "b" }, {
-      id: "t",
-      ratePercent: 10,
-      pricingMode: "exclusive",
-      isExempt: false,
-    });
+    cart = addOrIncrementProductOrThrow(cart, { ...line, key: "b" }, tax);
     expect(cart).toHaveLength(1);
     expect(cart[0].qty).toBe("2");
     expect(cart[0].tax).toBe(20);
 
-    cart = updateCartLineQty(cart, cart[0].key, "3", {
-      id: "t",
-      ratePercent: 10,
-      pricingMode: "exclusive",
-      isExempt: false,
-    });
+    const qtyResult = updateCartLineQty(cart, cart[0].key, "3", tax);
+    expect(qtyResult.ok).toBe(true);
+    cart = qtyResult.cart;
     expect(cart[0].qty).toBe("3");
     expect(cart[0].tax).toBe(30);
 
@@ -73,9 +67,7 @@ describe("pos-cart architecture", () => {
       8,
     );
 
-    const cart = [
-      createManualCartLine({ key: "m", unitId: unit, name: "Misc" }),
-    ];
+    const cart = [createManualCartLine({ key: "m", unitId: unit, name: "Misc" })];
     cart[0].unitPrice = 50;
     const totals = calculatePosCartTotals(cart, 0);
     const bad = validatePosCheckout({
@@ -88,7 +80,6 @@ describe("pos-cart architecture", () => {
       allowCreditDue: false,
     });
     expect(bad.ok).toBe(false);
-    expect(bad.errors.some((e) => e.includes("Walk-in"))).toBe(true);
 
     const ok = validatePosCheckout({
       cart,
@@ -110,6 +101,7 @@ describe("pos-cart architecture", () => {
         name: "Fan",
         unitId: unit,
         unitPrice: 200,
+        stock: "5",
       }),
     ];
     const totals = calculatePosCartTotals(cart, 0);

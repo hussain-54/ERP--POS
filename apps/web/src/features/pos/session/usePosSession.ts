@@ -1,18 +1,20 @@
 /**
  * POS session — single in-memory cart + customer state for the web terminal.
- * Not a second store: consolidates cart/customer/pricing/tax/discount session state.
- * Sales/holds/returns persistence: posApi → API → PosRepository / SaleTransactionService.
- * Offline desktop: OfflinePosEngine (SQLite) — do not duplicate here.
+ * Cart mutations go through domain pos-cart (stock / qty / money-safe).
  */
 import { useCallback, useMemo, useState } from "react";
 import type { ProductSearchResult } from "@electronic-erp/contracts";
 import {
   addOrIncrementProduct,
   calculatePosCartTotals,
+  changeCartLineUnit,
   clearCartLines,
   createCartLineFromProduct,
   createManualCartLine,
+  decreaseCartLineQty,
+  increaseCartLineQty,
   pickPriceLevel,
+  recalculateCart,
   removeCartLine,
   toSaleItems,
   updateCartLineDiscount,
@@ -21,6 +23,7 @@ import {
   type PosCartLine,
   type PosPriceLevel,
   type PosTaxRate,
+  type PosUnitOption,
 } from "@electronic-erp/domain";
 
 export type PosSessionCustomer = {
@@ -38,21 +41,28 @@ function newKey(): string {
 
 export function usePosSession() {
   const [cart, setCartState] = useState<PosCartLine[]>([]);
-  const [taxRate, setTaxRate] = useState<PosTaxRate | null>(null);
+  const [taxRate, setTaxRateState] = useState<PosTaxRate | null>(null);
   const [priceLevel, setPriceLevel] = useState<PosPriceLevel>("retail");
   const [invoiceDiscount, setInvoiceDiscount] = useState("0");
   const [walkIn, setWalkIn] = useState(true);
   const [customerId, setCustomerId] = useState("");
   const [customer, setCustomer] = useState<PosSessionCustomer | null>(null);
+  const [lastCartError, setLastCartError] = useState<string | null>(null);
 
   const totals = useMemo(
     () => calculatePosCartTotals(cart, invoiceDiscount),
     [cart, invoiceDiscount],
   );
 
+  const setTaxRate = useCallback((rate: PosTaxRate | null) => {
+    setTaxRateState(rate);
+    setCartState((prev) => recalculateCart(prev, rate));
+  }, []);
+
   const addProduct = useCallback(
-    (p: ProductSearchResult) => {
+    (p: ProductSearchResult, unitOptions?: PosUnitOption[]): { ok: boolean; error?: string } => {
       const unitPrice = pickPriceLevel(p, priceLevel);
+      const places = Number(p.unitSymbolPlaces ?? 0);
       const line = createCartLineFromProduct({
         key: newKey(),
         productId: p.productId,
@@ -61,51 +71,148 @@ export function usePosSession() {
         sku: p.sku,
         unitId: p.unitId,
         unitName: p.unitName,
+        unitSymbolPlaces: places,
         unitPrice: Number(unitPrice),
         warrantyDays: p.warrantyDays,
         stock: p.stockAvailable,
+        unitOptions:
+          unitOptions ??
+          [
+            {
+              unitId: p.unitId,
+              unitName: p.unitName ?? "Unit",
+              symbolPlaces: places,
+              factorToBase: "1",
+            },
+          ],
         taxRate,
       });
-      setCartState((prev) => addOrIncrementProduct(prev, line, taxRate));
+      let outcome: { ok: boolean; error?: string } = { ok: true };
+      setCartState((prev) => {
+        const result = addOrIncrementProduct(prev, line, taxRate);
+        if (result.ok) {
+          setLastCartError(null);
+          outcome = { ok: true };
+          return result.cart;
+        }
+        const error = result.error ?? "Cannot add product";
+        setLastCartError(error);
+        outcome = { ok: false, error };
+        return prev;
+      });
+      return outcome;
     },
     [priceLevel, taxRate],
   );
 
   const addManual = useCallback((unitId: string, name?: string) => {
     setCartState((prev) => [...prev, createManualCartLine({ key: newKey(), unitId, name })]);
+    setLastCartError(null);
   }, []);
 
   const setQty = useCallback(
     (key: string, qty: string) => {
-      setCartState((prev) => updateCartLineQty(prev, key, qty, taxRate));
+      setCartState((prev) => {
+        const result = updateCartLineQty(prev, key, qty, taxRate);
+        if (result.ok) {
+          setLastCartError(null);
+          return result.cart;
+        }
+        setLastCartError(result.error ?? "Invalid quantity");
+        return prev;
+      });
+    },
+    [taxRate],
+  );
+
+  const increaseQty = useCallback(
+    (key: string) => {
+      setCartState((prev) => {
+        const result = increaseCartLineQty(prev, key, taxRate);
+        if (result.ok) {
+          setLastCartError(null);
+          return result.cart;
+        }
+        setLastCartError(result.error ?? "Cannot increase quantity");
+        return prev;
+      });
+    },
+    [taxRate],
+  );
+
+  const decreaseQty = useCallback(
+    (key: string) => {
+      setCartState((prev) => {
+        const result = decreaseCartLineQty(prev, key, taxRate);
+        if (result.ok) {
+          setLastCartError(null);
+          return result.cart;
+        }
+        setLastCartError(result.error ?? "Cannot decrease quantity");
+        return prev;
+      });
     },
     [taxRate],
   );
 
   const setPrice = useCallback(
     (key: string, unitPrice: number) => {
-      setCartState((prev) => updateCartLinePrice(prev, key, unitPrice, taxRate));
+      setCartState((prev) => {
+        const result = updateCartLinePrice(prev, key, unitPrice, taxRate);
+        if (result.ok) {
+          setLastCartError(null);
+          return result.cart;
+        }
+        setLastCartError(result.error ?? "Invalid price");
+        return prev;
+      });
     },
     [taxRate],
   );
 
   const setLineDiscount = useCallback(
     (key: string, discount: number) => {
-      setCartState((prev) => updateCartLineDiscount(prev, key, discount, taxRate));
+      setCartState((prev) => {
+        const result = updateCartLineDiscount(prev, key, discount, taxRate);
+        if (result.ok) {
+          setLastCartError(null);
+          return result.cart;
+        }
+        setLastCartError(result.error ?? "Invalid discount");
+        return prev;
+      });
+    },
+    [taxRate],
+  );
+
+  const changeUnit = useCallback(
+    (key: string, unitId: string) => {
+      setCartState((prev) => {
+        const result = changeCartLineUnit(prev, key, unitId, taxRate);
+        if (result.ok) {
+          setLastCartError(null);
+          return result.cart;
+        }
+        setLastCartError(result.error ?? "Cannot change unit");
+        return prev;
+      });
     },
     [taxRate],
   );
 
   const removeLine = useCallback((key: string) => {
     setCartState((prev) => removeCartLine(prev, key));
+    setLastCartError(null);
   }, []);
 
   const clearCart = useCallback(() => {
     setCartState(clearCartLines());
+    setLastCartError(null);
   }, []);
 
   const replaceCart = useCallback((lines: PosCartLine[]) => {
     setCartState(lines);
+    setLastCartError(null);
   }, []);
 
   const selectWalkIn = useCallback(() => {
@@ -136,11 +243,16 @@ export function usePosSession() {
     walkIn,
     customerId,
     customer,
+    lastCartError,
+    clearCartError: () => setLastCartError(null),
     addProduct,
     addManual,
     setQty,
+    increaseQty,
+    decreaseQty,
     setPrice,
     setLineDiscount,
+    changeUnit,
     removeLine,
     clearCart,
     selectWalkIn,

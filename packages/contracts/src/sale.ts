@@ -187,7 +187,10 @@ export const ProductSearchResultSchema = z.object({
   ampere: z.string().nullable().optional(),
   unitId: UuidSchema,
   unitName: z.string().nullable().optional(),
-  stockAvailable: DecimalStringSchema,
+  /** Decimal places allowed for qty (from units.symbol_places). 0 = integer only. */
+  unitSymbolPlaces: z.number().int().min(0).max(4).default(0),
+  /** Present when warehouseId was supplied to search; omit when stock is unknown. */
+  stockAvailable: DecimalStringSchema.optional(),
   retailPrice: MoneySchema,
   wholesalePrice: MoneySchema,
   dealerPrice: MoneySchema,

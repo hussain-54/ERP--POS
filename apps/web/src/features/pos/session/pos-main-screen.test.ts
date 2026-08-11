@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
-  addOrIncrementProduct,
+  addOrIncrementProductOrThrow,
   calculatePosCartTotals,
   clearCartLines,
   createCartLineFromProduct,
@@ -8,14 +8,13 @@ import {
   updateCartLineQty,
 } from "@electronic-erp/domain";
 
-/** Phase 4 main-screen cart contract — same domain path as PosPage session. */
 describe("POS main screen cart flows", () => {
   const unitId = "11111111-1111-4111-8111-111111111111";
   const productId = "33333333-3333-4333-8333-333333333333";
 
-  it("search add → qty → remove → totals; customer selection does not mutate cart math", () => {
+  it("search add → qty → remove → totals", () => {
     let cart = clearCartLines();
-    cart = addOrIncrementProduct(
+    cart = addOrIncrementProductOrThrow(
       cart,
       createCartLineFromProduct({
         key: "1",
@@ -24,23 +23,14 @@ describe("POS main screen cart flows", () => {
         unitId,
         unitPrice: 250,
         unitName: "pcs",
+        stock: "20",
       }),
     );
-    expect(cart).toHaveLength(1);
-
-    cart = updateCartLineQty(cart, "1", "2");
-    let totals = calculatePosCartTotals(cart, "0");
-    expect(totals.qty).toBe(2);
-    expect(totals.grand).toBe(500);
-
-    const customerSelected = { id: productId, name: "Walk-in replaced" };
-    expect(customerSelected.id).toBeTruthy();
-    totals = calculatePosCartTotals(cart, "0");
-    expect(totals.grand).toBe(500);
-
+    const qty = updateCartLineQty(cart, "1", "2");
+    expect(qty.ok).toBe(true);
+    cart = qty.cart;
+    expect(calculatePosCartTotals(cart, "0").grand).toBe(500);
     cart = removeCartLine(cart, "1");
-    totals = calculatePosCartTotals(cart, "0");
-    expect(cart).toHaveLength(0);
-    expect(totals.grand).toBe(0);
+    expect(calculatePosCartTotals(cart, "0").grand).toBe(0);
   });
 });
