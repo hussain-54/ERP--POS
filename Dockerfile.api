@@ -1,0 +1,31 @@
+# Production API image (Node 20). Build from monorepo root:
+#   docker build -f Dockerfile.api -t electronic-erp-api .
+FROM node:20-bookworm-slim AS build
+WORKDIR /app
+
+COPY package.json package-lock.json ./
+COPY scripts ./scripts
+COPY tsconfig.base.json ./
+COPY packages ./packages
+COPY apps/api ./apps/api
+
+RUN npm ci
+RUN npm run build:packages
+RUN npm run build --prefix apps/api
+
+FROM node:20-bookworm-slim AS runtime
+WORKDIR /app
+ENV NODE_ENV=production
+ENV APP_ENV=production
+
+COPY --from=build /app/package.json /app/package-lock.json ./
+COPY --from=build /app/node_modules ./node_modules
+COPY --from=build /app/packages ./packages
+COPY --from=build /app/apps/api ./apps/api
+COPY --from=build /app/scripts ./scripts
+
+EXPOSE 4000
+HEALTHCHECK --interval=30s --timeout=5s --start-period=20s --retries=3 \
+  CMD node -e "fetch('http://127.0.0.1:'+(process.env.PORT||process.env.API_PORT||4000)+'/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"
+
+CMD ["npm", "run", "start", "--prefix", "apps/api"]

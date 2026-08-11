@@ -122,10 +122,12 @@ Fresh projects must not depend on dashboard-only tables — schema lives in migr
 
 ## 7. Backend deployment requirements
 
-- Run Node 20.x on `apps/api` (`npm run start` after build).
+- Run Node 20.x on `apps/api` (`npm run start` after build), or use `Dockerfile.api` / `render.yaml`.
 - Set server env vars (including service role) via the host secret store.
-- Set `APP_ENV=production` and a non-localhost `API_CORS_ORIGIN`.
-- Health check: `GET /health`.
+- Set `APP_ENV=production` and a non-localhost `API_CORS_ORIGIN` matching the Vercel web URL.
+- Listen port: `API_PORT` or PaaS `PORT`.
+- Health check: `GET /health` (also `GET /health/supabase`).
+- Post-deploy smoke: `SMOKE_API_URL=… SMOKE_WEB_URL=… npm run smoke:online`
 
 ## 8. Electron build requirements
 
@@ -160,4 +162,4 @@ npm run build:desktop
 3. Deploy API + web from that tag with environment-specific secrets.
 4. Apply migrations to the production Supabase project before cutting traffic.
 
-**Do not start online deployment until Phase 19 is explicitly authorized.**
+Phase 19 online deployment notes: see `docs/ONLINE_DEPLOYMENT_REPORT.md`.

@@ -1,0 +1,30 @@
+# Render Blueprint — API only (web stays on Vercel).
+# Dashboard: New → Blueprint → connect this repo.
+# Set secret env vars in the Render dashboard (never commit real values).
+
+services:
+  - type: web
+    name: electronic-erp-api
+    runtime: node
+    plan: free
+    region: oregon
+    buildCommand: npm ci && npm run build:packages && npm run build --prefix apps/api
+    startCommand: npm run start --prefix apps/api
+    healthCheckPath: /health
+    envVars:
+      - key: NODE_VERSION
+        value: "20"
+      - key: NODE_ENV
+        value: production
+      - key: APP_ENV
+        value: production
+      - key: LOG_LEVEL
+        value: info
+      - key: SUPABASE_URL
+        sync: false
+      - key: SUPABASE_ANON_KEY
+        sync: false
+      - key: SUPABASE_SERVICE_ROLE_KEY
+        sync: false
+      - key: API_CORS_ORIGIN
+        sync: false

@@ -20,7 +20,8 @@ function resolveAppEnv(): AppEnvironment {
 }
 
 export const config = {
-  port: Number(process.env.API_PORT ?? 4000),
+  /** Prefer API_PORT; fall back to PORT (Render/Railway/Fly) then 4000. */
+  port: Number(process.env.API_PORT ?? process.env.PORT ?? 4000),
   corsOrigin: process.env.API_CORS_ORIGIN ?? "http://localhost:5173",
   supabaseUrl: process.env.SUPABASE_URL ?? process.env.VITE_SUPABASE_URL ?? "",
   supabaseAnonKey:
