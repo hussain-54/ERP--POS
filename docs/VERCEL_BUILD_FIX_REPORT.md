@@ -96,7 +96,7 @@ Local machine Node was v22 (EBADENGINE warning only; `engine-strict=false`). Ver
 ## 10. Git commit
 
 Message: `fix: make web build compatible with Vercel`  
-Commit: `5c055dd2d692e49d4e2783fa5034d3d979b5465a`.
+Commit: `bb4f6d4dff3b6ffca48f3376a731551b089c5383`.
 Pushed to `origin/main` (no force).
 
 ---
