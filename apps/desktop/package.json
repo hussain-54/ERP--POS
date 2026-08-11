@@ -2,15 +2,63 @@
   "name": "@electronic-erp/desktop",
   "version": "0.1.0",
   "private": true,
-  "description": "Electron POS shell preparation — NOT production-ready until SQLite + IPC are wired.",
+  "description": "Electronic ERP Windows POS — Electron + SQLite offline shell",
   "main": "dist/main.js",
+  "type": "module",
+  "author": "Electronic ERP",
   "scripts": {
     "typecheck": "tsc -p tsconfig.json --noEmit",
-    "build": "tsc -p tsconfig.json",
-    "prepare:check": "node -e \"console.log('[desktop] Electron scaffold present — production packaging blocked until CRITICAL gaps closed (see docs/PRODUCTION_READINESS.md)'); process.exit(0)\"",
+    "build": "tsc -p tsconfig.json && node ./scripts/copy-assets.cjs",
+    "dev": "npm run build && electron .",
+    "prepare:check": "node ./scripts/prepare-check.cjs",
+    "pack:dir": "npm run build && electron-builder --projectDir . --win dir --publish never",
+    "dist": "npm run build && electron-builder --projectDir . --win nsis --publish never",
+    "dist:staging": "npm run dist",
     "pack:dry-run": "npm run prepare:check"
   },
-  "devDependencies": {
-    "typescript": "^5.8.2"
+  "build": {
+    "appId": "com.electronicerp.pos",
+    "productName": "Electronic ERP POS",
+    "copyright": "Copyright © Electronic ERP",
+    "electronVersion": "34.2.0",
+    "directories": {
+      "output": "release",
+      "buildResources": "build"
+    },
+    "files": [
+      "dist/**/*",
+      "renderer/**/*",
+      "package.json"
+    ],
+    "asar": true,
+    "asarUnpack": [
+      "**/*.node",
+      "**/better-sqlite3/**"
+    ],
+    "win": {
+      "target": [
+        {
+          "target": "nsis",
+          "arch": ["x64"]
+        }
+      ],
+      "artifactName": "ElectronicERP-POS-Setup-${version}.${ext}"
+    },
+    "nsis": {
+      "oneClick": false,
+      "perMachine": false,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true,
+      "shortcutName": "Electronic ERP POS",
+      "deleteAppDataOnUninstall": false,
+      "installerLanguages": ["en_US"]
+    },
+    "publish": [
+      {
+        "provider": "generic",
+        "url": "https://updates.example.com/electronic-erp-pos/"
+      }
+    ]
   }
 }

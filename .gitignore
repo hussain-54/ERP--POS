@@ -15,7 +15,11 @@ packages/*/tsconfig.tsbuildinfo
 apps/web/dist/
 apps/api/dist/
 apps/desktop/dist/
+apps/desktop/release/
 apps/desktop/out/
+*.exe
+*.blockmap
+*.nsis
 packages/*/dist/
 
 # Accidental tsc emit beside sources (packages build to dist/)

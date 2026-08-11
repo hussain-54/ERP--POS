@@ -3,10 +3,10 @@
 **Project:** Electrical Store ERP  
 **Phase:** 18 — Production Deployment Readiness Audit  
 **Date:** 2026-08-11  
-**Verdict: NOT READY FOR FULL PRODUCTION DEPLOYMENT**
+**Verdict: WEB/API READY FOR STAGING; DESKTOP POS PACKAGED (Phase 20) — store roll-out still needs signed installer + clean-PC sign-off**
 
-Critical blockers remain for **store-floor offline POS (Electron + native SQLite)**.  
-**Cloud admin / web ERP** path (API + Supabase + web) can be staged after HIGH items are closed; do **not** proceed to production while any **CRITICAL** issue is open.
+Phase 20 closed the former CRITICAL Electron + native SQLite gaps at the packaging level.  
+Remaining store blockers: code signing, full React POS embed, real printer drivers, clean-PC install checklist (`docs/DESKTOP_RELEASE.md`).
 
 Classification legend: `CRITICAL` · `HIGH` · `MEDIUM` · `LOW` · `READY`
 
@@ -18,8 +18,8 @@ Classification legend: `CRITICAL` · `HIGH` · `MEDIUM` · `LOW` · `READY`
 |------|--------|-------|
 | Frontend (`apps/web`) | READY (core) | Vite production build verified; some module UIs remain placeholders (not blockers for web staging) |
 | Node.js backend (`apps/api`) | READY | Express API, auth middleware, central error handler, structured logging |
-| Electron application | CRITICAL | Scaffold only (`apps/desktop`); no runtime packaging |
-| SQLite offline durability | CRITICAL | Engine uses Memory/JSON KV; `better-sqlite3` not wired; schema SQL not executed |
+| Electron application | READY (Phase 20) | Main/preload/renderer, NSIS installer, AppData separation |
+| SQLite offline durability | READY (Phase 20) | `better-sqlite3` + migrations + `SqliteKvDurableStorage`; relational DDL applied |
 | Supabase | READY | Migrations 000001–000017; org RLS pattern; seed.sql added |
 | Sync engine | READY | Domain/offline/sync tests; multi-device idempotency covered |
 | Environment variables | READY | Dev/staging/prod templates; production fail-fast config |
@@ -137,7 +137,7 @@ Status: **READY** (API). Wire the same logger into Electron main when desktop sh
 | End-to-end browser | Not in repository → **MEDIUM** |
 | Production frontend build | ✅ `apps/web` Vite build |
 | Production backend build | ✅ `apps/api` tsc |
-| Electron build preparation | ✅ scaffold check (explicitly **not packaging-ready**) |
+| Electron build preparation | ✅ Phase 20 Electron + NSIS packaging |
 
 ---
 
@@ -145,27 +145,26 @@ Status: **READY** (API). Wire the same logger into Electron main when desktop sh
 
 ### CRITICAL (blocks production POS / offline store deployment)
 
-1. **Electron application missing** — only scaffold; no packaged desktop POS.  
-2. **Native SQLite not implemented** — offline durability is memory/JSON document store; schema DDL unused.
+_None remaining at architecture level._ Former #1/#2 closed in Phase 20 (`docs/DESKTOP_RELEASE.md`). Store roll-out still requires **signed** installer + clean-PC checklist sign-off.
 
 ### HIGH
 
-3. Web POS hardware uses **memory adapters** (not real devices).  
-4. Offline POS UI is a **status stub**, not Electron IPC.  
-5. No automated **browser e2e** suite.  
-6. Fresh DB apply still depends on **operator running Supabase CLI** (scripts verify presence only).
+1. Desktop renderer is a **shell** (first-run + smoke POS), not full React `apps/web` POS embed.  
+2. Web/desktop hardware still defaults to **memory/null** adapters for printers.  
+3. No automated **browser e2e** suite.  
+4. Fresh DB apply still depends on **operator running Supabase CLI** (scripts verify presence only).  
+5. Code signing / SmartScreen not configured.
 
 ### MEDIUM
 
-7. Placeholder module routes (`/discounts`, `/salesman`, `/settings`, …).  
-8. Live FBR, full 2FA, verified DR restore (from Phase 17) still partial.  
-9. Localhost defaults if env unset in misconfigured deploys.  
-10. Developer machine `.env` may hold real anon keys (hygiene).
+6. Placeholder module routes (`/discounts`, `/salesman`, `/settings`, …).  
+7. Live FBR, full 2FA, verified DR restore (from Phase 17) still partial.  
+8. Localhost defaults if env unset in misconfigured deploys.  
+9. Developer machine `.env` may hold real anon keys (hygiene).
 
 ### LOW
 
-11. API request logging volume may need sampling in high-traffic production.  
-12. Desktop `main.ts` is a readiness stub, not a window host.
+10. API request logging volume may need sampling in high-traffic production.
 
 ### READY
 
@@ -177,6 +176,7 @@ Status: **READY** (API). Wire the same logger into Electron main when desktop sh
 - Migration set 000001–000017 + seed  
 - Sync idempotency / multi-device simulation tests  
 - Hardware fail-soft library design  
+- Electron main/preload/IPC + AppData SQLite + NSIS installer (Phase 20)
 
 ---
 

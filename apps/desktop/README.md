@@ -1,21 +1,30 @@
-# Desktop (Electron) — build preparation
+# Electronic ERP — Windows Desktop POS
 
-This package is a **scaffold only**. It exists so Phase 18 can document and check Electron packaging readiness.
+Production Electron shell with:
 
-## Status: NOT production-ready (CRITICAL)
+- Main process (SQLite, sync/device, hardware, updater, safeStorage)
+- Secure preload IPC (`contextIsolation`, no Node in renderer)
+- Local renderer for first-run + offline POS smoke
+- NSIS installer via electron-builder
 
-Blockers:
-
-1. Install Electron + electron-builder when packaging is approved
-2. Wire `packages/offline` to native SQLite (`better-sqlite3`) instead of memory/JSON-only durability
-3. Bridge printer / scanner / drawer via main-process IPC (web currently uses memory adapters)
-4. Store session secrets with Electron `safeStorage`
-
-## Commands
+## Quick commands (from monorepo root)
 
 ```bash
-npm run prepare:check --prefix apps/desktop
-npm run typecheck --prefix apps/desktop
+npm install
+npm run build:desktop          # compile main + copy preload
+npm run desktop:prepare        # dependency / packaging readiness check
+npm run desktop:dev            # run unpackaged Electron
+npm run desktop:pack           # unpacked win-unpacked dir
+npm run desktop:dist           # NSIS installer under apps/desktop/release/
 ```
 
-Do **not** ship store POS from this package until `docs/PRODUCTION_READINESS.md` marks Electron as READY.
+## Data locations
+
+| Kind | Location |
+|------|----------|
+| Install files | Program Files / chosen install dir |
+| SQLite + logs + config | `%APPDATA%\electronic-erp-pos\` (Electron `userData`) |
+
+Uninstall does **not** delete AppData (`deleteAppDataOnUninstall: false`).
+
+See `docs/DESKTOP_RELEASE.md` for full install / troubleshooting.

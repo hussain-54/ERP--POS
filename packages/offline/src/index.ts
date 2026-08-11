@@ -11,6 +11,8 @@ export * from "./warehouse-ops-schema.js";
 export * from "./warehouse-ops-store.js";
 export * from "./sync-schema.js";
 export * from "./durable-storage.js";
+export * from "./sqlite-migrations.js";
+export * from "./sqlite-kv-storage.js";
 export * from "./local-database.js";
 export * from "./offline-pos-engine.js";
 export * from "./sync-coordinator.js";

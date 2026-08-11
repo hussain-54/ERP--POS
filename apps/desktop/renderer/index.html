@@ -1,0 +1,84 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta
+      http-equiv="Content-Security-Policy"
+      content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; connect-src 'self' https: http://127.0.0.1:* http://localhost:*"
+    />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Electronic ERP POS</title>
+    <link rel="stylesheet" href="./styles.css" />
+  </head>
+  <body>
+    <div class="shell">
+      <header class="top">
+        <div>
+          <p class="brand">Electronic ERP</p>
+          <h1>Windows POS</h1>
+        </div>
+        <div class="meta">
+          <span id="version">v0.1.0</span>
+          <span id="online-pill" class="pill">…</span>
+        </div>
+      </header>
+
+      <section class="panel" id="first-run-panel">
+        <h2>First-run setup</h2>
+        <p id="first-run-message" class="lead"></p>
+        <dl class="grid">
+          <div><dt>Device ID</dt><dd id="device-id">—</dd></div>
+          <div><dt>Database</dt><dd id="db-path">—</dd></div>
+          <div><dt>Integrity</dt><dd id="integrity">—</dd></div>
+          <div><dt>Provisioned</dt><dd id="provisioned">—</dd></div>
+        </dl>
+
+        <form id="provision-form" class="form">
+          <label>API URL <input name="apiUrl" placeholder="https://api.example.com" required /></label>
+          <label>Access token <input name="accessToken" type="password" required /></label>
+          <label>Organization ID <input name="organizationId" required /></label>
+          <label>Branch ID <input name="branchId" required /></label>
+          <label>Device name <input name="name" value="Windows POS" /></label>
+          <div class="actions">
+            <button type="submit">Register device (online)</button>
+            <button type="button" id="btn-toggle-online">Simulate offline</button>
+          </div>
+          <p class="hint">
+            If this terminal has never been provisioned, cloud registration and master-data
+            download require internet. After provisioning, sales work offline. Cloud init is never faked.
+          </p>
+        </form>
+        <p id="form-error" class="error" hidden></p>
+      </section>
+
+      <section class="panel">
+        <h2>Offline POS</h2>
+        <p class="lead">Post a smoke sale locally (requires provisioned device).</p>
+        <button type="button" id="btn-smoke-sale">Create offline smoke sale</button>
+        <button type="button" id="btn-pending">Refresh pending sales</button>
+        <pre id="pending-sales" class="code">[]</pre>
+      </section>
+
+      <section class="panel">
+        <h2>Hardware</h2>
+        <div class="actions">
+          <button type="button" id="btn-hw">Refresh status</button>
+          <button type="button" id="btn-print">Print test receipt</button>
+          <button type="button" id="btn-drawer">Open cash drawer</button>
+        </div>
+        <pre id="hw-status" class="code">[]</pre>
+      </section>
+
+      <section class="panel">
+        <h2>Updates</h2>
+        <p id="update-status" class="lead">—</p>
+        <div class="actions">
+          <button type="button" id="btn-check-update">Check for updates</button>
+          <button type="button" id="btn-download-update">Download</button>
+          <button type="button" id="btn-install-update">Install &amp; restart</button>
+        </div>
+      </section>
+    </div>
+    <script src="./app.js"></script>
+  </body>
+</html>
