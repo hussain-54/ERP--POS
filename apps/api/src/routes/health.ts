@@ -10,6 +10,18 @@ healthRouter.get("/health", (_req, res) => {
     ok: true,
     service: "electronic-erp-api",
     timestamp: new Date().toISOString(),
+    supabaseConfigured: supabaseConfigured(),
+    env: {
+      hasSupabaseUrl: Boolean(process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL),
+      hasAnonOrPublishable: Boolean(
+        process.env.SUPABASE_ANON_KEY ||
+          process.env.VITE_SUPABASE_ANON_KEY ||
+          process.env.VITE_SUPABASE_PUBLISHABLE_KEY ||
+          process.env.SUPABASE_PUBLISHABLE_KEY,
+      ),
+      hasServiceRole: Boolean(process.env.SUPABASE_SERVICE_ROLE_KEY),
+      onVercel: process.env.VERCEL === "1",
+    },
   });
 });
 

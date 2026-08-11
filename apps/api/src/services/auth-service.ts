@@ -5,18 +5,33 @@ import {
   type PasswordResetRequestInput,
 } from "@electronic-erp/contracts";
 import { InfrastructureRepository, UserRepository } from "@electronic-erp/db";
-import { DEFAULT_PASSWORD_POLICY } from "@electronic-erp/domain";
+import { DEFAULT_PASSWORD_POLICY, DomainError } from "@electronic-erp/domain";
 import {
   createAnonClient,
   createServiceClient,
   createUserClient,
 } from "../lib/supabase.js";
 import { supabaseConfigured } from "../config.js";
+import { log } from "../lib/logger.js";
 
 export class AuthService {
   private infraRepo() {
     const svc = createServiceClient();
     return svc ? new InfrastructureRepository(svc) : null;
+  }
+
+  /** Audit/settings helpers must not block login when migrations/tables are incomplete. */
+  private async softInfra(label: string, fn: () => Promise<unknown>): Promise<void> {
+    try {
+      await fn();
+    } catch (err) {
+      if (err instanceof DomainError) throw err;
+      log.warn({
+        category: "api",
+        message: `auth infra soft-fail: ${label}`,
+        err,
+      });
+    }
   }
 
   async login(
@@ -25,15 +40,23 @@ export class AuthService {
   ) {
     const input = LoginSchema.parse(raw);
     if (!supabaseConfigured()) {
-      throw new Error("Supabase is not configured");
+      throw new DomainError(
+        "Supabase is not configured on the API (set SUPABASE_URL + anon/publishable key)",
+        "UNAUTHORIZED",
+      );
     }
 
     const infra = this.infraRepo();
     if (infra) {
-      const orgHint = await infra.findOrgIdByEmail(input.email);
-      if (orgHint) {
-        const settings = await infra.getSecuritySettings(orgHint);
-        await infra.assertNotLocked(orgHint, input.email, settings.password_policy);
+      try {
+        const orgHint = await infra.findOrgIdByEmail(input.email);
+        if (orgHint) {
+          const settings = await infra.getSecuritySettings(orgHint);
+          await infra.assertNotLocked(orgHint, input.email, settings.password_policy);
+        }
+      } catch (err) {
+        if (err instanceof DomainError) throw err;
+        log.warn({ category: "api", message: "pre-login lockout skipped", err });
       }
     }
 
@@ -45,72 +68,86 @@ export class AuthService {
 
     if (error || !data.session || !data.user) {
       if (infra) {
-        const orgId = await infra.findOrgIdByEmail(input.email);
-        await infra.recordLoginAttempt({
-          organizationId: orgId,
-          email: input.email,
-          success: false,
-          ipAddress: meta?.ipAddress,
-          userAgent: meta?.userAgent,
-          failureReason: error?.message ?? "Login failed",
+        await this.softInfra("recordFailedLogin", async () => {
+          const orgId = await infra.findOrgIdByEmail(input.email);
+          await infra.recordLoginAttempt({
+            organizationId: orgId,
+            email: input.email,
+            success: false,
+            ipAddress: meta?.ipAddress,
+            userAgent: meta?.userAgent,
+            failureReason: error?.message ?? "Login failed",
+          });
+          if (orgId) {
+            const settings = await infra.getSecuritySettings(orgId);
+            await infra.registerFailedLogin(orgId, input.email, settings.password_policy);
+          }
         });
-        if (orgId) {
-          const settings = await infra.getSecuritySettings(orgId);
-          await infra.registerFailedLogin(orgId, input.email, settings.password_policy);
-        }
       }
-      throw new Error(error?.message ?? "Login failed");
+      throw new DomainError(error?.message ?? "Login failed", "UNAUTHORIZED");
     }
 
     const userClient = createUserClient(data.session.access_token);
     const repo = new UserRepository(userClient);
     const serviceClient = createServiceClient();
     let profile = await repo.findByAuthUserId(data.user.id);
-    // Fallback: service role bypasses RLS if helpers are not yet SECURITY DEFINER
     if (!profile && serviceClient) {
       profile = await new UserRepository(serviceClient).findByAuthUserId(data.user.id);
     }
     if (!profile) {
       if (infra) {
-        await infra.recordLoginAttempt({
-          email: input.email,
-          success: false,
-          failureReason: "User profile not found",
-        });
+        await this.softInfra("recordProfileMissing", () =>
+          infra.recordLoginAttempt({
+            email: input.email,
+            success: false,
+            failureReason: "User profile not found",
+          }),
+        );
       }
-      throw new Error("User profile not found. Complete onboarding / seed profile.");
+      throw new DomainError(
+        "User profile not found. Complete onboarding / seed profile.",
+        "UNAUTHORIZED",
+      );
     }
 
     const orgId = String(profile.organizationId);
-    const settings = infra ? await infra.getSecuritySettings(orgId) : null;
-    const policy = settings?.password_policy ?? DEFAULT_PASSWORD_POLICY;
-
+    let policy = DEFAULT_PASSWORD_POLICY;
     if (infra) {
       try {
+        const settings = await infra.getSecuritySettings(orgId);
+        policy = settings.password_policy ?? DEFAULT_PASSWORD_POLICY;
         await infra.assertNotLocked(orgId, input.email, policy);
-      } catch (lockErr) {
-        await client.auth.signOut();
-        throw lockErr;
+      } catch (err) {
+        if (err instanceof DomainError) {
+          await client.auth.signOut();
+          throw err;
+        }
+        log.warn({ category: "api", message: "post-auth security skipped", err });
       }
     }
 
     if (policy.twoFactorEnforced && infra) {
-      const { data: tfa } = await userClient
-        .from("user_two_factor")
-        .select("enabled")
-        .eq("user_id", profile.id)
-        .maybeSingle();
-      if (!tfa?.enabled) {
-        await infra.logActivity({
-          organizationId: orgId,
-          userId: profile.id,
-          action: "security.2fa_enforcement_pending",
-          detail: { note: "2FA enforced in policy but user not enrolled" },
-        });
+      try {
+        const { data: tfa } = await userClient
+          .from("user_two_factor")
+          .select("enabled")
+          .eq("user_id", profile.id)
+          .maybeSingle();
+        if (!tfa?.enabled) {
+          await this.softInfra("2fa_pending_log", () =>
+            infra.logActivity({
+              organizationId: orgId,
+              userId: profile.id,
+              action: "security.2fa_enforcement_pending",
+              detail: { note: "2FA enforced in policy but user not enrolled" },
+            }),
+          );
+        }
+      } catch (err) {
+        log.warn({ category: "api", message: "2fa check skipped", err });
       }
     }
 
-    // Prefer service client for permission/branch reads when available (RLS-safe bootstrap)
     const authzRepo = serviceClient ? new UserRepository(serviceClient) : repo;
     const [permissions, branches] = await Promise.all([
       authzRepo.listPermissionKeys(profile.id),
@@ -118,29 +155,31 @@ export class AuthService {
     ]);
 
     if (infra) {
-      await infra.clearLockout(orgId, input.email);
-      await infra.recordLoginAttempt({
-        organizationId: orgId,
-        email: input.email,
-        userId: profile.id,
-        success: true,
-        ipAddress: meta?.ipAddress,
-        userAgent: meta?.userAgent,
-      });
-      await infra.createSession({
-        organizationId: orgId,
-        userId: profile.id,
-        ipAddress: meta?.ipAddress,
-        userAgent: meta?.userAgent,
-        expiresAt: data.session.expires_at
-          ? new Date(Number(data.session.expires_at) * 1000).toISOString()
-          : undefined,
-      });
-      await infra.logActivity({
-        organizationId: orgId,
-        userId: profile.id,
-        action: "auth.login",
-        detail: { email: input.email },
+      await this.softInfra("postLoginAudit", async () => {
+        await infra.clearLockout(orgId, input.email);
+        await infra.recordLoginAttempt({
+          organizationId: orgId,
+          email: input.email,
+          userId: profile.id,
+          success: true,
+          ipAddress: meta?.ipAddress,
+          userAgent: meta?.userAgent,
+        });
+        await infra.createSession({
+          organizationId: orgId,
+          userId: profile.id,
+          ipAddress: meta?.ipAddress,
+          userAgent: meta?.userAgent,
+          expiresAt: data.session.expires_at
+            ? new Date(Number(data.session.expires_at) * 1000).toISOString()
+            : undefined,
+        });
+        await infra.logActivity({
+          organizationId: orgId,
+          userId: profile.id,
+          action: "auth.login",
+          detail: { email: input.email },
+        });
       });
     }
 
@@ -167,33 +206,40 @@ export class AuthService {
   async requestPasswordReset(raw: PasswordResetRequestInput): Promise<void> {
     const input = PasswordResetRequestSchema.parse(raw);
     if (!supabaseConfigured()) {
-      throw new Error("Supabase is not configured");
+      throw new DomainError("Supabase is not configured", "UNAUTHORIZED");
     }
     const client = createAnonClient();
-    const redirectTo = `${process.env.API_CORS_ORIGIN ?? "http://localhost:5173"}/auth/reset`;
+    const origin =
+      process.env.API_CORS_ORIGIN ||
+      (process.env.VERCEL_URL ? `https://${process.env.VERCEL_URL}` : "http://localhost:5173");
     const { error } = await client.auth.resetPasswordForEmail(input.email, {
-      redirectTo,
+      redirectTo: `${origin}/auth/reset`,
     });
-    if (error) throw new Error(error.message);
+    if (error) throw new DomainError(error.message, "UNAUTHORIZED");
   }
 
   async restoreSession(accessToken: string) {
     if (!supabaseConfigured()) {
-      throw new Error("Supabase is not configured");
+      throw new DomainError("Supabase is not configured", "UNAUTHORIZED");
     }
     const userClient = createUserClient(accessToken);
     const { data, error } = await userClient.auth.getUser();
     if (error || !data.user) {
-      throw new Error("Invalid session");
+      throw new DomainError("Invalid session", "UNAUTHORIZED");
     }
 
     const repo = new UserRepository(userClient);
-    const profile = await repo.findByAuthUserId(data.user.id);
-    if (!profile) throw new Error("User profile not found");
+    const serviceClient = createServiceClient();
+    let profile = await repo.findByAuthUserId(data.user.id);
+    if (!profile && serviceClient) {
+      profile = await new UserRepository(serviceClient).findByAuthUserId(data.user.id);
+    }
+    if (!profile) throw new DomainError("User profile not found", "UNAUTHORIZED");
 
+    const authzRepo = serviceClient ? new UserRepository(serviceClient) : repo;
     const [permissions, branches] = await Promise.all([
-      repo.listPermissionKeys(profile.id),
-      repo.listBranchIds(profile.id),
+      authzRepo.listPermissionKeys(profile.id),
+      authzRepo.listBranchIds(profile.id),
     ]);
 
     return {
