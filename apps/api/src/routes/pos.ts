@@ -28,8 +28,10 @@ function userId(req: AuthedRequest): string | null {
 
 /** Server-derived discount ceiling — never trust client approverRole alone. */
 function discountRoleFromAuthz(z: AuthorizationService): ApproverRole | null {
+  if (z.can("pos.discount_special")) return "special";
   if (z.can("pos.discount_owner")) return "owner";
   if (z.can("pos.discount_manager")) return "manager";
+  if (z.can("pos.discount_supervisor")) return "supervisor";
   if (z.can("pos.discount_cashier")) return "cashier";
   return null;
 }
@@ -64,7 +66,7 @@ posRouter.post("/sales", async (req: AuthedRequest, res, next) => {
       const role = discountRoleFromAuthz(z);
       if (!role) {
         throw new ForbiddenDomainError(
-          "Missing discount permission (pos.discount_cashier|manager|owner)",
+          "Missing discount permission (pos.discount_cashier|supervisor|manager|owner|special)",
         );
       }
       const discounts =

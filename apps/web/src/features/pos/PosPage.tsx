@@ -1,6 +1,11 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { ProductSearchResult } from "@electronic-erp/contracts";
-import { validatePosCheckout } from "@electronic-erp/domain";
+import {
+  applyDiscount,
+  approverRoleFromPermissions,
+  evaluateDiscountApproval,
+  validatePosCheckout,
+} from "@electronic-erp/domain";
 import { useToast } from "@electronic-erp/ui";
 import { useAuth } from "@/features/auth/AuthContext";
 import { posApi } from "./pos-api";
@@ -168,9 +173,21 @@ export function PosPage() {
 
   const canDiscount =
     hasPermission("pos.discount_cashier") ||
+    hasPermission("pos.discount_supervisor") ||
     hasPermission("pos.discount_manager") ||
-    hasPermission("pos.discount_owner");
-  const canPriceOverride = hasPermission("pos.discount_manager") || hasPermission("pos.discount_owner");
+    hasPermission("pos.discount_owner") ||
+    hasPermission("pos.discount_special");
+  const canPriceOverride =
+    hasPermission("pos.discount_manager") ||
+    hasPermission("pos.discount_owner") ||
+    hasPermission("pos.discount_special");
+  const actingDiscountRole = approverRoleFromPermissions({
+    special: hasPermission("pos.discount_special"),
+    owner: hasPermission("pos.discount_owner"),
+    manager: hasPermission("pos.discount_manager"),
+    supervisor: hasPermission("pos.discount_supervisor"),
+    cashier: hasPermission("pos.discount_cashier"),
+  });
   const advanced = mode === "advanced";
 
   useEffect(() => {
@@ -225,6 +242,13 @@ export function PosPage() {
               | "inclusive"
               | "exclusive",
             isExempt: Boolean(preferred.is_exempt),
+            kind: preferred.is_exempt
+              ? "exempt"
+              : String(preferred.code ?? preferred.name ?? "")
+                    .toLowerCase()
+                    .includes("gst")
+                ? "gst"
+                : "sales_tax",
           });
         }
       })
@@ -412,17 +436,25 @@ export function PosPage() {
   }
 
   function requestInvoiceDiscount(value: string) {
-    const amount = Number(value || 0);
-    const pct = totals.subtotal > 0 ? (amount / totals.subtotal) * 100 : 0;
-    const needsManager = pct > 5.001 && !hasPermission("pos.discount_manager") && !hasPermission("pos.discount_owner");
-    const needsOwner = pct > 15.001 && !hasPermission("pos.discount_owner");
-    if ((needsManager || needsOwner) && amount > 0) {
-      setPendingInvoiceDiscount(value);
+    const base = Math.max(0, totals.subtotal - totals.itemDiscount);
+    const applied = applyDiscount({
+      base,
+      mode: "fixed",
+      value: Number(value || 0),
+      kind: "fixed",
+    });
+    const decision = evaluateDiscountApproval({
+      discountAmount: applied.amount,
+      baseAmount: base,
+      actingRole: actingDiscountRole,
+    });
+    if (decision.needsApproval && applied.amount > 0) {
+      setPendingInvoiceDiscount(String(applied.amount));
       setApprovalReason("");
       setApprovalOpen(true);
       return;
     }
-    setInvoiceDiscount(value);
+    setInvoiceDiscount(String(applied.amount));
   }
 
   async function selectCustomer(id: string) {
@@ -484,11 +516,7 @@ export function PosPage() {
                   scope: "invoice",
                   kind: priceLevel === "wholesale" ? "wholesale" : "fixed",
                   amount: Number(invoiceDiscount),
-                  approverRole: hasPermission("pos.discount_owner")
-                    ? "owner"
-                    : hasPermission("pos.discount_manager")
-                      ? "manager"
-                      : "cashier",
+                  approverRole: actingDiscountRole,
                   reason: approvalReason || "POS invoice discount",
                 },
               ]
@@ -969,7 +997,7 @@ export function PosPage() {
                     setApprovalReason(`price:${key}:${unitPrice}`);
                     return;
                   }
-                  setPrice(key, unitPrice);
+                  setPrice(key, unitPrice, true);
                 }}
                 onDiscount={(key, discount) => setLineDiscount(key, discount)}
                 onUnitChange={(key, unitId) => changeUnit(key, unitId)}
@@ -1089,18 +1117,35 @@ export function PosPage() {
 
       <PosApprovalDialog
         open={approvalOpen}
-        title="Manager approval required"
+        title="Discount / price approval required"
         description={
           pendingInvoiceDiscount != null
-            ? "Invoice discount exceeds cashier limit (5%). A manager/owner session is required."
-            : "Price override requires manager/owner discount permission."
+            ? (() => {
+                const base = Math.max(0, totals.subtotal - totals.itemDiscount);
+                const amount = Number(pendingInvoiceDiscount || 0);
+                const decision = evaluateDiscountApproval({
+                  discountAmount: amount,
+                  baseAmount: base,
+                  actingRole: actingDiscountRole,
+                });
+                return `Invoice discount ${decision.percent}% requires ${decision.requiredRole} approval (your role: ${actingDiscountRole}, max ${decision.maxAllowed === Number.POSITIVE_INFINITY ? "unlimited" : `${decision.maxAllowed}%`}).`;
+              })()
+            : "Manual price override requires manager/owner/special discount permission."
         }
         reason={approvalReason.startsWith("price:") ? "Price override requested" : approvalReason}
         onReasonChange={(v) => {
           if (!approvalReason.startsWith("price:")) setApprovalReason(v);
           else setApprovalReason(approvalReason);
         }}
-        canApprove={hasPermission("pos.discount_manager") || hasPermission("pos.discount_owner")}
+        canApprove={
+          pendingInvoiceDiscount != null
+            ? evaluateDiscountApproval({
+                discountAmount: Number(pendingInvoiceDiscount || 0),
+                baseAmount: Math.max(0, totals.subtotal - totals.itemDiscount),
+                actingRole: actingDiscountRole,
+              }).allowed
+            : canPriceOverride
+        }
         onCancel={() => {
           setApprovalOpen(false);
           setPendingInvoiceDiscount(null);
@@ -1114,7 +1159,7 @@ export function PosPage() {
             const parts = approvalReason.split(":");
             const key = parts[1];
             const unitPrice = Number(parts[2] || 0);
-            if (key) setPrice(key, unitPrice);
+            if (key) setPrice(key, unitPrice, true);
           }
           setApprovalOpen(false);
           setApprovalReason("");

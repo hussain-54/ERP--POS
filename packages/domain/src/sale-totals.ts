@@ -1,19 +1,20 @@
 import type { SaleItemInput } from "@electronic-erp/contracts";
 import { ValidationDomainError } from "./errors.js";
+import { finiteMoney, roundMoney } from "./money.js";
 
 export interface SaleTotals {
   subtotal: number;
   discountTotal: number;
   taxTotal: number;
   grandTotal: number;
+  /** Invoice/cart discount after capping to remaining taxable base. */
+  invoiceDiscount: number;
+  itemDiscount: number;
 }
-
-const roundMoney = (n: number): number => Math.round(n * 100) / 100;
 
 function asNum(v: number | string | undefined, fallback = 0): number {
   if (v == null) return fallback;
-  const n = typeof v === "number" ? v : Number(v);
-  return Number.isFinite(n) ? n : fallback;
+  return finiteMoney(v, fallback);
 }
 
 /** Pure business calculation — no React, no DB. */
@@ -24,8 +25,8 @@ export function calculateSaleTotals(
   if (items.length === 0) {
     throw new ValidationDomainError("Sale requires at least one item");
   }
-  if (cartDiscount < 0) {
-    throw new ValidationDomainError("Cart discount cannot be negative");
+  if (!Number.isFinite(cartDiscount) || cartDiscount < 0) {
+    throw new ValidationDomainError("Cart discount cannot be negative or invalid");
   }
 
   let subtotal = 0;
@@ -35,22 +36,36 @@ export function calculateSaleTotals(
   for (const item of items) {
     const qty = asNum(item.qty);
     const unitPrice = asNum(item.unitPrice);
-    const discount = asNum(item.discount);
+    const rawDiscount = asNum(item.discount);
     const tax = asNum(item.tax);
     if (qty <= 0) throw new ValidationDomainError("Invalid quantity");
     if (unitPrice < 0) throw new ValidationDomainError("Invalid price");
-    subtotal += qty * unitPrice;
+    if (tax < 0) throw new ValidationDomainError("Invalid tax");
+    const lineGross = roundMoney(qty * unitPrice);
+    const discount = rawDiscount > lineGross ? lineGross : rawDiscount;
+    subtotal += lineGross;
     lineDiscount += discount;
     taxTotal += tax;
   }
 
-  const discountTotal = roundMoney(lineDiscount + cartDiscount);
+  subtotal = roundMoney(subtotal);
+  lineDiscount = roundMoney(lineDiscount);
+  taxTotal = roundMoney(taxTotal);
+  const maxInvoice = Math.max(0, roundMoney(subtotal - lineDiscount));
+  const invoiceDiscount = roundMoney(Math.min(asNum(cartDiscount), maxInvoice));
+  const discountTotal = roundMoney(lineDiscount + invoiceDiscount);
   const grandTotal = roundMoney(Math.max(0, subtotal - discountTotal + taxTotal));
 
+  if (![subtotal, discountTotal, taxTotal, grandTotal].every(Number.isFinite)) {
+    throw new ValidationDomainError("Sale totals produced invalid numbers");
+  }
+
   return {
-    subtotal: roundMoney(subtotal),
+    subtotal,
     discountTotal,
-    taxTotal: roundMoney(taxTotal),
+    taxTotal,
     grandTotal,
+    invoiceDiscount,
+    itemDiscount: lineDiscount,
   };
 }

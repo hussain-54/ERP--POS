@@ -25,9 +25,17 @@ export const DiscountKindSchema = z.enum([
   "wholesale",
   "promotion",
   "special",
+  "bulk",
 ]);
 export const DiscountScopeSchema = z.enum(["item", "invoice"]);
-export const ApproverRoleSchema = z.enum(["cashier", "manager", "owner"]);
+/** Discount approval ladder used by POS policy. */
+export const ApproverRoleSchema = z.enum([
+  "cashier",
+  "supervisor",
+  "manager",
+  "owner",
+  "special",
+]);
 export type ApproverRole = z.infer<typeof ApproverRoleSchema>;
 export type DiscountKind = z.infer<typeof DiscountKindSchema>;
 
@@ -194,6 +202,19 @@ export const ProductSearchResultSchema = z.object({
   retailPrice: MoneySchema,
   wholesalePrice: MoneySchema,
   dealerPrice: MoneySchema,
+  /** Optional customer contract unit price from pricing engine. */
+  customerPrice: MoneySchema.optional(),
+  /** Optional active promotion unit price. */
+  promotionPrice: MoneySchema.optional(),
+  /** Optional quantity break prices (sale unit). */
+  quantityBreaks: z
+    .array(
+      z.object({
+        minQty: z.number().positive(),
+        unitPrice: MoneySchema,
+      }),
+    )
+    .optional(),
   warrantyDays: z.number().int(),
 });
 export type ProductSearchResult = z.infer<typeof ProductSearchResultSchema>;

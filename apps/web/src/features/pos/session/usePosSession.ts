@@ -1,6 +1,7 @@
 /**
  * POS session — single in-memory cart + customer state for the web terminal.
  * Cart mutations go through domain pos-cart (stock / qty / money-safe).
+ * Pricing, discount, and tax math live in domain — not in React.
  */
 import { useCallback, useMemo, useState } from "react";
 import type { ProductSearchResult } from "@electronic-erp/contracts";
@@ -13,7 +14,7 @@ import {
   createManualCartLine,
   decreaseCartLineQty,
   increaseCartLineQty,
-  pickPriceLevel,
+  resolvePosUnitPrice,
   recalculateCart,
   removeCartLine,
   toSaleItems,
@@ -33,6 +34,8 @@ export type PosSessionCustomer = {
   customerType?: string;
   creditLimit?: string;
   outstanding?: string;
+  /** Customer discount percent applied via domain when stacking line discounts. */
+  discountPercent?: number;
 };
 
 function newKey(): string {
@@ -48,10 +51,11 @@ export function usePosSession() {
   const [customerId, setCustomerId] = useState("");
   const [customer, setCustomer] = useState<PosSessionCustomer | null>(null);
   const [lastCartError, setLastCartError] = useState<string | null>(null);
+  const [allowManualOverride, setAllowManualOverride] = useState(false);
 
   const totals = useMemo(
-    () => calculatePosCartTotals(cart, invoiceDiscount),
-    [cart, invoiceDiscount],
+    () => calculatePosCartTotals(cart, invoiceDiscount, taxRate),
+    [cart, invoiceDiscount, taxRate],
   );
 
   const setTaxRate = useCallback((rate: PosTaxRate | null) => {
@@ -61,7 +65,28 @@ export function usePosSession() {
 
   const addProduct = useCallback(
     (p: ProductSearchResult, unitOptions?: PosUnitOption[]): { ok: boolean; error?: string } => {
-      const unitPrice = pickPriceLevel(p, priceLevel);
+      let unitPrice: number;
+      try {
+        const resolved = resolvePosUnitPrice({
+          retailPrice: Number(p.retailPrice),
+          wholesalePrice: Number(p.wholesalePrice),
+          dealerPrice: Number(p.dealerPrice),
+          customerPrice: p.customerPrice != null ? Number(p.customerPrice) : null,
+          promotionPrice: p.promotionPrice != null ? Number(p.promotionPrice) : null,
+          quantityBreaks: p.quantityBreaks?.map((b) => ({
+            minQty: Number(b.minQty),
+            unitPrice: Number(b.unitPrice),
+          })),
+          priceLevel,
+          qty: 1,
+        });
+        unitPrice = resolved.unitPrice;
+      } catch (err) {
+        const error = err instanceof Error ? err.message : "Invalid price";
+        setLastCartError(error);
+        return { ok: false, error };
+      }
+
       const places = Number(p.unitSymbolPlaces ?? 0);
       const line = createCartLineFromProduct({
         key: newKey(),
@@ -72,7 +97,7 @@ export function usePosSession() {
         unitId: p.unitId,
         unitName: p.unitName,
         unitSymbolPlaces: places,
-        unitPrice: Number(unitPrice),
+        unitPrice,
         warrantyDays: p.warrantyDays,
         stock: p.stockAvailable,
         unitOptions:
@@ -156,7 +181,25 @@ export function usePosSession() {
   );
 
   const setPrice = useCallback(
-    (key: string, unitPrice: number) => {
+    (key: string, unitPrice: number, authorized = false) => {
+      if (!authorized && !allowManualOverride) {
+        setLastCartError("Manual price override is not authorized");
+        return;
+      }
+      try {
+        resolvePosUnitPrice({
+          retailPrice: unitPrice,
+          wholesalePrice: unitPrice,
+          dealerPrice: unitPrice,
+          priceLevel: "retail",
+          qty: 1,
+          manualOverride: unitPrice,
+          allowManualOverride: true,
+        });
+      } catch (err) {
+        setLastCartError(err instanceof Error ? err.message : "Invalid price");
+        return;
+      }
       setCartState((prev) => {
         const result = updateCartLinePrice(prev, key, unitPrice, taxRate);
         if (result.ok) {
@@ -167,7 +210,7 @@ export function usePosSession() {
         return prev;
       });
     },
-    [taxRate],
+    [taxRate, allowManualOverride],
   );
 
   const setLineDiscount = useCallback(
@@ -245,6 +288,8 @@ export function usePosSession() {
     customer,
     lastCartError,
     clearCartError: () => setLastCartError(null),
+    allowManualOverride,
+    setAllowManualOverride,
     addProduct,
     addManual,
     setQty,

@@ -12,12 +12,16 @@ const method = "77777777-7777-4777-8777-777777777777";
 const key = "88888888-8888-4888-8888-888888888888";
 
 describe("discount approval", () => {
-  it("enforces cashier 5% and manager 15%", () => {
+  it("enforces ladder: cashier 5%, supervisor 10%, manager 20%, owner 50%, special unlimited", () => {
     expect(() => assertDiscountAllowed("cashier", 5)).not.toThrow();
     expect(() => assertDiscountAllowed("cashier", 6)).toThrow(/limit/i);
-    expect(() => assertDiscountAllowed("manager", 15)).not.toThrow();
-    expect(() => assertDiscountAllowed("manager", 16)).toThrow(/limit/i);
-    expect(() => assertDiscountAllowed("owner", 90)).not.toThrow();
+    expect(() => assertDiscountAllowed("supervisor", 10)).not.toThrow();
+    expect(() => assertDiscountAllowed("supervisor", 11)).toThrow(/limit/i);
+    expect(() => assertDiscountAllowed("manager", 20)).not.toThrow();
+    expect(() => assertDiscountAllowed("manager", 21)).toThrow(/limit/i);
+    expect(() => assertDiscountAllowed("owner", 50)).not.toThrow();
+    expect(() => assertDiscountAllowed("owner", 51)).toThrow(/limit/i);
+    expect(() => assertDiscountAllowed("special", 90)).not.toThrow();
   });
 });
 

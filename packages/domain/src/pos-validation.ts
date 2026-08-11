@@ -76,11 +76,15 @@ export function invoiceDiscountNeedsApproval(input: {
 
 /** Map session permissions to ApproverRole for discount policy. */
 export function approverRoleFromPermissions(perms: {
+  special?: boolean;
   owner: boolean;
   manager: boolean;
-  cashier: boolean;
+  supervisor?: boolean;
+  cashier?: boolean;
 }): ApproverRole {
+  if (perms.special) return "special";
   if (perms.owner) return "owner";
   if (perms.manager) return "manager";
+  if (perms.supervisor) return "supervisor";
   return "cashier";
 }

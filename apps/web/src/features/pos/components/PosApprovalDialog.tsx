@@ -47,8 +47,8 @@ export function PosApprovalDialog({
       />
       {!canApprove ? (
         <p className="mt-2 text-sm text-[var(--pos-danger)]">
-          Current user lacks manager/owner discount permission. Sign in as a manager to approve, or
-          reduce the override.
+          Current user lacks the required discount permission. Sign in with a higher role to approve,
+          or reduce the override.
         </p>
       ) : null}
     </POSModal>

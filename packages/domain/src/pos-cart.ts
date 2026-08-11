@@ -6,6 +6,9 @@ import {
 } from "@electronic-erp/contracts";
 import { calculateSaleTotals, type SaleTotals } from "./sale-totals.js";
 import { ValidationDomainError } from "./errors.js";
+import { finiteMoney, roundMoney } from "./money.js";
+import { buildTaxInvoiceSummary, computeLineTax, type TaxInvoiceSummary } from "./pos-tax.js";
+import { applyDiscount, capLineDiscount } from "./pos-discount.js";
 
 /** Price tier used at the POS terminal (maps to product_prices levels). */
 export type PosPriceLevel = "retail" | "wholesale" | "dealer";
@@ -15,6 +18,7 @@ export type PosTaxRate = {
   ratePercent: number;
   pricingMode: "inclusive" | "exclusive";
   isExempt: boolean;
+  kind?: "sales_tax" | "gst" | "exempt";
 };
 
 export type PosUnitOption = {
@@ -71,6 +75,7 @@ export interface PosCartTotals {
   tax: number;
   grand: number;
   saleTotals: SaleTotals | null;
+  taxInvoice: TaxInvoiceSummary | null;
 }
 
 export type CartOpResult = {
@@ -82,14 +87,8 @@ export type CartOpResult = {
 const MONEY_SCALE = 2;
 const DEFAULT_MAX_QTY = "999999";
 
-export function roundMoney(n: number): number {
-  if (!Number.isFinite(n)) return 0;
-  return Math.round(n * 100) / 100;
-}
-
 function moneyNumber(v: unknown, fallback = 0): number {
-  const n = typeof v === "number" ? v : Number(v);
-  return Number.isFinite(n) ? n : fallback;
+  return finiteMoney(v, fallback);
 }
 
 export function pickPriceLevel(p: PosPriceSource, priceLevel: PosPriceLevel): number {
@@ -102,15 +101,8 @@ export function taxForLineNet(
   net: number,
   rate: PosTaxRate | null | undefined,
 ): { tax: number; displayNet: number } {
-  const safeNet = roundMoney(Math.max(0, moneyNumber(net)));
-  if (!rate || rate.isExempt || rate.ratePercent <= 0 || safeNet <= 0) {
-    return { tax: 0, displayNet: safeNet };
-  }
-  if (rate.pricingMode === "inclusive") {
-    const taxable = roundMoney(safeNet / (1 + rate.ratePercent / 100));
-    return { tax: roundMoney(safeNet - taxable), displayNet: taxable };
-  }
-  return { tax: roundMoney((safeNet * rate.ratePercent) / 100), displayNet: safeNet };
+  const result = computeLineTax({ amount: net, rate });
+  return { tax: result.tax, displayNet: result.net };
 }
 
 export function lineTaxAmount(
@@ -121,7 +113,7 @@ export function lineTaxAmount(
 ): number {
   const q = moneyNumber(qty);
   const price = roundMoney(moneyNumber(unitPrice));
-  const disc = roundMoney(Math.max(0, moneyNumber(discount)));
+  const disc = capLineDiscount(q, price, moneyNumber(discount));
   const net = Math.max(0, roundMoney(q * price) - disc);
   return taxForLineNet(net, rate).tax;
 }
@@ -151,8 +143,9 @@ export function toSaleItems(cart: PosCartLine[]) {
 export function calculatePosCartTotals(
   cart: PosCartLine[],
   invoiceDiscount: number | string = 0,
+  taxRate?: PosTaxRate | null,
 ): PosCartTotals {
-  const invoiceDisc = Math.max(0, roundMoney(moneyNumber(invoiceDiscount)));
+  const requestedInvoice = Math.max(0, roundMoney(moneyNumber(invoiceDiscount)));
   let qtySum = 0;
   let itemDiscount = 0;
   for (const line of cart) {
@@ -168,25 +161,36 @@ export function calculatePosCartTotals(
       qty: 0,
       subtotal: 0,
       itemDiscount: 0,
-      invoiceDiscount: invoiceDisc,
-      discount: invoiceDisc,
+      invoiceDiscount: 0,
+      discount: 0,
       tax: 0,
       grand: 0,
       saleTotals: null,
+      taxInvoice: null,
     };
   }
 
-  const saleTotals = calculateSaleTotals(toSaleItems(cart), invoiceDisc);
+  const saleTotals = calculateSaleTotals(toSaleItems(cart), requestedInvoice);
+  const taxInvoice = buildTaxInvoiceSummary(
+    cart.map((line) => {
+      const gross = roundMoney(moneyNumber(line.qty) * roundMoney(moneyNumber(line.unitPrice)));
+      const disc = capLineDiscount(moneyNumber(line.qty), line.unitPrice, moneyNumber(line.discount));
+      const { displayNet, tax } = taxForLineNet(Math.max(0, gross - disc), taxRate ?? null);
+      return { taxableNet: displayNet, tax };
+    }),
+    taxRate ?? null,
+  );
   return {
     items: cart.length,
     qty: qtySum,
     subtotal: saleTotals.subtotal,
-    itemDiscount,
-    invoiceDiscount: invoiceDisc,
+    itemDiscount: saleTotals.itemDiscount,
+    invoiceDiscount: saleTotals.invoiceDiscount,
     discount: saleTotals.discountTotal,
     tax: saleTotals.taxTotal,
     grand: saleTotals.grandTotal,
     saleTotals,
+    taxInvoice,
   };
 }
 
@@ -311,7 +315,11 @@ function withRecalc(
 ): PosCartLine {
   const next = { ...line, ...patch };
   next.unitPrice = roundMoney(moneyNumber(next.unitPrice));
-  next.discount = roundMoney(Math.max(0, moneyNumber(next.discount)));
+  next.discount = capLineDiscount(
+    moneyNumber(next.qty),
+    next.unitPrice,
+    moneyNumber(next.discount),
+  );
   next.tax = lineTaxAmount(next.qty, next.unitPrice, next.discount, taxRate);
   return next;
 }
@@ -558,10 +566,30 @@ export function updateCartLineDiscount(
     return fail(cart, "Discount cannot be negative");
   }
   return ok(
-    cart.map((x) =>
-      x.key === key ? withRecalc(x, { discount: roundMoney(discount) }, taxRate) : x,
-    ),
+    cart.map((x) => {
+      if (x.key !== key) return x;
+      const capped = capLineDiscount(moneyNumber(x.qty), x.unitPrice, discount);
+      return withRecalc(x, { discount: capped }, taxRate);
+    }),
   );
+}
+
+/** Apply item % or fixed discount via domain (not UI math). */
+export function applyCartLineDiscountInput(
+  cart: PosCartLine[],
+  key: string,
+  input: { mode: "percentage" | "fixed"; value: number },
+  taxRate?: PosTaxRate | null,
+): CartOpResult {
+  const line = cart.find((x) => x.key === key);
+  if (!line) return fail(cart, "Line not found");
+  const gross = roundMoney(moneyNumber(line.qty) * roundMoney(moneyNumber(line.unitPrice)));
+  try {
+    const applied = applyDiscount({ base: gross, mode: input.mode, value: input.value });
+    return updateCartLineDiscount(cart, key, applied.amount, taxRate);
+  } catch (err) {
+    return fail(cart, err instanceof Error ? err.message : "Invalid discount");
+  }
 }
 
 export function changeCartLineUnit(
