@@ -42,7 +42,11 @@ export interface OfflineReturnRecord {
   payload: Record<string, unknown>;
 }
 
-/** Local POS engine for offline sales, holds, returns, and idempotent sync. */
+/**
+ * In-memory POS store used by unit tests and legacy experiments.
+ * ACTIVE offline path for desktop is OfflinePosEngine (SQLite + outbox) — do not use this
+ * as a second production cart/sale writer. Kept for test compatibility; do not delete blindly.
+ */
 export class OfflinePosStore {
   private readonly sales: OfflineSaleRecord[] = [];
   private readonly held: OfflineHeldBill[] = [];

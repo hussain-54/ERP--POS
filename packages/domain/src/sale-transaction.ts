@@ -48,11 +48,15 @@ function moneyNumber(v: number | string | undefined, fallback = 0): number {
 
 /**
  * Central sale orchestration — UI must NOT duplicate stock/ledger/payment/accounting writes.
- * All side effects go through ports implemented by the POS repository.
+ * All side effects go through ports implemented by the POS repository (Supabase online).
+ * Offline desktop posts via OfflinePosEngine → sync → PosRepository (same domain path).
  *
  * ATOMICITY LIMIT: steps are sequential Supabase writes (not one Postgres transaction).
  * Idempotency keys reduce duplicate risk; a mid-chain failure can leave partial side effects.
  * A single RPC wrapping the full chain is the intended hardening path — do not claim ACID yet.
+ *
+ * Repository interface for sales: SaleTransactionPorts (this file).
+ * Cloud implementation: packages/db PosRepository.
  */
 export class SaleTransactionService {
   constructor(private readonly ports: SaleTransactionPorts) {}

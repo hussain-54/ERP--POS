@@ -1,5 +1,6 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import type { ProductSearchResult } from "@electronic-erp/contracts";
+import { validatePosCheckout } from "@electronic-erp/domain";
 import { Badge, Button, Card, Input, useToast } from "@electronic-erp/ui";
 import { useAuth } from "@/features/auth/AuthContext";
 import { posApi } from "./pos-api";
@@ -20,17 +21,13 @@ import { PosPaymentPanel } from "./components/PosPaymentPanel";
 import { PosApprovalDialog } from "./components/PosApprovalDialog";
 import { ReceiptPreview, type InvoicePreview } from "./components/ReceiptPreview";
 import { catalogApi } from "@/features/catalog/catalog-api";
+import { usePosSession } from "./session/usePosSession";
 import {
-  calcTotals,
-  pickPrice,
-  taxForLineNet,
   uuid,
   type CartLine,
   type LocaleMode,
   type PaySplit,
-  type PosCustomerSummary,
   type PosMode,
-  type PosTaxRate,
   type PriceLevel,
   type ProductTab,
 } from "./pos-types";
@@ -73,6 +70,32 @@ function saveProducts(key: string, items: ProductSearchResult[]) {
 export function PosPage() {
   const toast = useToast();
   const { branchId, branches, setBranchId, user, hasPermission } = useAuth();
+  const session = usePosSession();
+  const {
+    cart,
+    totals,
+    saleItems,
+    setTaxRate,
+    priceLevel,
+    setPriceLevel,
+    invoiceDiscount,
+    setInvoiceDiscount,
+    walkIn,
+    customerId,
+    customer,
+    addProduct: sessionAddProduct,
+    addManual,
+    setQty,
+    setPrice,
+    setLineDiscount,
+    removeLine,
+    clearCart,
+    selectWalkIn,
+    applyCustomer,
+    replaceCart,
+    setWalkIn,
+  } = session;
+
   const [online, setOnline] = useState(
     typeof navigator !== "undefined" ? navigator.onLine : true,
   );
@@ -89,20 +112,13 @@ export function PosPage() {
   const [favoriteIds, setFavoriteIds] = useState(() => new Set(loadIds(FAVORITES_KEY)));
   const [categories, setCategories] = useState<Array<{ id: string; name: string }>>([]);
   const [selectedCategoryId, setSelectedCategoryId] = useState<string | null>(null);
-  const [taxRate, setTaxRate] = useState<PosTaxRate | null>(null);
-  const [cart, setCart] = useState<CartLine[]>([]);
   const [warehouseId, setWarehouseId] = useState("");
-  const [walkIn, setWalkIn] = useState(true);
-  const [customerId, setCustomerId] = useState("");
-  const [customer, setCustomer] = useState<PosCustomerSummary | null>(null);
   const [customerQuery, setCustomerQuery] = useState("");
   const [customerHits, setCustomerHits] = useState<Array<{ id: string; name: string; mobile?: string | null }>>([]);
-  const [invoiceDiscount, setInvoiceDiscount] = useState("0");
   const [pendingInvoiceDiscount, setPendingInvoiceDiscount] = useState<string | null>(null);
   const [approvalReason, setApprovalReason] = useState("");
   const [approvalOpen, setApprovalOpen] = useState(false);
   const [payments, setPayments] = useState<PaySplit[]>([]);
-  const [priceLevel, setPriceLevel] = useState<PriceLevel>("retail");
   const [salesmanUserId, setSalesmanUserId] = useState("");
   const [salesmen, setSalesmen] = useState<SalesmanOption[]>([]);
   const [commissionPercent, setCommissionPercent] = useState(0);
@@ -139,8 +155,6 @@ export function PosPage() {
     hasPermission("pos.discount_owner");
   const canPriceOverride = hasPermission("pos.discount_manager") || hasPermission("pos.discount_owner");
   const advanced = mode === "advanced";
-
-  const totals = useMemo(() => calcTotals(cart, invoiceDiscount), [cart, invoiceDiscount]);
 
   useEffect(() => {
     const t = window.setInterval(() => setClock(new Date()), 1000);
@@ -336,41 +350,8 @@ export function PosPage() {
     });
   }
 
-  function lineTax(qty: number, unitPrice: number, discount: number) {
-    const net = Math.max(0, qty * unitPrice - discount);
-    return taxForLineNet(net, taxRate).tax;
-  }
-
   function addProduct(p: ProductSearchResult) {
-    const price = pickPrice(p, priceLevel);
-    setCart((prev) => {
-      const existing = prev.find((x) => x.productId === p.productId && !x.isManual);
-      if (existing) {
-        return prev.map((x) => {
-          if (x.key !== existing.key) return x;
-          const qty = Number(x.qty || 0) + 1;
-          return { ...x, qty: String(qty), tax: lineTax(qty, x.unitPrice, x.discount) };
-        });
-      }
-      return [
-        ...prev,
-        {
-          key: uuid(),
-          productId: p.productId,
-          name: p.name,
-          nameUr: p.nameUr,
-          sku: p.sku,
-          unitId: p.unitId,
-          unitName: p.unitName,
-          qty: "1",
-          unitPrice: Number(price),
-          discount: 0,
-          tax: lineTax(1, Number(price), 0),
-          warrantyDays: p.warrantyDays,
-          stock: p.stockAvailable,
-        },
-      ];
-    });
+    sessionAddProduct(p);
     rememberRecent(p);
   }
 
@@ -388,24 +369,11 @@ export function PosPage() {
       });
       return;
     }
-    setCart((prev) => [
-      ...prev,
-      {
-        key: uuid(),
-        name: "Manual item",
-        unitId,
-        qty: "1",
-        unitPrice: 0,
-        discount: 0,
-        tax: 0,
-        warrantyDays: 0,
-        isManual: true,
-      },
-    ]);
+    addManual(unitId);
   }
 
   function clearSale() {
-    setCart([]);
+    clearCart();
     setInvoiceDiscount("0");
     setNotes("");
     setDelivery(false);
@@ -433,13 +401,11 @@ export function PosPage() {
   }
 
   async function selectCustomer(id: string) {
-    setWalkIn(false);
-    setCustomerId(id);
     setCustomerQuery("");
     setCustomerHits([]);
     try {
       const c = await partiesApi.getCustomer(id);
-      setCustomer({
+      applyCustomer({
         id: c.id,
         name: c.name,
         mobile: c.mobile ?? null,
@@ -448,32 +414,34 @@ export function PosPage() {
         outstanding: c.outstanding != null ? String(c.outstanding) : undefined,
       });
     } catch {
-      setCustomer({ id, name: id });
+      applyCustomer({ id, name: id });
     }
   }
 
   async function checkout() {
-    if (!branchId || !warehouseId || !cart.length) {
-      toast.push({ title: "Branch, warehouse and cart required", tone: "danger" });
-      return;
-    }
     const paymentLines = payments
       .filter((s) => s.paymentMethodId && Number(s.amount) > 0)
       .map((s) => ({ paymentMethodId: s.paymentMethodId, amount: Number(s.amount) }));
     const paid = paymentLines.reduce((s, p) => s + p.amount, 0);
     const allowCredit = !walkIn && Boolean(customerId);
-    if (!paymentLines.length && !(allowCredit && totals.grand > 0)) {
-      toast.push({ title: "Enter payment amount or select customer for credit", tone: "danger" });
-      return;
-    }
-    if (!customerId && paid + 1e-9 < totals.grand) {
-      toast.push({ title: "Walk-in sales must be paid in full", tone: "danger" });
+    const validation = validatePosCheckout({
+      cart,
+      totals,
+      branchId,
+      warehouseId,
+      walkIn,
+      customerId,
+      paidTotal: paid,
+      allowCreditDue: allowCredit,
+    });
+    if (!validation.ok) {
+      toast.push({ title: validation.errors[0] ?? "Checkout invalid", tone: "danger" });
       return;
     }
     setBusy(true);
     try {
       const result = await posApi.postSale({
-        branchId,
+        branchId: branchId!,
         warehouseId,
         customerId: walkIn ? undefined : customerId || undefined,
         salesmanUserId: salesmanUserId || undefined,
@@ -481,17 +449,7 @@ export function PosPage() {
         notes: [notes, delivery ? "Delivery required" : ""].filter(Boolean).join(" · ") || undefined,
         posMode: mode,
         localeMode: locale,
-        items: cart.map((c) => ({
-          productId: c.productId,
-          unitId: c.unitId,
-          qty: c.qty,
-          unitPrice: c.unitPrice,
-          discount: c.discount,
-          tax: c.tax,
-          warrantyDays: c.warrantyDays,
-          isManual: Boolean(c.isManual),
-          manualName: c.isManual ? c.name : undefined,
-        })),
+        items: saleItems,
         payments: paymentLines,
         discountTotal: Number(invoiceDiscount || 0),
         discounts:
@@ -534,7 +492,7 @@ export function PosPage() {
         if (deliveryItems.length) {
           try {
             await purchasesApi.createDelivery({
-              branchId,
+              branchId: branchId!,
               warehouseId,
               saleId: result.id,
               customerId: walkIn ? undefined : customerId || undefined,
@@ -629,7 +587,7 @@ export function PosPage() {
     const held = await posApi.resumeHold(id);
     const snap = (held as { cart_snapshot?: Record<string, unknown> }).cart_snapshot;
     if (snap?.cart && Array.isArray(snap.cart)) {
-      setCart(snap.cart as CartLine[]);
+      replaceCart(snap.cart as CartLine[]);
       if (typeof snap.invoiceDiscount === "string") setInvoiceDiscount(snap.invoiceDiscount);
       if (typeof snap.notes === "string") setNotes(snap.notes);
       if (typeof snap.walkIn === "boolean") setWalkIn(snap.walkIn);
@@ -717,7 +675,7 @@ export function PosPage() {
       }
       if (e.key === "F7" && !typing) {
         e.preventDefault();
-        setCart([]);
+        clearCart();
         return;
       }
       if (e.key === "F8" && !typing) {
@@ -864,9 +822,7 @@ export function PosPage() {
                 onCustomerQuery={setCustomerQuery}
                 onSelectCustomer={(id) => void selectCustomer(id)}
                 onWalkIn={() => {
-                  setWalkIn(true);
-                  setCustomerId("");
-                  setCustomer(null);
+                  selectWalkIn();
                   setCustomerQuery("");
                 }}
                 priceLevel={priceLevel}
@@ -888,15 +844,7 @@ export function PosPage() {
                 cart={cart}
                 advanced={advanced}
                 locale={locale}
-                onQty={(key, qty) =>
-                  setCart((prev) =>
-                    prev.map((x) =>
-                      x.key === key
-                        ? { ...x, qty, tax: lineTax(Number(qty || 0), x.unitPrice, x.discount) }
-                        : x,
-                    ),
-                  )
-                }
+                onQty={(key, qty) => setQty(key, qty)}
                 onPrice={(key, unitPrice) => {
                   if (!canPriceOverride) {
                     setApprovalOpen(true);
@@ -904,25 +852,11 @@ export function PosPage() {
                     setApprovalReason(`price:${key}:${unitPrice}`);
                     return;
                   }
-                  setCart((prev) =>
-                    prev.map((x) =>
-                      x.key === key
-                        ? { ...x, unitPrice, tax: lineTax(Number(x.qty || 0), unitPrice, x.discount) }
-                        : x,
-                    ),
-                  );
+                  setPrice(key, unitPrice);
                 }}
-                onDiscount={(key, discount) =>
-                  setCart((prev) =>
-                    prev.map((x) =>
-                      x.key === key
-                        ? { ...x, discount, tax: lineTax(Number(x.qty || 0), x.unitPrice, discount) }
-                        : x,
-                    ),
-                  )
-                }
-                onRemove={(key) => setCart((prev) => prev.filter((x) => x.key !== key))}
-                onClear={() => setCart([])}
+                onDiscount={(key, discount) => setLineDiscount(key, discount)}
+                onRemove={(key) => removeLine(key)}
+                onClear={() => clearCart()}
                 onManual={addManualQuick}
                 canDiscount={canDiscount}
                 canPriceOverride={canPriceOverride}
@@ -1027,15 +961,7 @@ export function PosPage() {
             const parts = approvalReason.split(":");
             const key = parts[1];
             const unitPrice = Number(parts[2] || 0);
-            if (key) {
-              setCart((prev) =>
-                prev.map((x) =>
-                  x.key === key
-                    ? { ...x, unitPrice, tax: lineTax(Number(x.qty || 0), unitPrice, x.discount) }
-                    : x,
-                ),
-              );
-            }
+            if (key) setPrice(key, unitPrice);
           }
           setApprovalOpen(false);
           setApprovalReason("");
