@@ -22,21 +22,14 @@ import {
   updateCartLinePrice,
   updateCartLineQty,
   type PosCartLine,
+  type PosCustomerProfile,
   type PosPriceLevel,
   type PosTaxRate,
   type PosUnitOption,
 } from "@electronic-erp/domain";
 
-export type PosSessionCustomer = {
-  id: string;
-  name: string;
-  mobile?: string | null;
-  customerType?: string;
-  creditLimit?: string;
-  outstanding?: string;
-  /** Customer discount percent applied via domain when stacking line discounts. */
-  discountPercent?: number;
-};
+export type PosSessionCustomer = PosCustomerProfile;
+
 
 function newKey(): string {
   return crypto.randomUUID();
@@ -268,6 +261,7 @@ export function usePosSession() {
     setWalkIn(false);
     setCustomerId(c.id);
     setCustomer(c);
+    setPriceLevel(c.priceLevel as PosPriceLevel);
   }, []);
 
   const saleItems = useMemo(() => toSaleItems(cart), [cart]);

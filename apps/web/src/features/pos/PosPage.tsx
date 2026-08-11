@@ -4,12 +4,12 @@ import {
   applyDiscount,
   approverRoleFromPermissions,
   evaluateDiscountApproval,
+  evaluatePosCustomerCredit,
   validatePosCheckout,
 } from "@electronic-erp/domain";
 import { useToast } from "@electronic-erp/ui";
 import { useAuth } from "@/features/auth/AuthContext";
 import { posApi } from "./pos-api";
-import { partiesApi } from "@/features/parties/parties-api";
 import { inventoryApi } from "@/features/inventory/inventory-api";
 import { enterpriseApi } from "@/features/enterprise/enterprise-api";
 import { purchasesApi } from "@/features/purchases/purchases-api";
@@ -27,6 +27,9 @@ import { PosApprovalDialog } from "./components/PosApprovalDialog";
 import { ReceiptPreview, type InvoicePreview } from "./components/ReceiptPreview";
 import { catalogApi } from "@/features/catalog/catalog-api";
 import { usePosSession } from "./session/usePosSession";
+import { posCustomerRepository } from "./session/pos-customer-repository";
+import { partiesApi } from "@/features/parties/parties-api";
+import type { CustomerSearchHit } from "@electronic-erp/contracts";
 import {
   POSActionBar,
   POSBadge,
@@ -86,7 +89,7 @@ function saveProducts(key: string, items: ProductSearchResult[]) {
 
 export function PosPage() {
   const toast = useToast();
-  const { branchId, branches, setBranchId, user, hasPermission } = useAuth();
+  const { branchId, branches, setBranchId, user, hasPermission, organizationId } = useAuth();
   const session = usePosSession();
   const {
     cart,
@@ -135,7 +138,7 @@ export function PosPage() {
   const [selectedCategoryId, setSelectedCategoryId] = useState<string | null>(null);
   const [warehouseId, setWarehouseId] = useState("");
   const [customerQuery, setCustomerQuery] = useState("");
-  const [customerHits, setCustomerHits] = useState<Array<{ id: string; name: string; mobile?: string | null }>>([]);
+  const [customerHits, setCustomerHits] = useState<CustomerSearchHit[]>([]);
   const [pendingInvoiceDiscount, setPendingInvoiceDiscount] = useState<string | null>(null);
   const [approvalReason, setApprovalReason] = useState("");
   const [approvalOpen, setApprovalOpen] = useState(false);
@@ -351,23 +354,24 @@ export function PosPage() {
   }, [q, warehouseId, customerId, toast]);
 
   useEffect(() => {
-    if (walkIn || !customerQuery.trim()) {
+    if (walkIn || !customerQuery.trim() || !hasPermission("customers.read")) {
       setCustomerHits([]);
       return;
     }
+    const orgId = organizationId ?? "";
     const handle = window.setTimeout(() => {
-      void partiesApi.listCustomers(customerQuery).then((res) => {
-        setCustomerHits(
-          res.items.slice(0, 12).map((c) => ({
-            id: c.id,
-            name: c.name,
-            mobile: c.mobile ?? null,
-          })),
-        );
-      });
+      void posCustomerRepository
+        .search({
+          q: customerQuery,
+          online,
+          organizationId: orgId,
+          canRead: hasPermission("customers.read"),
+        })
+        .then(setCustomerHits)
+        .catch(() => setCustomerHits([]));
     }, 250);
     return () => window.clearTimeout(handle);
-  }, [customerQuery, walkIn]);
+  }, [customerQuery, walkIn, online, organizationId, hasPermission]);
 
   const rememberRecent = useCallback((p: ProductSearchResult) => {
     setRecent((prev) => {
@@ -461,17 +465,97 @@ export function PosPage() {
     setCustomerQuery("");
     setCustomerHits([]);
     try {
-      const c = await partiesApi.getCustomer(id);
-      applyCustomer({
-        id: c.id,
-        name: c.name,
-        mobile: c.mobile ?? null,
-        customerType: c.customerType,
-        creditLimit: c.creditLimit != null ? String(c.creditLimit) : undefined,
-        outstanding: c.outstanding != null ? String(c.outstanding) : undefined,
+      const profile = await posCustomerRepository.get({
+        id,
+        online,
+        organizationId: organizationId ?? "",
+        canRead: hasPermission("customers.read"),
+        canViewLoyalty: hasPermission("loyalty.view") || hasPermission("loyalty.manage"),
       });
-    } catch {
-      applyCustomer({ id, name: id });
+      applyCustomer(profile);
+    } catch (err) {
+      toast.push({
+        title: "Customer load failed",
+        description: err instanceof Error ? err.message : "Error",
+        tone: "danger",
+      });
+    }
+  }
+
+  async function createCustomerFromPos(input: {
+    code: string;
+    name: string;
+    mobile?: string;
+    email?: string;
+    address?: string;
+    cnic?: string;
+    customerType?: "retail" | "wholesale" | "dealer";
+  }) {
+    setCreatingCustomer(true);
+    try {
+      const created = await posCustomerRepository.create({
+        online,
+        organizationId: organizationId ?? "",
+        canWrite: hasPermission("customers.write"),
+        body: input,
+      });
+      toast.push({
+        title: online ? "Customer created" : "Customer saved offline",
+        tone: "success",
+      });
+      await selectCustomer(created.id);
+    } catch (err) {
+      toast.push({
+        title: "Create customer failed",
+        description: err instanceof Error ? err.message : "Error",
+        tone: "danger",
+      });
+      throw err;
+    } finally {
+      setCreatingCustomer(false);
+    }
+  }
+
+  async function updateCustomerFromPos(
+    id: string,
+    input: {
+      code: string;
+      name: string;
+      mobile?: string;
+      email?: string;
+      address?: string;
+      cnic?: string;
+      customerType?: "retail" | "wholesale" | "dealer";
+    },
+  ) {
+    setCreatingCustomer(true);
+    try {
+      const patch: Record<string, unknown> = {
+        name: input.name,
+        mobile: input.mobile ?? null,
+        email: input.email ?? null,
+        address: input.address ?? null,
+        customerType: input.customerType,
+      };
+      if (input.cnic?.trim()) patch.cnic = input.cnic.trim();
+      await posCustomerRepository.update({
+        id,
+        online,
+        organizationId: organizationId ?? "",
+        canWrite: hasPermission("customers.write"),
+        patch,
+      });
+      toast.push({ title: "Customer updated", tone: "success" });
+      await selectCustomer(id);
+    } catch (err) {
+      toast.push({
+        title: "Update failed",
+        description: err instanceof Error ? err.message : "Error",
+        tone: "danger",
+      });
+      throw err;
+    } finally {
+      setCreatingCustomer(false);
     }
   }
 
@@ -494,6 +578,27 @@ export function PosPage() {
     if (!validation.ok) {
       toast.push({ title: validation.errors[0] ?? "Checkout invalid", tone: "danger" });
       return;
+    }
+    if (!walkIn && customer) {
+      const due = Math.max(0, totals.grand - paid);
+      if (due > 0) {
+        const credit = evaluatePosCustomerCredit({
+          customer,
+          additionalCredit: String(due),
+        });
+        if (customer.isBlocked) {
+          toast.push({ title: "Customer is blocked", tone: "danger" });
+          return;
+        }
+        if (credit.requiresApproval && !hasPermission("credit.approve")) {
+          toast.push({
+            title: "Credit approval required",
+            description: credit.reason ?? "Limit exceeded",
+            tone: "danger",
+          });
+          return;
+        }
+      }
     }
     setBusy(true);
     try {
@@ -658,35 +763,6 @@ export function PosPage() {
       setHolds(res.items);
     }
     setShowHolds(false);
-  }
-
-  async function createCustomerFromPos(input: {
-    code: string;
-    name: string;
-    mobile?: string;
-  }) {
-    setCreatingCustomer(true);
-    try {
-      const created = await partiesApi.createCustomer({
-        code: input.code,
-        name: input.name,
-        mobile: input.mobile ?? "",
-        customerType: "retail",
-        creditLimit: "0",
-        creditDays: 0,
-      });
-      toast.push({ title: "Customer created", tone: "success" });
-      await selectCustomer(created.id);
-    } catch (err) {
-      toast.push({
-        title: "Create customer failed",
-        description: err instanceof Error ? err.message : "Error",
-        tone: "danger",
-      });
-      throw err;
-    } finally {
-      setCreatingCustomer(false);
-    }
   }
 
   function barcodeScanHint() {
@@ -963,8 +1039,27 @@ export function PosPage() {
                   selectWalkIn();
                   setCustomerQuery("");
                 }}
-                onCreateCustomer={createCustomerFromPos}
+                onCreateCustomer={
+                  hasPermission("customers.write") ? createCustomerFromPos : undefined
+                }
+                onUpdateCustomer={
+                  hasPermission("customers.write") ? updateCustomerFromPos : undefined
+                }
+                onLoadHistory={
+                  hasPermission("customers.read") || hasPermission("ledgers.view")
+                    ? (id) =>
+                        posCustomerRepository.history({
+                          id,
+                          online,
+                          canRead:
+                            hasPermission("customers.read") || hasPermission("ledgers.view"),
+                        })
+                    : undefined
+                }
                 creatingCustomer={creatingCustomer}
+                canCreate={hasPermission("customers.write")}
+                canEdit={hasPermission("customers.write")}
+                canRead={hasPermission("customers.read")}
                 priceLevel={priceLevel}
                 onPriceLevel={setPriceLevel}
                 salesmanId={salesmanUserId}
@@ -981,6 +1076,25 @@ export function PosPage() {
                 onDelivery={setDelivery}
                 customerRef={customerRef}
                 advanced={advanced}
+                creditHint={
+                  customer && !walkIn
+                    ? (() => {
+                        const paid = payments.reduce((s, p) => s + Number(p.amount || 0), 0);
+                        const due = Math.max(0, totals.grand - paid);
+                        if (due <= 0) return null;
+                        const credit = evaluatePosCustomerCredit({
+                          customer,
+                          additionalCredit: String(due),
+                        });
+                        if (customer.isBlocked) return "Customer is blocked — credit sales not allowed";
+                        if (credit.requiresApproval) {
+                          return `Credit limit exceeded (projected ${credit.projectedOutstanding}) — approval required`;
+                        }
+                        if (credit.isOverdue) return "Customer has overdue balance";
+                        return `Credit available · due date ${credit.dueDate ?? "—"}`;
+                      })()
+                    : null
+                }
               />
 
               <PosCartPanel

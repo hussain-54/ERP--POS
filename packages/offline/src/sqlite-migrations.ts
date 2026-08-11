@@ -36,8 +36,13 @@ CREATE TABLE IF NOT EXISTS app_kv (
 );
 `,
   },
+  {
+    id: "20260812000003_offline_customer_email",
+    sql: `
+ALTER TABLE customers ADD COLUMN email TEXT;
+`,
+  },
 ];
-
 export function applyOfflineMigrations(db: SqliteDatabaseLike): string[] {
   db.exec(`
     PRAGMA foreign_keys = ON;

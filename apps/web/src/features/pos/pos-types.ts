@@ -17,14 +17,7 @@ export type LocaleMode = "en" | "ur" | "en_ur";
 export type PosMode = "easy" | "advanced";
 export type ProductTab = "recent" | "favorites" | "categories" | "results";
 
-export type PosCustomerSummary = {
-  id: string;
-  name: string;
-  mobile?: string | null;
-  customerType?: string;
-  creditLimit?: string;
-  outstanding?: string;
-};
+export type PosCustomerSummary = import("@electronic-erp/domain").PosCustomerProfile;
 
 export function uuid() {
   return crypto.randomUUID();

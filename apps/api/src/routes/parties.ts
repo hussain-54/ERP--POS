@@ -6,6 +6,7 @@ import {
   CreatePaymentMethodSchema,
   CreateSupplierSchema,
   PostSplitPaymentSchema,
+  UpdateCustomerSchema,
 } from "@electronic-erp/contracts";
 import { PartiesRepository } from "@electronic-erp/db";
 import { AuthorizationService } from "@electronic-erp/domain";
@@ -66,7 +67,8 @@ partiesRouter.get("/customers/:id", async (req: AuthedRequest, res, next) => {
 partiesRouter.patch("/customers/:id", async (req: AuthedRequest, res, next) => {
   try {
     authz(req).assert("customers.write");
-    res.json(await repo(req).updateCustomer(req.params.id, req.body));
+    const patch = UpdateCustomerSchema.parse(req.body);
+    res.json(await repo(req).updateCustomer(req.params.id, patch));
   } catch (err) {
     next(err);
   }

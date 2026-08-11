@@ -1,5 +1,6 @@
 export * from "./engine.js";
 export * from "./product-sync.js";
+export * from "./customer-sync.js";
 export * from "./stock-sync.js";
 export * from "./payment-sync.js";
 export * from "./sale-sync.js";

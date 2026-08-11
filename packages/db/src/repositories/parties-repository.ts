@@ -50,6 +50,7 @@ export class PartiesRepository {
         name_ur: input.nameUr ?? null,
         mobile: input.mobile ?? null,
         alternate_mobile: input.alternateMobile ?? null,
+        email: input.email?.trim() ? input.email.trim() : null,
         address: input.address ?? null,
         cnic: input.cnic ?? null,
         reference_name: input.referenceName ?? null,
@@ -71,7 +72,11 @@ export class PartiesRepository {
       .eq("organization_id", organizationId)
       .is("deleted_at", null)
       .order("name");
-    if (q) query = query.or(`name.ilike.%${q}%,mobile.ilike.%${q}%,code.ilike.%${q}%`);
+    if (q) {
+      query = query.or(
+        `name.ilike.%${q}%,mobile.ilike.%${q}%,code.ilike.%${q}%,email.ilike.%${q}%`,
+      );
+    }
     const { data, error } = await query;
     if (error) throw error;
     return (data ?? []).map(mapCustomer);
@@ -618,6 +623,7 @@ function mapCustomer(row: Row): Customer {
     nameUr: (row.name_ur as string | null) ?? null,
     mobile: (row.mobile as string | null) ?? null,
     alternateMobile: (row.alternate_mobile as string | null) ?? null,
+    email: (row.email as string | null) ?? null,
     address: (row.address as string | null) ?? null,
     cnic: (row.cnic as string | null) ?? null,
     referenceName: (row.reference_name as string | null) ?? null,

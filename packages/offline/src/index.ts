@@ -4,6 +4,7 @@ export * from "./product-store.js";
 export * from "./inventory-schema.js";
 export * from "./stock-mutation-store.js";
 export * from "./parties-schema.js";
+export * from "./customer-store.js";
 export * from "./payment-mutation-store.js";
 export * from "./pos-schema.js";
 export * from "./pos-store.js";

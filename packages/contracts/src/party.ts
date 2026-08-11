@@ -12,6 +12,7 @@ export const CreateCustomerSchema = z.object({
   nameUr: z.string().max(200).optional(),
   mobile: z.string().max(50).optional(),
   alternateMobile: z.string().max(50).optional(),
+  email: z.union([z.string().email().max(200), z.literal("")]).optional(),
   address: z.string().max(500).optional(),
   cnic: z.string().max(20).optional(),
   referenceName: z.string().max(200).optional(),
@@ -22,6 +23,23 @@ export const CreateCustomerSchema = z.object({
 });
 export type CreateCustomerInput = z.input<typeof CreateCustomerSchema>;
 
+export const UpdateCustomerSchema = z.object({
+  code: z.string().min(1).max(64).optional(),
+  name: z.string().min(1).max(200).optional(),
+  nameUr: z.string().max(200).nullable().optional(),
+  mobile: z.string().max(50).nullable().optional(),
+  alternateMobile: z.string().max(50).nullable().optional(),
+  email: z.union([z.string().email().max(200), z.literal(""), z.null()]).optional(),
+  address: z.string().max(500).nullable().optional(),
+  cnic: z.string().max(20).nullable().optional(),
+  referenceName: z.string().max(200).nullable().optional(),
+  customerType: CustomerTypeSchema.optional(),
+  creditLimit: DecimalStringSchema.optional(),
+  creditDays: z.number().int().min(0).optional(),
+  isActive: z.boolean().optional(),
+});
+export type UpdateCustomerInput = z.infer<typeof UpdateCustomerSchema>;
+
 export const CustomerSchema = AuditedFieldsSchema.extend({
   id: UuidSchema,
   organizationId: UuidSchema,
@@ -30,6 +48,7 @@ export const CustomerSchema = AuditedFieldsSchema.extend({
   nameUr: z.string().nullable().optional(),
   mobile: z.string().nullable().optional(),
   alternateMobile: z.string().nullable().optional(),
+  email: z.string().nullable().optional(),
   address: z.string().nullable().optional(),
   cnic: z.string().nullable().optional(),
   referenceName: z.string().nullable().optional(),
@@ -43,6 +62,16 @@ export const CustomerSchema = AuditedFieldsSchema.extend({
   isActive: z.boolean(),
 });
 export type Customer = z.infer<typeof CustomerSchema>;
+
+/** Lightweight list/search hit — no CNIC / email / address. */
+export const CustomerSearchHitSchema = z.object({
+  id: UuidSchema,
+  code: z.string(),
+  name: z.string(),
+  mobile: z.string().nullable().optional(),
+  customerType: CustomerTypeSchema,
+});
+export type CustomerSearchHit = z.infer<typeof CustomerSearchHitSchema>;
 
 export const CreateSupplierSchema = z.object({
   organizationId: UuidSchema,

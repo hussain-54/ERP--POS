@@ -3,6 +3,7 @@ export * from "./authz-service.js";
 export * from "./sale-totals.js";
 export * from "./pos-cart.js";
 export * from "./pos-validation.js";
+export * from "./pos-customer.js";
 export * from "./unit-conversion.js";
 export * from "./pricing.js";
 export * from "./barcode.js";
