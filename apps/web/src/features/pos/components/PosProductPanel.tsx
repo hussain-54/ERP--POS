@@ -1,6 +1,13 @@
-import { Badge, Button, Card, Input } from "@electronic-erp/ui";
 import type { ProductSearchResult } from "@electronic-erp/contracts";
 import type { ProductTab } from "../pos-types";
+import {
+  POSBadge,
+  POSButton,
+  POSCard,
+  POSEmptyState,
+  POSLoadingState,
+  POSSearch,
+} from "../design-system";
 
 interface CategoryOption {
   id: string;
@@ -53,14 +60,16 @@ function ProductCard({
     <div className="group relative flex flex-col overflow-hidden rounded-[var(--pos-radius)] border border-[var(--pos-border)] bg-[var(--pos-card)] text-left shadow-sm transition hover:border-[var(--pos-primary)] hover:shadow-md">
       <button
         type="button"
-        className="absolute right-2 top-2 z-10 rounded bg-white/90 px-1.5 text-sm"
+        className="absolute right-2 top-2 z-10"
         title={favorited ? "Remove favorite" : "Add favorite"}
         onClick={(e) => {
           e.stopPropagation();
           onToggleFavorite(p);
         }}
       >
-        {favorited ? "★" : "☆"}
+        <span className="inline-flex h-7 w-7 items-center justify-center rounded-[var(--pos-radius-sm)] bg-[var(--pos-workspace)]/95 text-sm shadow-[var(--pos-shadow)]">
+          {favorited ? "★" : "☆"}
+        </span>
       </button>
       <button
         type="button"
@@ -132,10 +141,10 @@ export function PosProductPanel({
 
   return (
     <section className="flex min-h-0 flex-1 flex-col gap-3">
-      <Card className="border-[var(--pos-border)] bg-[var(--pos-card)] p-3 shadow-sm">
+      <POSCard padding="sm">
         <div className="flex flex-wrap items-end gap-2">
           <div className="min-w-[220px] flex-1">
-            <Input
+            <POSSearch
               ref={searchRef as React.RefObject<HTMLInputElement>}
               label="Search / Barcode / SKU"
               placeholder="Scan or type product…"
@@ -147,43 +156,42 @@ export function PosProductPanel({
               autoComplete="off"
             />
           </div>
-          <Badge tone={searching ? "warning" : "neutral"}>{searching ? "Searching…" : `${list.length} items`}</Badge>
+          <POSBadge tone={searching ? "warning" : "neutral"}>
+            {searching ? "Searching…" : `${list.length} items`}
+          </POSBadge>
         </div>
         <div className="mt-3 flex flex-wrap gap-1">
           {tabs.map((t) => (
-            <Button
+            <POSButton
               key={t.id}
               size="sm"
-              variant={tab === t.id ? "primary" : "secondary"}
-              className={tab === t.id ? "pos-cta border-0" : ""}
+              variant={tab === t.id ? "primary" : "ghost"}
               onClick={() => onTabChange(t.id)}
             >
               {t.label}
-            </Button>
+            </POSButton>
           ))}
         </div>
-      </Card>
+      </POSCard>
 
       {tab === "categories" ? (
         <div className="flex flex-wrap gap-2">
-          <Button
+          <POSButton
             size="sm"
-            variant={!selectedCategoryId ? "primary" : "secondary"}
-            className={!selectedCategoryId ? "pos-cta border-0" : ""}
+            variant={!selectedCategoryId ? "primary" : "ghost"}
             onClick={() => onSelectCategory(null)}
           >
             All
-          </Button>
+          </POSButton>
           {categories.map((c) => (
-            <Button
+            <POSButton
               key={c.id}
               size="sm"
-              variant={selectedCategoryId === c.id ? "primary" : "secondary"}
-              className={selectedCategoryId === c.id ? "pos-cta border-0" : ""}
+              variant={selectedCategoryId === c.id ? "primary" : "ghost"}
               onClick={() => onSelectCategory(c.id)}
             >
               {c.name}
-            </Button>
+            </POSButton>
           ))}
           {!categories.length ? (
             <span className="text-sm text-[var(--pos-muted)]">No categories in catalog yet</span>
@@ -192,12 +200,23 @@ export function PosProductPanel({
       ) : null}
 
       <div className="min-h-0 flex-1 overflow-auto">
-        {list.length === 0 ? (
-          <Card className="border-dashed border-[var(--pos-border)] bg-[var(--pos-card)] p-8 text-center text-sm text-[var(--pos-muted)]">
-            {tab === "favorites"
-              ? "No favorites yet — tap ★ on a product card"
-              : "No products yet. Scan a barcode or search by name / SKU."}
-          </Card>
+        {searching && list.length === 0 ? (
+          <POSLoadingState label="Searching products…" rows={5} />
+        ) : list.length === 0 ? (
+          <POSCard className="border-dashed">
+            <POSEmptyState
+              title={
+                tab === "favorites"
+                  ? "No favorites yet"
+                  : "No products yet"
+              }
+              description={
+                tab === "favorites"
+                  ? "Tap ★ on a product card"
+                  : "Scan a barcode or search by name / SKU"
+              }
+            />
+          </POSCard>
         ) : (
           <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-5">
             {list.map((p) => (

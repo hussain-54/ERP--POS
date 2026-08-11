@@ -1,4 +1,4 @@
-import { Button, Card, Input } from "@electronic-erp/ui";
+import { POSButton, POSInput, POSModal } from "../design-system";
 
 interface Props {
   open: boolean;
@@ -22,31 +22,35 @@ export function PosApprovalDialog({
   onApprove,
   onCancel,
 }: Props) {
-  if (!open) return null;
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
-      <Card className="w-full max-w-md space-y-3 p-4 shadow-xl" title={title}>
-        <p className="text-sm text-[var(--erp-muted)]">{description}</p>
-        <Input
-          label="Reason (required)"
-          value={reason}
-          onChange={(e) => onReasonChange(e.target.value)}
-        />
-        {!canApprove ? (
-          <p className="text-sm text-[var(--erp-danger)]">
-            Current user lacks manager/owner discount permission. Sign in as a manager to approve, or
-            reduce the override.
-          </p>
-        ) : null}
-        <div className="flex justify-end gap-2">
-          <Button variant="secondary" onClick={onCancel}>
+    <POSModal
+      open={open}
+      title={title}
+      onClose={onCancel}
+      size="sm"
+      footer={
+        <>
+          <POSButton variant="ghost" onClick={onCancel}>
             Cancel
-          </Button>
-          <Button disabled={!canApprove || !reason.trim()} onClick={onApprove}>
+          </POSButton>
+          <POSButton disabled={!canApprove || !reason.trim()} onClick={onApprove}>
             Approve override
-          </Button>
-        </div>
-      </Card>
-    </div>
+          </POSButton>
+        </>
+      }
+    >
+      <p className="mb-3 text-sm text-[var(--pos-muted)]">{description}</p>
+      <POSInput
+        label="Reason (required)"
+        value={reason}
+        onChange={(e) => onReasonChange(e.target.value)}
+      />
+      {!canApprove ? (
+        <p className="mt-2 text-sm text-[var(--pos-danger)]">
+          Current user lacks manager/owner discount permission. Sign in as a manager to approve, or
+          reduce the override.
+        </p>
+      ) : null}
+    </POSModal>
   );
 }

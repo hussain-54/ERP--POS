@@ -1,6 +1,7 @@
 import { Button, Card, Input } from "@electronic-erp/ui";
 import type { CartLine } from "../pos-types";
 import { lineTotal } from "../pos-types";
+import { POSEmptyState } from "../design-system";
 
 interface Props {
   cart: CartLine[];
@@ -45,7 +46,10 @@ export function PosCartPanel({
 
       <div className="min-h-0 flex-1 overflow-auto">
         {cart.length === 0 ? (
-          <div className="p-6 text-center text-sm text-[var(--pos-muted)]">Cart is empty — add products from the grid</div>
+          <POSEmptyState
+            title="Cart is empty"
+            description="Add products from the grid"
+          />
         ) : (
           <table className="w-full text-left text-sm">
             <thead className="sticky top-0 bg-slate-50 text-xs text-[var(--pos-muted)]">

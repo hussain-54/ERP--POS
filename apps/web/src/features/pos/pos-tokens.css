@@ -1,31 +1,63 @@
-/* POS terminal tokens — scoped; does not rebrand the whole ERP shell */
+/* POS design tokens — scoped to .pos-terminal; own visual identity (not screenshot branding) */
 .pos-terminal {
-  --pos-navy: #172033;
-  --pos-navy-2: #1e2a44;
-  --pos-primary: #2563eb;
-  --pos-primary-strong: #1d4ed8;
-  --pos-bg: #f5f7fa;
+  /* Surfaces */
+  --pos-navy: #152238;
+  --pos-navy-2: #1c2d4a;
+  --pos-navy-3: #243656;
+  --pos-bg: #f4f6f9;
+  --pos-workspace: #ffffff;
   --pos-card: #ffffff;
-  --pos-border: #e5e7eb;
-  --pos-ink: #111827;
-  --pos-muted: #6b7280;
-  --pos-success: #16a34a;
-  --pos-warning: #f59e0b;
-  --pos-danger: #dc2626;
+  --pos-muted-bg: #eef1f6;
+
+  /* Brand / status */
+  --pos-primary: #3b5bdb;
+  --pos-primary-strong: #364fc7;
+  --pos-primary-soft: #edf2ff;
+  --pos-secondary: #7950f2;
+  --pos-secondary-soft: #f3f0ff;
+  --pos-success: #2f9e44;
+  --pos-success-soft: #ebfbee;
+  --pos-warning: #f08c00;
+  --pos-warning-soft: #fff4e6;
+  --pos-danger: #e03131;
+  --pos-danger-soft: #fff5f5;
+
+  /* Text */
+  --pos-ink: #1a2332;
+  --pos-muted: #6b7a90;
+  --pos-on-navy: #e8eef8;
+  --pos-on-navy-muted: rgba(232, 238, 248, 0.72);
+
+  /* Chrome */
+  --pos-border: #e2e8f0;
+  --pos-border-strong: #cbd5e1;
   --pos-radius: 10px;
+  --pos-radius-sm: 8px;
+  --pos-radius-lg: 14px;
+  --pos-shadow: 0 1px 2px rgba(21, 34, 56, 0.06), 0 1px 3px rgba(21, 34, 56, 0.04);
+  --pos-shadow-md: 0 4px 12px rgba(21, 34, 56, 0.08);
+  --pos-ring: #748ffc;
+  --pos-focus: 0 0 0 2px #fff, 0 0 0 4px var(--pos-ring);
+
+  /* Type */
+  --pos-font: "Segoe UI", "IBM Plex Sans", "Noto Sans", system-ui, sans-serif;
+  --pos-font-mono: "Cascadia Code", "Consolas", ui-monospace, monospace;
+
   background: var(--pos-bg);
   color: var(--pos-ink);
+  font-family: var(--pos-font);
   min-height: 100vh;
 }
 
 .pos-terminal .pos-sidebar {
-  background: linear-gradient(180deg, var(--pos-navy) 0%, var(--pos-navy-2) 100%);
-  color: #e8eef8;
+  background: linear-gradient(180deg, var(--pos-navy) 0%, var(--pos-navy-2) 55%, var(--pos-navy-3) 100%);
+  color: var(--pos-on-navy);
 }
 
 .pos-terminal .pos-nav-active {
   background: var(--pos-primary);
   color: #fff;
+  box-shadow: var(--pos-shadow);
 }
 
 .pos-terminal .pos-cta {
@@ -33,8 +65,13 @@
   color: #fff;
 }
 
-.pos-terminal .pos-cta:hover {
+.pos-terminal .pos-cta:hover:not(:disabled) {
   background: var(--pos-primary-strong);
+}
+
+.pos-terminal .pos-cta:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
 }
 
 .pos-terminal .pos-grand {
@@ -42,4 +79,60 @@
   font-weight: 700;
   letter-spacing: -0.02em;
   color: var(--pos-ink);
+  font-variant-numeric: tabular-nums;
+}
+
+/* Utility classes used by design-system primitives */
+.pos-terminal .pos-surface {
+  background: var(--pos-card);
+  border: 1px solid var(--pos-border);
+  border-radius: var(--pos-radius);
+  box-shadow: var(--pos-shadow);
+}
+
+.pos-terminal .pos-input-base {
+  height: 2.25rem;
+  width: 100%;
+  border-radius: var(--pos-radius-sm);
+  border: 1px solid var(--pos-border);
+  background: var(--pos-workspace);
+  padding: 0 0.75rem;
+  font-size: 0.875rem;
+  color: var(--pos-ink);
+}
+
+.pos-terminal .pos-input-base:hover:not(:disabled) {
+  border-color: var(--pos-border-strong);
+}
+
+.pos-terminal .pos-input-base:disabled {
+  opacity: 0.55;
+  background: var(--pos-muted-bg);
+  cursor: not-allowed;
+}
+
+.pos-terminal .pos-input-base[aria-invalid="true"] {
+  border-color: var(--pos-danger);
+}
+
+.pos-terminal .pos-skeleton {
+  background: linear-gradient(90deg, var(--pos-muted-bg), #f8fafc, var(--pos-muted-bg));
+  background-size: 200% 100%;
+  animation: pos-shimmer 1.2s ease-in-out infinite;
+  border-radius: var(--pos-radius-sm);
+}
+
+@keyframes pos-shimmer {
+  0% {
+    background-position: 100% 0;
+  }
+  100% {
+    background-position: -100% 0;
+  }
+}
+
+@media (max-width: 1023px) {
+  .pos-terminal .pos-grand {
+    font-size: 1.35rem;
+  }
 }

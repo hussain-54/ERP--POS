@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { ProductSearchResult } from "@electronic-erp/contracts";
 import { validatePosCheckout } from "@electronic-erp/domain";
-import { Badge, Button, Card, Input, useToast } from "@electronic-erp/ui";
+import { useToast } from "@electronic-erp/ui";
 import { useAuth } from "@/features/auth/AuthContext";
 import { posApi } from "./pos-api";
 import { partiesApi } from "@/features/parties/parties-api";
@@ -22,6 +22,7 @@ import { PosApprovalDialog } from "./components/PosApprovalDialog";
 import { ReceiptPreview, type InvoicePreview } from "./components/ReceiptPreview";
 import { catalogApi } from "@/features/catalog/catalog-api";
 import { usePosSession } from "./session/usePosSession";
+import { POSBadge, POSButton, POSCard, POSEmptyState, POSInput, POSLayout } from "./design-system";
 import {
   uuid,
   type CartLine,
@@ -697,9 +698,9 @@ export function PosPage() {
   }, [totals.grand]);
 
   return (
-    <div className="pos-terminal min-h-screen" dir={locale === "ur" ? "rtl" : "ltr"}>
-      <div className="flex min-h-screen">
-        <div className="hidden lg:flex">
+    <div dir={locale === "ur" ? "rtl" : "ltr"}>
+      <POSLayout
+        sidebar={
           <PosSidebar
             collapsed={sidebarCollapsed}
             onToggle={() => setSidebarCollapsed((v) => !v)}
@@ -747,20 +748,25 @@ export function PosPage() {
               })();
             }}
           />
-        </div>
-
-        {mobileNav ? (
-          <div className="fixed inset-0 z-40 flex lg:hidden">
-            <PosSidebar
-              collapsed={false}
-              onToggle={() => setMobileNav(false)}
-              holdCount={holds.length}
-            />
-            <button type="button" className="flex-1 bg-black/40" onClick={() => setMobileNav(false)} aria-label="Close menu" />
-          </div>
-        ) : null}
-
-        <div className="flex min-w-0 flex-1 flex-col">
+        }
+        mobileSidebar={
+          mobileNav ? (
+            <div className="fixed inset-0 z-40 flex lg:hidden">
+              <PosSidebar
+                collapsed={false}
+                onToggle={() => setMobileNav(false)}
+                holdCount={holds.length}
+              />
+              <button
+                type="button"
+                className="flex-1 bg-black/40"
+                onClick={() => setMobileNav(false)}
+                aria-label="Close menu"
+              />
+            </div>
+          ) : null
+        }
+        topbar={
           <PosHeader
             branchId={branchId}
             branches={branches}
@@ -776,163 +782,170 @@ export function PosPage() {
             clock={clock}
             shiftOpen={Boolean(shift)}
           />
-
-          <div className="grid min-h-0 flex-1 gap-3 p-3 xl:grid-cols-[minmax(0,1.35fr)_minmax(320px,0.9fr)]">
-            <div className="flex min-h-0 flex-col gap-3">
-              <div className="flex flex-wrap gap-2">
-                <Button size="sm" variant="secondary" onClick={() => void recognizeCamera()}>
-                  Camera AI
-                </Button>
-                {warehouseId ? (
-                  <Badge tone="neutral">WH {warehouseId.slice(0, 8)}</Badge>
-                ) : (
-                  <Badge tone="warning">No warehouse</Badge>
-                )}
-                {lastInvoice ? <Badge tone="success">Last {lastInvoice}</Badge> : null}
-              </div>
-              <PosProductPanel
-                query={q}
-                onQueryChange={setQ}
-                searching={searching}
-                products={results}
-                favorites={favorites}
-                recent={recent}
-                categories={categories}
-                selectedCategoryId={selectedCategoryId}
-                onSelectCategory={(id) => {
-                  setSelectedCategoryId(id);
-                  setTab("categories");
-                }}
-                favoriteIds={favoriteIds}
-                onToggleFavorite={toggleFavorite}
-                tab={tab}
-                onTabChange={setTab}
-                locale={locale}
-                onAdd={addProduct}
-                searchRef={searchRef}
-              />
-            </div>
-
-            <div className="flex min-h-0 flex-col gap-3">
-              <PosCustomerPanel
-                customer={customer}
-                walkIn={walkIn}
-                customers={customerHits}
-                customerQuery={customerQuery}
-                onCustomerQuery={setCustomerQuery}
-                onSelectCustomer={(id) => void selectCustomer(id)}
-                onWalkIn={() => {
-                  selectWalkIn();
-                  setCustomerQuery("");
-                }}
-                priceLevel={priceLevel}
-                onPriceLevel={setPriceLevel}
-                salesmanId={salesmanUserId}
-                salesmen={salesmen.map((s) => ({ id: s.id, name: `${s.name} (${s.commissionPercent}%)` }))}
-                onSalesman={(id) => {
-                  setSalesmanUserId(id);
-                  const match = salesmen.find((s) => s.id === id);
-                  setCommissionPercent(match?.commissionPercent ?? 0);
-                }}
-                delivery={delivery}
-                onDelivery={setDelivery}
-                customerRef={customerRef}
-                advanced={advanced}
-              />
-
-              <PosCartPanel
-                cart={cart}
-                advanced={advanced}
-                locale={locale}
-                onQty={(key, qty) => setQty(key, qty)}
-                onPrice={(key, unitPrice) => {
-                  if (!canPriceOverride) {
-                    setApprovalOpen(true);
-                    setPendingInvoiceDiscount(null);
-                    setApprovalReason(`price:${key}:${unitPrice}`);
-                    return;
-                  }
-                  setPrice(key, unitPrice);
-                }}
-                onDiscount={(key, discount) => setLineDiscount(key, discount)}
-                onRemove={(key) => removeLine(key)}
-                onClear={() => clearCart()}
-                onManual={addManualQuick}
-                canDiscount={canDiscount}
-                canPriceOverride={canPriceOverride}
-              />
-
-              <PosPaymentPanel
-                totals={totals}
-                invoiceDiscount={invoiceDiscount}
-                onInvoiceDiscount={requestInvoiceDiscount}
-                canInvoiceDiscount={canDiscount}
-                discountRef={discountRef}
-                methods={methods}
-                payments={payments}
-                onPayments={setPayments}
-                notes={notes}
-                onNotes={setNotes}
-                busy={busy}
-                canPay={Boolean(branchId && warehouseId && cart.length)}
-                allowCreditDue={!walkIn && Boolean(customerId)}
-                onHold={() => void holdBill()}
-                onPay={() => void checkout()}
-                onCancel={clearSale}
-                advanced={advanced}
-                useInstallment={useInstallment}
-                onUseInstallment={setUseInstallment}
-                installmentCount={installmentCount}
-                onInstallmentCount={setInstallmentCount}
-                downPayment={downPayment}
-                onDownPayment={setDownPayment}
-              />
-
-              {(showHolds || holds.length > 0) && (
-                <Card className="border-[var(--pos-border)] bg-[var(--pos-card)] p-3 shadow-sm">
-                  <div className="mb-2 flex items-center justify-between">
-                    <h3 className="text-sm font-semibold">Held bills</h3>
-                    <Button size="sm" variant="ghost" onClick={() => setShowHolds((v) => !v)}>
-                      {showHolds ? "Hide" : "Show"}
-                    </Button>
-                  </div>
-                  {showHolds ? (
-                    <ul className="max-h-40 space-y-2 overflow-auto text-sm">
-                      {holds.map((h) => (
-                        <li key={String(h.id)} className="flex items-center justify-between gap-2 border-b border-[var(--pos-border)] py-1.5">
-                          <span className="truncate">{String(h.hold_label ?? h.id)}</span>
-                          <Button size="sm" onClick={() => void resume(String(h.id))}>
-                            Resume
-                          </Button>
-                        </li>
-                      ))}
-                      {!holds.length ? (
-                        <li className="text-[var(--pos-muted)]">No held bills</li>
-                      ) : null}
-                    </ul>
-                  ) : null}
-                </Card>
+        }
+      >
+        <div className="grid min-h-0 flex-1 gap-3 p-3 xl:grid-cols-[minmax(0,1.35fr)_minmax(320px,0.9fr)]">
+          <div className="flex min-h-0 flex-col gap-3">
+            <div className="flex flex-wrap gap-2">
+              <POSButton size="sm" variant="secondary" onClick={() => void recognizeCamera()}>
+                Camera AI
+              </POSButton>
+              {warehouseId ? (
+                <POSBadge tone="neutral">WH {warehouseId.slice(0, 8)}</POSBadge>
+              ) : (
+                <POSBadge tone="warning">No warehouse</POSBadge>
               )}
-
-              {advanced ? (
-                <Card className="border-[var(--pos-border)] bg-[var(--pos-card)] p-3 text-xs text-[var(--pos-muted)] shadow-sm">
-                  <div className="mb-1 font-medium text-[var(--pos-ink)]">Warehouse</div>
-                  <Input value={warehouseId} onChange={(e) => setWarehouseId(e.target.value)} aria-label="Warehouse ID" />
-                </Card>
-              ) : null}
-
-              {receipt ? (
-                <ReceiptPreview
-                  invoice={receipt}
-                  format={receiptFormat}
-                  onFormatChange={setReceiptFormat}
-                  onClose={() => setReceipt(null)}
-                />
-              ) : null}
+              {lastInvoice ? <POSBadge tone="success">Last {lastInvoice}</POSBadge> : null}
             </div>
+            <PosProductPanel
+              query={q}
+              onQueryChange={setQ}
+              searching={searching}
+              products={results}
+              favorites={favorites}
+              recent={recent}
+              categories={categories}
+              selectedCategoryId={selectedCategoryId}
+              onSelectCategory={(id) => {
+                setSelectedCategoryId(id);
+                setTab("categories");
+              }}
+              favoriteIds={favoriteIds}
+              onToggleFavorite={toggleFavorite}
+              tab={tab}
+              onTabChange={setTab}
+              locale={locale}
+              onAdd={addProduct}
+              searchRef={searchRef}
+            />
+          </div>
+
+          <div className="flex min-h-0 flex-col gap-3">
+            <PosCustomerPanel
+              customer={customer}
+              walkIn={walkIn}
+              customers={customerHits}
+              customerQuery={customerQuery}
+              onCustomerQuery={setCustomerQuery}
+              onSelectCustomer={(id) => void selectCustomer(id)}
+              onWalkIn={() => {
+                selectWalkIn();
+                setCustomerQuery("");
+              }}
+              priceLevel={priceLevel}
+              onPriceLevel={setPriceLevel}
+              salesmanId={salesmanUserId}
+              salesmen={salesmen.map((s) => ({ id: s.id, name: `${s.name} (${s.commissionPercent}%)` }))}
+              onSalesman={(id) => {
+                setSalesmanUserId(id);
+                const match = salesmen.find((s) => s.id === id);
+                setCommissionPercent(match?.commissionPercent ?? 0);
+              }}
+              delivery={delivery}
+              onDelivery={setDelivery}
+              customerRef={customerRef}
+              advanced={advanced}
+            />
+
+            <PosCartPanel
+              cart={cart}
+              advanced={advanced}
+              locale={locale}
+              onQty={(key, qty) => setQty(key, qty)}
+              onPrice={(key, unitPrice) => {
+                if (!canPriceOverride) {
+                  setApprovalOpen(true);
+                  setPendingInvoiceDiscount(null);
+                  setApprovalReason(`price:${key}:${unitPrice}`);
+                  return;
+                }
+                setPrice(key, unitPrice);
+              }}
+              onDiscount={(key, discount) => setLineDiscount(key, discount)}
+              onRemove={(key) => removeLine(key)}
+              onClear={() => clearCart()}
+              onManual={addManualQuick}
+              canDiscount={canDiscount}
+              canPriceOverride={canPriceOverride}
+            />
+
+            <PosPaymentPanel
+              totals={totals}
+              invoiceDiscount={invoiceDiscount}
+              onInvoiceDiscount={requestInvoiceDiscount}
+              canInvoiceDiscount={canDiscount}
+              discountRef={discountRef}
+              methods={methods}
+              payments={payments}
+              onPayments={setPayments}
+              notes={notes}
+              onNotes={setNotes}
+              busy={busy}
+              canPay={Boolean(branchId && warehouseId && cart.length)}
+              allowCreditDue={!walkIn && Boolean(customerId)}
+              onHold={() => void holdBill()}
+              onPay={() => void checkout()}
+              onCancel={clearSale}
+              advanced={advanced}
+              useInstallment={useInstallment}
+              onUseInstallment={setUseInstallment}
+              installmentCount={installmentCount}
+              onInstallmentCount={setInstallmentCount}
+              downPayment={downPayment}
+              onDownPayment={setDownPayment}
+            />
+
+            {(showHolds || holds.length > 0) && (
+              <POSCard
+                title="Held bills"
+                actions={
+                  <POSButton size="sm" variant="ghost" onClick={() => setShowHolds((v) => !v)}>
+                    {showHolds ? "Hide" : "Show"}
+                  </POSButton>
+                }
+              >
+                {showHolds ? (
+                  <ul className="max-h-40 space-y-2 overflow-auto text-sm">
+                    {holds.map((h) => (
+                      <li
+                        key={String(h.id)}
+                        className="flex items-center justify-between gap-2 border-b border-[var(--pos-border)] py-1.5"
+                      >
+                        <span className="truncate">{String(h.hold_label ?? h.id)}</span>
+                        <POSButton size="sm" onClick={() => void resume(String(h.id))}>
+                          Resume
+                        </POSButton>
+                      </li>
+                    ))}
+                    {!holds.length ? (
+                      <POSEmptyState title="No held bills" description="Hold a sale to resume later" />
+                    ) : null}
+                  </ul>
+                ) : null}
+              </POSCard>
+            )}
+
+            {advanced ? (
+              <POSCard title="Warehouse" padding="sm">
+                <POSInput
+                  value={warehouseId}
+                  onChange={(e) => setWarehouseId(e.target.value)}
+                  aria-label="Warehouse ID"
+                />
+              </POSCard>
+            ) : null}
+
+            {receipt ? (
+              <ReceiptPreview
+                invoice={receipt}
+                format={receiptFormat}
+                onFormatChange={setReceiptFormat}
+                onClose={() => setReceipt(null)}
+              />
+            ) : null}
           </div>
         </div>
-      </div>
+      </POSLayout>
 
       <PosApprovalDialog
         open={approvalOpen}
