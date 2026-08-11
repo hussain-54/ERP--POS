@@ -1,0 +1,20 @@
+{
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    "outDir": "dist",
+    "rootDir": "src",
+    "composite": true,
+    "baseUrl": ".",
+    "paths": {
+      "@electronic-erp/contracts": ["../contracts/src/index.ts"],
+      "@electronic-erp/domain": ["../domain/src/index.ts"],
+      "@electronic-erp/sync": ["../sync/src/index.ts"]
+    }
+  },
+  "include": ["src"],
+  "references": [
+    { "path": "../contracts" },
+    { "path": "../domain" },
+    { "path": "../sync" }
+  ]
+}

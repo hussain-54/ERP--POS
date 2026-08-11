@@ -1,0 +1,22 @@
+:root {
+  --erp-bg: #f3f5f7;
+  --erp-surface: #ffffff;
+  --erp-ink: #12202e;
+  --erp-muted: #5b6b7c;
+  --erp-border: #d7e0e8;
+  --erp-brand: #0f6a5c;
+  --erp-brand-strong: #0b5247;
+  --erp-accent: #c9842d;
+  --erp-danger: #b42318;
+  --erp-success: #067647;
+  --erp-warning: #b54708;
+  --erp-ring: rgba(15, 106, 92, 0.35);
+  --erp-shadow: 0 10px 30px rgba(18, 32, 46, 0.08);
+  --erp-radius: 12px;
+  --erp-font: "Segoe UI", "Noto Nastaliq Urdu", sans-serif;
+}
+
+.erp-surface {
+  background: var(--erp-surface);
+  color: var(--erp-ink);
+}

@@ -1,0 +1,16 @@
+{
+  "name": "@electronic-erp/desktop",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Electron POS shell preparation — NOT production-ready until SQLite + IPC are wired.",
+  "main": "dist/main.js",
+  "scripts": {
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "build": "tsc -p tsconfig.json",
+    "prepare:check": "node -e \"console.log('[desktop] Electron scaffold present — production packaging blocked until CRITICAL gaps closed (see docs/PRODUCTION_READINESS.md)'); process.exit(0)\"",
+    "pack:dry-run": "npm run prepare:check"
+  },
+  "devDependencies": {
+    "typescript": "^5.8.2"
+  }
+}

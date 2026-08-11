@@ -1,0 +1,80 @@
+# Dependencies & caches
+node_modules/
+.npm-cache/
+.pnpm-store/
+
+# Build / release artifacts
+dist/
+build/
+release/
+out/
+coverage/
+*.tsbuildinfo
+apps/web/dist/
+apps/api/dist/
+apps/desktop/dist/
+apps/desktop/out/
+packages/*/dist/
+
+# Accidental tsc emit beside sources (packages build to dist/)
+packages/*/src/**/*.js
+packages/*/src/**/*.d.ts
+packages/*/src/**/*.js.map
+
+# Environment & secrets — never commit real values
+.env
+.env.*
+!.env.example
+!.env.*.example
+
+# Logs
+logs/
+*.log
+verify*.log
+install*.log
+npm.log
+build.log
+test.log
+tc.log
+api-dev*.log
+curl-npm.log
+health.json
+
+# Local offline / SQLite (created at runtime)
+.offline-data/
+*.db
+*.sqlite
+*.sqlite3
+*.db-wal
+*.db-shm
+*-wal
+*-shm
+
+# Keys / certs
+*.pem
+*.p12
+*.key
+id_rsa
+id_rsa.pub
+
+# OS / IDE
+.DS_Store
+Thumbs.db
+Desktop.ini
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# Tooling
+.vite/
+.turbo/
+supabase/.branches/
+supabase/.temp/
+
+# Electron installers / packaged apps
+*.exe
+*.dmg
+*.AppImage
+*.nsis
+*.blockmap
