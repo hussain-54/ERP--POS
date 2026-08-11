@@ -20,9 +20,14 @@ export interface POSTopbarProps {
   onMenu: () => void;
   clock: Date;
   shiftOpen?: boolean;
+  /** Open held-sales panel */
+  onHeldSales?: () => void;
+  /** Notifications — not yet wired to a backend feed */
+  onNotifications?: () => void;
+  notificationCount?: number;
 }
 
-/** Sticky POS top bar — white workspace chrome. */
+/** Sticky POS top bar — branch, terminal, cashier, shift, clock, holds, profile. */
 export function POSTopbar({
   branchId,
   branches,
@@ -38,9 +43,18 @@ export function POSTopbar({
   onMenu,
   clock,
   shiftOpen = false,
+  onHeldSales,
+  onNotifications,
+  notificationCount = 0,
 }: POSTopbarProps) {
   const time = clock.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", second: "2-digit" });
   const date = clock.toLocaleDateString();
+  const initials = cashierName
+    .split(/\s+/)
+    .filter(Boolean)
+    .slice(0, 2)
+    .map((p) => p[0]?.toUpperCase() ?? "")
+    .join("") || "U";
 
   return (
     <header
@@ -66,8 +80,8 @@ export function POSTopbar({
         />
       </div>
 
-      <POSBadge tone="neutral">Terminal · Main</POSBadge>
-      <POSBadge tone="primary">{cashierName}</POSBadge>
+      <POSBadge tone="primary">POS Terminal</POSBadge>
+      <POSBadge tone="neutral">{cashierName}</POSBadge>
       <POSBadge tone={shiftOpen ? "success" : "warning"}>
         {shiftOpen ? "Shift Open" : "No Shift"}
       </POSBadge>
@@ -77,12 +91,36 @@ export function POSTopbar({
         <div className="text-xs text-[var(--pos-muted)]">{date}</div>
       </div>
 
-      <div className="ml-auto flex flex-wrap items-center gap-2">
+      <div className="ml-auto flex flex-wrap items-center gap-1.5 sm:gap-2">
         <POSBadge tone={online ? "success" : "warning"}>
-          {syncing ? "↻ Syncing" : online ? "● Online" : "● Offline — Local"}
+          {syncing ? "Syncing" : online ? "Online" : "Offline"}
         </POSBadge>
-        <POSBadge tone="neutral">Held {holdCount}</POSBadge>
-        <div className="w-28">
+
+        <POSButtonishHeld
+          holdCount={holdCount}
+          onClick={onHeldSales}
+        />
+
+        <POSIconButton
+          label={
+            onNotifications
+              ? "Notifications"
+              : "Notifications (not connected yet)"
+          }
+          onClick={() => onNotifications?.()}
+          disabled={!onNotifications}
+        >
+          <span className="relative">
+            ✉
+            {notificationCount > 0 ? (
+              <span className="absolute -right-2 -top-1 rounded-full bg-[var(--pos-danger)] px-1 text-[9px] text-white">
+                {notificationCount}
+              </span>
+            ) : null}
+          </span>
+        </POSIconButton>
+
+        <div className="w-24">
           <POSSelect
             aria-label="Mode"
             value={mode}
@@ -105,9 +143,10 @@ export function POSTopbar({
             ]}
           />
         </div>
+
         <details className="relative">
           <summary className="cursor-pointer list-none rounded-[var(--pos-radius-sm)] border border-[var(--pos-border)] px-2 py-1.5 text-xs text-[var(--pos-muted)] hover:bg-[var(--pos-muted-bg)]">
-            Shortcuts
+            Keys
           </summary>
           <ul className="absolute right-0 z-30 mt-1 w-56 rounded-[var(--pos-radius)] border border-[var(--pos-border)] bg-[var(--pos-workspace)] p-2 text-xs shadow-[var(--pos-shadow-md)]">
             {POS_SHORTCUTS.map((s) => (
@@ -118,7 +157,46 @@ export function POSTopbar({
             ))}
           </ul>
         </details>
+
+        <div
+          className="flex items-center gap-2 rounded-[var(--pos-radius-sm)] border border-[var(--pos-border)] bg-[var(--pos-muted-bg)] py-1 pl-1 pr-2"
+          title={cashierName}
+        >
+          <span
+            className="inline-flex h-7 w-7 items-center justify-center rounded-full bg-[var(--pos-primary)] text-[11px] font-bold text-white"
+            aria-hidden
+          >
+            {initials}
+          </span>
+          <span className="hidden max-w-[7rem] truncate text-xs font-medium sm:inline">{cashierName}</span>
+        </div>
       </div>
     </header>
+  );
+}
+
+function POSButtonishHeld({
+  holdCount,
+  onClick,
+}: {
+  holdCount: number;
+  onClick?: () => void;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      disabled={!onClick}
+      className={posCn(
+        "inline-flex h-8 items-center gap-1.5 rounded-[var(--pos-radius-sm)] border border-[var(--pos-border)] px-2.5 text-xs font-medium",
+        "hover:bg-[var(--pos-muted-bg)] focus-visible:shadow-[var(--pos-focus)] disabled:opacity-50",
+      )}
+      title="Held sales (F2+Shift)"
+    >
+      Held
+      <span className="rounded-full bg-[var(--pos-primary-soft)] px-1.5 font-semibold text-[var(--pos-primary)]">
+        {holdCount}
+      </span>
+    </button>
   );
 }

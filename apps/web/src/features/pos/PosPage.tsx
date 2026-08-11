@@ -22,8 +22,18 @@ import { PosApprovalDialog } from "./components/PosApprovalDialog";
 import { ReceiptPreview, type InvoicePreview } from "./components/ReceiptPreview";
 import { catalogApi } from "@/features/catalog/catalog-api";
 import { usePosSession } from "./session/usePosSession";
-import { POSBadge, POSButton, POSCard, POSEmptyState, POSInput, POSLayout } from "./design-system";
 import {
+  POSActionBar,
+  POSBadge,
+  POSButton,
+  POSCard,
+  POSDrawer,
+  POSEmptyState,
+  POSInput,
+  POSLayout,
+} from "./design-system";
+import {
+  POS_SHORTCUTS,
   uuid,
   type CartLine,
   type LocaleMode,
@@ -32,6 +42,7 @@ import {
   type PriceLevel,
   type ProductTab,
 } from "./pos-types";
+import { cameraScanner } from "./hardware";
 
 const FAVORITES_KEY = "erp-pos-favorites";
 const FAVORITES_DATA_KEY = "erp-pos-favorites-data";
@@ -137,6 +148,7 @@ export function PosPage() {
   const [receiptFormat, setReceiptFormat] = useState<"80mm" | "58mm" | "a4">("80mm");
   const [clock, setClock] = useState(() => new Date());
   const [showHolds, setShowHolds] = useState(false);
+  const [creatingCustomer, setCreatingCustomer] = useState(false);
   const [deviceId] = useState(() => {
     const key = "erp-pos-device-id";
     const existing = localStorage.getItem(key);
@@ -608,6 +620,74 @@ export function PosPage() {
     setShowHolds(false);
   }
 
+  async function createCustomerFromPos(input: {
+    code: string;
+    name: string;
+    mobile?: string;
+  }) {
+    setCreatingCustomer(true);
+    try {
+      const created = await partiesApi.createCustomer({
+        code: input.code,
+        name: input.name,
+        mobile: input.mobile ?? "",
+        customerType: "retail",
+        creditLimit: "0",
+        creditDays: 0,
+      });
+      toast.push({ title: "Customer created", tone: "success" });
+      await selectCustomer(created.id);
+    } catch (err) {
+      toast.push({
+        title: "Create customer failed",
+        description: err instanceof Error ? err.message : "Error",
+        tone: "danger",
+      });
+      throw err;
+    } finally {
+      setCreatingCustomer(false);
+    }
+  }
+
+  function barcodeScanHint() {
+    searchRef.current?.focus();
+    toast.push({
+      title: "Barcode scanner ready",
+      description: "USB keyboard-wedge scanners type into search automatically when not in another field",
+      tone: "info",
+    });
+  }
+
+  async function scanQrFromCamera() {
+    try {
+      const result = await cameraScanner.requestScan();
+      if (result.ok && result.data?.code) {
+        setQ(result.data.code);
+        setTab("results");
+        toast.push({
+          title: "QR / camera code captured",
+          description: result.data.code,
+          tone: "success",
+        });
+        return;
+      }
+      toast.push({
+        title: "QR scanner not ready",
+        description: result.error ?? "Wire MediaDevices capture on this host (integration point)",
+        tone: "info",
+      });
+    } catch (err) {
+      toast.push({
+        title: "QR scanner not ready",
+        description:
+          err instanceof Error
+            ? err.message
+            : "Wire MediaDevices capture on this host (integration point)",
+        tone: "info",
+      });
+    }
+  }
+
   async function recognizeCamera() {
     const hw = await posHardware.recognizeFromCamera();
     const hwHint = hw.ok
@@ -781,171 +861,215 @@ export function PosPage() {
             onMenu={() => setMobileNav(true)}
             clock={clock}
             shiftOpen={Boolean(shift)}
+            onHeldSales={() => setShowHolds(true)}
+            onNotifications={() =>
+              toast.push({
+                title: "Notifications",
+                description: "Notification feed not connected yet — integration point ready",
+                tone: "info",
+              })
+            }
           />
         }
       >
-        <div className="grid min-h-0 flex-1 gap-3 p-3 xl:grid-cols-[minmax(0,1.35fr)_minmax(320px,0.9fr)]">
-          <div className="flex min-h-0 flex-col gap-3">
-            <div className="flex flex-wrap gap-2">
-              <POSButton size="sm" variant="secondary" onClick={() => void recognizeCamera()}>
-                Camera AI
-              </POSButton>
-              {warehouseId ? (
-                <POSBadge tone="neutral">WH {warehouseId.slice(0, 8)}</POSBadge>
-              ) : (
-                <POSBadge tone="warning">No warehouse</POSBadge>
-              )}
-              {lastInvoice ? <POSBadge tone="success">Last {lastInvoice}</POSBadge> : null}
-            </div>
-            <PosProductPanel
-              query={q}
-              onQueryChange={setQ}
-              searching={searching}
-              products={results}
-              favorites={favorites}
-              recent={recent}
-              categories={categories}
-              selectedCategoryId={selectedCategoryId}
-              onSelectCategory={(id) => {
-                setSelectedCategoryId(id);
-                setTab("categories");
-              }}
-              favoriteIds={favoriteIds}
-              onToggleFavorite={toggleFavorite}
-              tab={tab}
-              onTabChange={setTab}
-              locale={locale}
-              onAdd={addProduct}
-              searchRef={searchRef}
-            />
-          </div>
-
-          <div className="flex min-h-0 flex-col gap-3">
-            <PosCustomerPanel
-              customer={customer}
-              walkIn={walkIn}
-              customers={customerHits}
-              customerQuery={customerQuery}
-              onCustomerQuery={setCustomerQuery}
-              onSelectCustomer={(id) => void selectCustomer(id)}
-              onWalkIn={() => {
-                selectWalkIn();
-                setCustomerQuery("");
-              }}
-              priceLevel={priceLevel}
-              onPriceLevel={setPriceLevel}
-              salesmanId={salesmanUserId}
-              salesmen={salesmen.map((s) => ({ id: s.id, name: `${s.name} (${s.commissionPercent}%)` }))}
-              onSalesman={(id) => {
-                setSalesmanUserId(id);
-                const match = salesmen.find((s) => s.id === id);
-                setCommissionPercent(match?.commissionPercent ?? 0);
-              }}
-              delivery={delivery}
-              onDelivery={setDelivery}
-              customerRef={customerRef}
-              advanced={advanced}
-            />
-
-            <PosCartPanel
-              cart={cart}
-              advanced={advanced}
-              locale={locale}
-              onQty={(key, qty) => setQty(key, qty)}
-              onPrice={(key, unitPrice) => {
-                if (!canPriceOverride) {
-                  setApprovalOpen(true);
-                  setPendingInvoiceDiscount(null);
-                  setApprovalReason(`price:${key}:${unitPrice}`);
-                  return;
-                }
-                setPrice(key, unitPrice);
-              }}
-              onDiscount={(key, discount) => setLineDiscount(key, discount)}
-              onRemove={(key) => removeLine(key)}
-              onClear={() => clearCart()}
-              onManual={addManualQuick}
-              canDiscount={canDiscount}
-              canPriceOverride={canPriceOverride}
-            />
-
-            <PosPaymentPanel
-              totals={totals}
-              invoiceDiscount={invoiceDiscount}
-              onInvoiceDiscount={requestInvoiceDiscount}
-              canInvoiceDiscount={canDiscount}
-              discountRef={discountRef}
-              methods={methods}
-              payments={payments}
-              onPayments={setPayments}
-              notes={notes}
-              onNotes={setNotes}
-              busy={busy}
-              canPay={Boolean(branchId && warehouseId && cart.length)}
-              allowCreditDue={!walkIn && Boolean(customerId)}
-              onHold={() => void holdBill()}
-              onPay={() => void checkout()}
-              onCancel={clearSale}
-              advanced={advanced}
-              useInstallment={useInstallment}
-              onUseInstallment={setUseInstallment}
-              installmentCount={installmentCount}
-              onInstallmentCount={setInstallmentCount}
-              downPayment={downPayment}
-              onDownPayment={setDownPayment}
-            />
-
-            {(showHolds || holds.length > 0) && (
-              <POSCard
-                title="Held bills"
-                actions={
-                  <POSButton size="sm" variant="ghost" onClick={() => setShowHolds((v) => !v)}>
-                    {showHolds ? "Hide" : "Show"}
-                  </POSButton>
-                }
-              >
-                {showHolds ? (
-                  <ul className="max-h-40 space-y-2 overflow-auto text-sm">
-                    {holds.map((h) => (
-                      <li
-                        key={String(h.id)}
-                        className="flex items-center justify-between gap-2 border-b border-[var(--pos-border)] py-1.5"
-                      >
-                        <span className="truncate">{String(h.hold_label ?? h.id)}</span>
-                        <POSButton size="sm" onClick={() => void resume(String(h.id))}>
-                          Resume
-                        </POSButton>
-                      </li>
-                    ))}
-                    {!holds.length ? (
-                      <POSEmptyState title="No held bills" description="Hold a sale to resume later" />
-                    ) : null}
-                  </ul>
-                ) : null}
-              </POSCard>
-            )}
-
-            {advanced ? (
-              <POSCard title="Warehouse" padding="sm">
-                <POSInput
-                  value={warehouseId}
-                  onChange={(e) => setWarehouseId(e.target.value)}
-                  aria-label="Warehouse ID"
-                />
-              </POSCard>
-            ) : null}
-
-            {receipt ? (
-              <ReceiptPreview
-                invoice={receipt}
-                format={receiptFormat}
-                onFormatChange={setReceiptFormat}
-                onClose={() => setReceipt(null)}
+        <div className="flex min-h-0 flex-1 flex-col">
+          <div className="grid min-h-0 flex-1 gap-3 p-3 xl:grid-cols-[minmax(0,1.4fr)_minmax(340px,0.95fr)]">
+            <div className="flex min-h-0 flex-col gap-3">
+              <div className="flex flex-wrap items-center gap-2">
+                {warehouseId ? (
+                  <POSBadge tone="neutral">WH {warehouseId.slice(0, 8)}</POSBadge>
+                ) : (
+                  <POSBadge tone="warning">No warehouse</POSBadge>
+                )}
+                {lastInvoice ? <POSBadge tone="success">Last {lastInvoice}</POSBadge> : null}
+                <POSBadge tone="primary">Rs {totals.grand.toFixed(2)}</POSBadge>
+              </div>
+              <PosProductPanel
+                query={q}
+                onQueryChange={setQ}
+                searching={searching}
+                products={results}
+                favorites={favorites}
+                recent={recent}
+                categories={categories}
+                selectedCategoryId={selectedCategoryId}
+                onSelectCategory={(id) => {
+                  setSelectedCategoryId(id);
+                  setTab("categories");
+                }}
+                favoriteIds={favoriteIds}
+                onToggleFavorite={toggleFavorite}
+                tab={tab}
+                onTabChange={setTab}
+                locale={locale}
+                onAdd={addProduct}
+                searchRef={searchRef}
+                onCamera={() => void recognizeCamera()}
+                onBarcodeScanHint={barcodeScanHint}
+                onQrScan={() => void scanQrFromCamera()}
+                onManualEntry={addManualQuick}
               />
-            ) : null}
+            </div>
+
+            <div className="flex min-h-0 flex-col gap-3">
+              <PosCustomerPanel
+                customer={customer}
+                walkIn={walkIn}
+                customers={customerHits}
+                customerQuery={customerQuery}
+                onCustomerQuery={setCustomerQuery}
+                onSelectCustomer={(id) => void selectCustomer(id)}
+                onWalkIn={() => {
+                  selectWalkIn();
+                  setCustomerQuery("");
+                }}
+                onCreateCustomer={createCustomerFromPos}
+                creatingCustomer={creatingCustomer}
+                priceLevel={priceLevel}
+                onPriceLevel={setPriceLevel}
+                salesmanId={salesmanUserId}
+                salesmen={salesmen.map((s) => ({
+                  id: s.id,
+                  name: `${s.name} (${s.commissionPercent}%)`,
+                }))}
+                onSalesman={(id) => {
+                  setSalesmanUserId(id);
+                  const match = salesmen.find((s) => s.id === id);
+                  setCommissionPercent(match?.commissionPercent ?? 0);
+                }}
+                delivery={delivery}
+                onDelivery={setDelivery}
+                customerRef={customerRef}
+                advanced={advanced}
+              />
+
+              <PosCartPanel
+                cart={cart}
+                advanced={advanced}
+                locale={locale}
+                onQty={(key, qty) => setQty(key, qty)}
+                onPrice={(key, unitPrice) => {
+                  if (!canPriceOverride) {
+                    setApprovalOpen(true);
+                    setPendingInvoiceDiscount(null);
+                    setApprovalReason(`price:${key}:${unitPrice}`);
+                    return;
+                  }
+                  setPrice(key, unitPrice);
+                }}
+                onDiscount={(key, discount) => setLineDiscount(key, discount)}
+                onRemove={(key) => removeLine(key)}
+                onClear={() => clearCart()}
+                onManual={addManualQuick}
+                canDiscount={canDiscount}
+                canPriceOverride={canPriceOverride}
+              />
+
+              <PosPaymentPanel
+                totals={totals}
+                invoiceDiscount={invoiceDiscount}
+                onInvoiceDiscount={requestInvoiceDiscount}
+                canInvoiceDiscount={canDiscount}
+                discountRef={discountRef}
+                methods={methods}
+                payments={payments}
+                onPayments={setPayments}
+                notes={notes}
+                onNotes={setNotes}
+                busy={busy}
+                canPay={Boolean(branchId && warehouseId && cart.length)}
+                allowCreditDue={!walkIn && Boolean(customerId)}
+                onHold={() => void holdBill()}
+                onPay={() => void checkout()}
+                onCancel={clearSale}
+                advanced={advanced}
+                useInstallment={useInstallment}
+                onUseInstallment={setUseInstallment}
+                installmentCount={installmentCount}
+                onInstallmentCount={setInstallmentCount}
+                downPayment={downPayment}
+                onDownPayment={setDownPayment}
+              />
+
+              {advanced ? (
+                <POSCard title="Warehouse" padding="sm">
+                  <POSInput
+                    value={warehouseId}
+                    onChange={(e) => setWarehouseId(e.target.value)}
+                    aria-label="Warehouse ID"
+                  />
+                </POSCard>
+              ) : null}
+
+              {receipt ? (
+                <ReceiptPreview
+                  invoice={receipt}
+                  format={receiptFormat}
+                  onFormatChange={setReceiptFormat}
+                  onClose={() => setReceipt(null)}
+                />
+              ) : null}
+            </div>
           </div>
+
+          <POSActionBar
+            left={
+              <div className="flex flex-wrap gap-2 text-[11px] text-[var(--pos-muted)]">
+                {POS_SHORTCUTS.map((s) => (
+                  <span key={s.key} className="inline-flex items-center gap-1">
+                    <kbd className="rounded border border-[var(--pos-border)] bg-[var(--pos-muted-bg)] px-1.5 py-0.5 font-semibold text-[var(--pos-ink)]">
+                      {s.key}
+                    </kbd>
+                    <span className="hidden sm:inline">{s.label}</span>
+                  </span>
+                ))}
+              </div>
+            }
+            right={
+              <>
+                <POSButton size="sm" variant="ghost" onClick={() => searchRef.current?.focus()}>
+                  Search
+                </POSButton>
+                <POSButton size="sm" variant="ghost" onClick={() => setShowHolds(true)}>
+                  Held ({holds.length})
+                </POSButton>
+                <POSButton size="sm" variant="ghost" onClick={clearSale} disabled={busy}>
+                  Cancel
+                </POSButton>
+                <POSButton
+                  size="sm"
+                  variant="success"
+                  onClick={() => void checkout()}
+                  disabled={busy || !branchId || !warehouseId || !cart.length}
+                  loading={busy}
+                >
+                  Pay Rs {totals.grand.toFixed(0)}
+                </POSButton>
+              </>
+            }
+          />
         </div>
       </POSLayout>
+
+      <POSDrawer open={showHolds} title="Held sales" onClose={() => setShowHolds(false)} side="right">
+        {holds.length === 0 ? (
+          <POSEmptyState title="No held bills" description="Hold a sale to resume later (F2)" />
+        ) : (
+          <ul className="space-y-2 text-sm">
+            {holds.map((h) => (
+              <li
+                key={String(h.id)}
+                className="flex items-center justify-between gap-2 rounded-[var(--pos-radius-sm)] border border-[var(--pos-border)] px-3 py-2"
+              >
+                <span className="truncate font-medium">{String(h.hold_label ?? h.id)}</span>
+                <POSButton size="sm" onClick={() => void resume(String(h.id))}>
+                  Resume
+                </POSButton>
+              </li>
+            ))}
+          </ul>
+        )}
+      </POSDrawer>
 
       <PosApprovalDialog
         open={approvalOpen}

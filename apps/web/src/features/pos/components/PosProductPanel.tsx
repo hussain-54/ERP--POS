@@ -31,6 +31,18 @@ interface Props {
   locale: "en" | "ur" | "en_ur";
   onAdd: (p: ProductSearchResult) => void;
   searchRef: React.RefObject<HTMLInputElement | null>;
+  /** Quick actions — wired from PosPage */
+  onCamera?: () => void;
+  onBarcodeScanHint?: () => void;
+  onQrScan?: () => void;
+  onManualEntry?: () => void;
+  priceLevelLabel?: string;
+}
+
+function productTitle(p: ProductSearchResult, locale: Props["locale"]) {
+  if (locale === "ur" && p.nameUr) return p.nameUr;
+  if (locale === "en_ur" && p.nameUr) return `${p.name} / ${p.nameUr}`;
+  return p.name;
 }
 
 function ProductCard({
@@ -46,22 +58,19 @@ function ProductCard({
   favorited: boolean;
   onToggleFavorite: (p: ProductSearchResult) => void;
 }) {
-  const title =
-    locale === "ur" && p.nameUr
-      ? p.nameUr
-      : locale === "en_ur" && p.nameUr
-        ? `${p.name} / ${p.nameUr}`
-        : p.name;
+  const title = productTitle(p, locale);
   const stock = Number(p.stockAvailable);
   const low = stock <= 0;
-  const meta = [p.brand, p.category, p.unitName].filter(Boolean).join(" · ");
+  const meta = [p.brand, p.model, p.category].filter(Boolean).join(" · ");
+  const initial = (title.trim()[0] ?? "?").toUpperCase();
 
   return (
-    <div className="group relative flex flex-col overflow-hidden rounded-[var(--pos-radius)] border border-[var(--pos-border)] bg-[var(--pos-card)] text-left shadow-sm transition hover:border-[var(--pos-primary)] hover:shadow-md">
+    <div className="group relative flex flex-col overflow-hidden rounded-[var(--pos-radius)] border border-[var(--pos-border)] bg-[var(--pos-card)] text-left shadow-[var(--pos-shadow)] transition hover:border-[var(--pos-primary)] hover:shadow-[var(--pos-shadow-md)]">
       <button
         type="button"
         className="absolute right-2 top-2 z-10"
         title={favorited ? "Remove favorite" : "Add favorite"}
+        aria-label={favorited ? "Remove favorite" : "Add favorite"}
         onClick={(e) => {
           e.stopPropagation();
           onToggleFavorite(p);
@@ -74,10 +83,16 @@ function ProductCard({
       <button
         type="button"
         onClick={() => onAdd(p)}
-        className="flex flex-1 flex-col text-left focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--pos-primary)]"
+        className="flex flex-1 flex-col text-left focus:outline-none focus-visible:shadow-[var(--pos-focus)]"
       >
-        <div className="relative flex aspect-[4/3] items-center justify-center bg-gradient-to-br from-slate-100 to-slate-200 px-3">
-          <div className="line-clamp-3 text-center text-sm font-semibold text-slate-700">{title}</div>
+        {/* Image slot: search API has no image URL yet — placeholder, not fake product photos */}
+        <div className="relative flex aspect-[4/3] items-center justify-center bg-gradient-to-br from-[var(--pos-muted-bg)] to-[var(--pos-border)] px-3">
+          <span
+            className="flex h-14 w-14 items-center justify-center rounded-full bg-[var(--pos-workspace)] text-xl font-bold text-[var(--pos-primary)] shadow-[var(--pos-shadow)]"
+            aria-hidden
+          >
+            {initial}
+          </span>
           {low ? (
             <span className="absolute left-2 top-2 rounded bg-[var(--pos-danger)] px-1.5 py-0.5 text-[10px] font-semibold text-white">
               Out of stock
@@ -85,15 +100,20 @@ function ProductCard({
           ) : null}
         </div>
         <div className="flex flex-1 flex-col gap-1 p-2.5">
-          <div className="line-clamp-2 text-sm font-medium leading-snug">{title}</div>
-          <div className="text-[11px] text-[var(--pos-muted)]">{p.sku || p.barcode || "—"}</div>
-          {meta ? <div className="text-[10px] text-[var(--pos-muted)]">{meta}</div> : null}
+          <div className="line-clamp-2 text-sm font-medium leading-snug text-[var(--pos-ink)]">{title}</div>
+          <div className="text-[11px] text-[var(--pos-muted)]">SKU {p.sku || "—"}</div>
+          {p.barcode ? (
+            <div className="truncate text-[10px] text-[var(--pos-muted)]">BC {p.barcode}</div>
+          ) : null}
+          {meta ? <div className="line-clamp-1 text-[10px] text-[var(--pos-muted)]">{meta}</div> : null}
           <div className="mt-auto flex items-end justify-between gap-2 pt-1">
             <div>
-              <div className="text-base font-semibold tabular-nums">Rs {Number(p.retailPrice).toFixed(0)}</div>
+              <div className="text-base font-semibold tabular-nums text-[var(--pos-ink)]">
+                Rs {Number(p.retailPrice).toFixed(0)}
+              </div>
               <div className="text-[10px] text-[var(--pos-muted)]">Stock {p.stockAvailable}</div>
             </div>
-            <span className="rounded-md bg-[var(--pos-primary)] px-2 py-1 text-xs font-medium text-white opacity-90 group-hover:opacity-100">
+            <span className="rounded-[var(--pos-radius-sm)] bg-[var(--pos-primary)] px-2 py-1 text-xs font-medium text-white opacity-90 group-hover:opacity-100">
               Add
             </span>
           </div>
@@ -120,6 +140,10 @@ export function PosProductPanel({
   locale,
   onAdd,
   searchRef,
+  onCamera,
+  onBarcodeScanHint,
+  onQrScan,
+  onManualEntry,
 }: Props) {
   const list =
     tab === "favorites"
@@ -146,20 +170,49 @@ export function PosProductPanel({
           <div className="min-w-[220px] flex-1">
             <POSSearch
               ref={searchRef as React.RefObject<HTMLInputElement>}
-              label="Search / Barcode / SKU"
-              placeholder="Scan or type product…"
+              label="Global search"
+              placeholder="Name, Urdu, SKU, barcode, brand, model…"
               value={query}
               onChange={(e) => {
                 onQueryChange(e.target.value);
                 onTabChange("results");
               }}
               autoComplete="off"
+              hint="Searches name · Urdu · SKU · barcode · brand · model · category"
             />
           </div>
           <POSBadge tone={searching ? "warning" : "neutral"}>
             {searching ? "Searching…" : `${list.length} items`}
           </POSBadge>
         </div>
+
+        <div className="mt-3 flex flex-wrap gap-1.5">
+          <POSButton size="sm" variant="secondary" onClick={onCamera} title="Camera recognition">
+            Camera
+          </POSButton>
+          <POSButton
+            size="sm"
+            variant="ghost"
+            onClick={onBarcodeScanHint}
+            title="USB barcode scanner (keyboard wedge) is always listening when focused outside inputs"
+          >
+            Barcode
+          </POSButton>
+          <POSButton size="sm" variant="ghost" onClick={onQrScan} title="QR / camera scanner">
+            QR
+          </POSButton>
+          <POSButton size="sm" variant="ghost" onClick={onManualEntry} title="Manual cart line">
+            Manual
+          </POSButton>
+          <POSButton
+            size="sm"
+            variant={tab === "recent" ? "primary" : "ghost"}
+            onClick={() => onTabChange("recent")}
+          >
+            Recent
+          </POSButton>
+        </div>
+
         <div className="mt-3 flex flex-wrap gap-1">
           {tabs.map((t) => (
             <POSButton
@@ -205,15 +258,11 @@ export function PosProductPanel({
         ) : list.length === 0 ? (
           <POSCard className="border-dashed">
             <POSEmptyState
-              title={
-                tab === "favorites"
-                  ? "No favorites yet"
-                  : "No products yet"
-              }
+              title={tab === "favorites" ? "No favorites yet" : "No products yet"}
               description={
                 tab === "favorites"
                   ? "Tap ★ on a product card"
-                  : "Scan a barcode or search by name / SKU"
+                  : "Scan a barcode or search by name / Urdu / SKU / brand"
               }
             />
           </POSCard>
