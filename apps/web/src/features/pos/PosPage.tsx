@@ -152,6 +152,8 @@ export function PosPage() {
   const [payments, setPayments] = useState<PaySplit[]>([]);
   const [salesmanUserId, setSalesmanUserId] = useState("");
   const [salesmen, setSalesmen] = useState<SalesmanOption[]>([]);
+  const [referenceId, setReferenceId] = useState("");
+  const [references, setReferences] = useState<Array<{ id: string; name: string }>>([]);
   const [commissionPercent, setCommissionPercent] = useState(0);
   const [delivery, setDelivery] = useState(false);
   const [useInstallment, setUseInstallment] = useState(false);
@@ -257,6 +259,19 @@ export function PosPage() {
     void enterpriseApi
       .listEmployees()
       .then((r) => setSalesmen(mapSalesmanEmployees(r.items)))
+      .catch(() => undefined);
+    void enterpriseApi
+      .listReferences()
+      .then((r) =>
+        setReferences(
+          (r.items as Array<Record<string, unknown>>)
+            .filter((x) => x.is_active !== false)
+            .map((x) => ({
+              id: String(x.id),
+              name: `${String(x.name)}${x.code ? ` (${String(x.code)})` : ""}`,
+            })),
+        ),
+      )
       .catch(() => undefined);
     void enterpriseApi
       .listTaxRates()
@@ -495,6 +510,9 @@ export function PosPage() {
         : [],
     );
     setLastInvoice(null);
+    setSalesmanUserId("");
+    setReferenceId("");
+    setCommissionPercent(0);
   }
 
   function requestInvoiceDiscount(value: string) {
@@ -712,6 +730,7 @@ export function PosPage() {
         warehouseId,
         customerId: walkIn ? undefined : customerId || undefined,
         salesmanUserId: salesmanUserId || undefined,
+        referenceId: referenceId || undefined,
         commissionPercent: salesmanUserId ? commissionPercent : 0,
         notes: [notes, delivery ? "Delivery required" : ""].filter(Boolean).join(" · ") || undefined,
         posMode: mode,
@@ -836,6 +855,7 @@ export function PosPage() {
         delivery,
         priceLevel,
         salesmanUserId,
+        referenceId,
       });
       await posApi.hold({
         branchId,
@@ -879,6 +899,7 @@ export function PosPage() {
     if (Array.isArray(snap.payments)) setPayments(snap.payments as PaySplit[]);
     if (typeof snap.priceLevel === "string") setPriceLevel(snap.priceLevel as PriceLevel);
     if (typeof snap.salesmanUserId === "string") setSalesmanUserId(snap.salesmanUserId);
+    if (typeof snap.referenceId === "string") setReferenceId(snap.referenceId);
     if (typeof snap.delivery === "boolean") setDelivery(snap.delivery);
   }
 
@@ -1314,6 +1335,9 @@ export function PosPage() {
                   const match = salesmen.find((s) => s.id === id);
                   setCommissionPercent(match?.commissionPercent ?? 0);
                 }}
+                referenceId={referenceId}
+                references={references}
+                onReference={setReferenceId}
                 delivery={delivery}
                 onDelivery={setDelivery}
                 customerRef={customerRef}

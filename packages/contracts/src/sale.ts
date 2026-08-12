@@ -89,6 +89,7 @@ export const CreateSaleBaseSchema = z.object({
   customerId: UuidSchema.optional(),
   salesmanUserId: UuidSchema.optional(),
   referenceName: z.string().max(200).optional(),
+  referenceId: UuidSchema.optional(),
   priceLevelId: UuidSchema.optional(),
   posMode: PosModeSchema.default("advanced"),
   localeMode: PosLocaleModeSchema.default("en"),

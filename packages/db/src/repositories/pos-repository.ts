@@ -8,6 +8,7 @@ import type {
 import {
   assertHoldActionAllowed,
   assertHoldCartNonEmpty,
+  adjustCommissionForReturn,
   buildSaleReturnAuditRow,
   buildSaleReturnJournalLines,
   cartLinesForResume,
@@ -20,6 +21,7 @@ import {
   statusAfterExpiry,
   summarizeReturnHistory,
   ValidationDomainError,
+  type CommissionRecord,
   type HeldSaleFilter,
   type HeldSaleRecord,
   type ReturnableLine,
@@ -941,6 +943,45 @@ export class PosRepository {
       lines: buildSaleReturnJournalLines({ refundAmount: prepared.refundAmount, cogs }),
     });
 
+    // Commission rules: adjust accrued commission for returned amounts (finalized sales only).
+    const { data: commissionRow } = await this.db
+      .from("sale_commissions")
+      .select("*")
+      .eq("organization_id", input.organizationId)
+      .eq("sale_id", input.originalSaleId)
+      .maybeSingle();
+    if (commissionRow) {
+      const current: CommissionRecord = {
+        id: String(commissionRow.id),
+        saleId: String(commissionRow.sale_id),
+        salesmanUserId: String(commissionRow.salesman_user_id),
+        employeeId: commissionRow.employee_id ? String(commissionRow.employee_id) : null,
+        baseAmount: Number(commissionRow.base_amount ?? 0),
+        commissionPercent: Number(commissionRow.commission_percent ?? 0),
+        commissionAmount: Number(commissionRow.commission_amount ?? 0),
+        status: commissionRow.status as CommissionRecord["status"],
+        paidAmount: Number(commissionRow.paid_amount ?? 0),
+        originalAmount: Number(commissionRow.original_amount ?? commissionRow.commission_amount ?? 0),
+      };
+      const adjusted = adjustCommissionForReturn({
+        commission: current,
+        returnedAmount: prepared.refundAmount,
+      });
+      await this.db
+        .from("sale_commissions")
+        .update({
+          base_amount: adjusted.baseAmount,
+          commission_amount: adjusted.commissionAmount,
+          status: adjusted.status,
+          paid_amount: adjusted.paidAmount,
+          original_amount: adjusted.originalAmount,
+          adjusted_at: nowIso,
+          voided_at: adjusted.status === "void" ? nowIso : null,
+          updated_at: nowIso,
+        })
+        .eq("id", current.id);
+    }
+
     await this.db.from("audit_logs").insert(
       buildSaleReturnAuditRow({
         organizationId: input.organizationId,
@@ -1308,7 +1349,28 @@ export class PosRepository {
         await self.ensureAndPostJournal(input as never);
       },
       async postCommission(input: Record<string, unknown>) {
-        const { error } = await db.from("sale_commissions").insert(input);
+        let employeeId = input.employee_id ?? null;
+        if (!employeeId && input.salesman_user_id) {
+          const { data: emp } = await db
+            .from("employees")
+            .select("id")
+            .eq("organization_id", input.organization_id)
+            .eq("user_id", input.salesman_user_id)
+            .eq("is_salesman", true)
+            .maybeSingle();
+          employeeId = emp?.id ?? null;
+        }
+        const payload = {
+          ...input,
+          employee_id: employeeId,
+          status: input.status ?? "accrued",
+          paid_amount: input.paid_amount ?? 0,
+          original_amount: input.original_amount ?? input.commission_amount,
+          updated_at: new Date().toISOString(),
+        };
+        const { error } = await db.from("sale_commissions").upsert(payload, {
+          onConflict: "organization_id,sale_id",
+        });
         if (error) throw error;
       },
       async postWarranties(rows: Array<Record<string, unknown>>) {

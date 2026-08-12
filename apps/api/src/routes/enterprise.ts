@@ -5,12 +5,17 @@ import {
   CreateIncentiveSchema,
   CreateNotificationSchema,
   CreateSalaryRunSchema,
+  CreateSaleReferenceSchema,
   CreateTaxDocumentSchema,
+  PayCommissionSchema,
   ScanNotificationsSchema,
   TaxRateSchema,
+  UpdateEmployeeSchema,
+  UpdateSaleReferenceSchema,
   UpsertAttendanceSchema,
   UpsertPerformanceSchema,
   UpsertTaxProfileSchema,
+  VoidCommissionForSaleSchema,
 } from "@electronic-erp/contracts";
 import { EnterpriseRepository } from "@electronic-erp/db";
 import { AuthorizationService } from "@electronic-erp/domain";
@@ -49,8 +54,85 @@ enterpriseRouter.post("/hr/employees", requireAuth, async (req: AuthedRequest, r
 
 enterpriseRouter.get("/hr/employees", requireAuth, async (req: AuthedRequest, res, next) => {
   try {
-    assertAny(req, ["hr.view", "hr.manage", "hr.payroll"]);
+    assertAny(req, ["hr.view", "hr.manage", "hr.payroll", "salesman.manage", "pos.sell"]);
     res.json({ items: await repo(req).listEmployees(orgId(req)) });
+  } catch (err) {
+    next(err);
+  }
+});
+
+enterpriseRouter.patch("/hr/employees/:id", requireAuth, async (req: AuthedRequest, res, next) => {
+  try {
+    assertAny(req, ["hr.manage", "salesman.manage"]);
+    const input = UpdateEmployeeSchema.parse({
+      ...req.body,
+      organizationId: orgId(req),
+      id: req.params.id,
+    });
+    res.json({ item: await repo(req).updateEmployee(input) });
+  } catch (err) {
+    next(err);
+  }
+});
+
+enterpriseRouter.post("/references", requireAuth, async (req: AuthedRequest, res, next) => {
+  try {
+    assertAny(req, ["salesman.manage", "hr.manage", "pos.sell"]);
+    const input = CreateSaleReferenceSchema.parse({ ...req.body, organizationId: orgId(req) });
+    res.status(201).json({ item: await repo(req).createSaleReference(input, userId(req)) });
+  } catch (err) {
+    next(err);
+  }
+});
+
+enterpriseRouter.get("/references", requireAuth, async (req: AuthedRequest, res, next) => {
+  try {
+    assertAny(req, ["salesman.manage", "hr.view", "hr.manage", "pos.sell", "commissions.view"]);
+    const activeOnly = String(req.query.activeOnly ?? "") === "1";
+    res.json({ items: await repo(req).listSaleReferences(orgId(req), activeOnly) });
+  } catch (err) {
+    next(err);
+  }
+});
+
+enterpriseRouter.patch("/references/:id", requireAuth, async (req: AuthedRequest, res, next) => {
+  try {
+    assertAny(req, ["salesman.manage", "hr.manage"]);
+    const input = UpdateSaleReferenceSchema.parse({
+      ...req.body,
+      organizationId: orgId(req),
+      id: req.params.id,
+    });
+    res.json({ item: await repo(req).updateSaleReference(input) });
+  } catch (err) {
+    next(err);
+  }
+});
+
+enterpriseRouter.post("/commissions/pay", requireAuth, async (req: AuthedRequest, res, next) => {
+  try {
+    assertAny(req, ["commissions.manage", "hr.payroll"]);
+    const input = PayCommissionSchema.parse({ ...req.body, organizationId: orgId(req) });
+    res.json({ item: await repo(req).payCommission(input) });
+  } catch (err) {
+    next(err);
+  }
+});
+
+enterpriseRouter.post("/commissions/void-for-sale", requireAuth, async (req: AuthedRequest, res, next) => {
+  try {
+    assertAny(req, ["commissions.manage", "hr.payroll"]);
+    const input = VoidCommissionForSaleSchema.parse({ ...req.body, organizationId: orgId(req) });
+    res.json({ item: await repo(req).voidCommissionForSale(input.organizationId, input.saleId) });
+  } catch (err) {
+    next(err);
+  }
+});
+
+enterpriseRouter.get("/commissions/reports", requireAuth, async (req: AuthedRequest, res, next) => {
+  try {
+    assertAny(req, ["commissions.view", "hr.view", "hr.payroll", "hr.manage"]);
+    res.json(await repo(req).commissionReports(orgId(req)));
   } catch (err) {
     next(err);
   }
@@ -118,7 +200,7 @@ enterpriseRouter.post("/hr/performance", requireAuth, async (req: AuthedRequest,
 
 enterpriseRouter.get("/hr/commissions", requireAuth, async (req: AuthedRequest, res, next) => {
   try {
-    assertAny(req, ["hr.view", "hr.payroll", "hr.manage"]);
+    assertAny(req, ["hr.view", "hr.payroll", "hr.manage", "commissions.view"]);
     res.json(
       await repo(req).salesmanCommissionSummary(orgId(req), {
         employeeId: String(req.query.employeeId ?? "") || undefined,

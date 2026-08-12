@@ -44,6 +44,9 @@ interface Props {
   salesmanId: string;
   salesmen: Array<{ id: string; name: string }>;
   onSalesman: (id: string) => void;
+  referenceId: string;
+  references: Array<{ id: string; name: string }>;
+  onReference: (id: string) => void;
   delivery: boolean;
   onDelivery: (v: boolean) => void;
   customerRef: React.RefObject<HTMLInputElement | null>;
@@ -81,6 +84,9 @@ export function PosCustomerPanel({
   salesmanId,
   salesmen,
   onSalesman,
+  referenceId,
+  references,
+  onReference,
   delivery,
   onDelivery,
   customerRef,
@@ -332,6 +338,15 @@ export function PosCustomerPanel({
             options={[
               { value: "", label: "None" },
               ...salesmen.map((s) => ({ value: s.id, label: s.name })),
+            ]}
+          />
+          <POSSelect
+            label="Reference"
+            value={referenceId}
+            onChange={(e) => onReference(e.target.value)}
+            options={[
+              { value: "", label: "None" },
+              ...references.map((r) => ({ value: r.id, label: r.name })),
             ]}
           />
         </div>

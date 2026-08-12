@@ -6,6 +6,9 @@ export const ENTERPRISE_PERMISSIONS = [
   "hr.manage",
   "hr.view",
   "hr.payroll",
+  "salesman.manage",
+  "commissions.view",
+  "commissions.manage",
   "tax.manage",
   "tax.view",
   "tax.export",
@@ -34,6 +37,43 @@ export const CreateEmployeeSchema = z.object({
   isActive: z.boolean().default(true),
 });
 export type CreateEmployeeInput = z.input<typeof CreateEmployeeSchema>;
+
+export const UpdateEmployeeSchema = CreateEmployeeSchema.partial().extend({
+  organizationId: UuidSchema,
+  id: UuidSchema,
+});
+export type UpdateEmployeeInput = z.input<typeof UpdateEmployeeSchema>;
+
+export const CreateSaleReferenceSchema = z.object({
+  organizationId: UuidSchema,
+  name: z.string().min(1).max(200),
+  mobile: z.string().max(50).optional(),
+  referenceCode: z.string().min(1).max(64),
+  referenceType: z.enum(["outside", "dealer", "influencer", "employee", "other"]).default("outside"),
+  isActive: z.boolean().default(true),
+  notes: z.string().max(1000).optional(),
+});
+export type CreateSaleReferenceInput = z.input<typeof CreateSaleReferenceSchema>;
+
+export const UpdateSaleReferenceSchema = CreateSaleReferenceSchema.partial().extend({
+  organizationId: UuidSchema,
+  id: UuidSchema,
+});
+export type UpdateSaleReferenceInput = z.input<typeof UpdateSaleReferenceSchema>;
+
+export const PayCommissionSchema = z.object({
+  organizationId: UuidSchema,
+  commissionId: UuidSchema,
+  amount: MoneySchema,
+  paymentReference: z.string().max(200).optional(),
+});
+export type PayCommissionInput = z.input<typeof PayCommissionSchema>;
+
+export const VoidCommissionForSaleSchema = z.object({
+  organizationId: UuidSchema,
+  saleId: UuidSchema,
+});
+export type VoidCommissionForSaleInput = z.input<typeof VoidCommissionForSaleSchema>;
 
 export const AttendanceStatusSchema = z.enum(["present", "absent", "leave", "half_day"]);
 

@@ -415,6 +415,23 @@ describe("supabase foundation migration", () => {
     expect(sql).toContain("original_packaging");
     expect(sql).toContain("restock_target");
   });
+
+  it("POS salesman/commission phase-12 migration adds references and commission status", () => {
+    const migration = path.join(
+      root,
+      "supabase/migrations/20260812000007_pos_salesman_commission.sql",
+    );
+    expect(existsSync(migration)).toBe(true);
+    const sql = readFileSync(migration, "utf8");
+    expect(sql).toContain("sale_references");
+    expect(sql).toContain("reference_code");
+    expect(sql).toContain("reference_type");
+    expect(sql).toContain("reference_id");
+    expect(sql).toContain("paid_amount");
+    expect(sql).toContain("partially_paid");
+    expect(sql).toContain("salesman.manage");
+    expect(sql).toContain("commissions.manage");
+  });
 });
 
 describe("Phase 17 security — web must not ship service role", () => {

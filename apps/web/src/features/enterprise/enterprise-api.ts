@@ -20,6 +20,50 @@ export const enterpriseApi = {
       body: JSON.stringify(body),
     });
   },
+  updateEmployee(id: string, body: Record<string, unknown>) {
+    return apiFetch(`/api/v1/hr/employees/${id}`, {
+      method: "PATCH",
+      token: token(),
+      body: JSON.stringify(body),
+    });
+  },
+  listReferences(activeOnly = false) {
+    const qs = activeOnly ? "?activeOnly=1" : "";
+    return apiFetch<{ items: Array<Record<string, unknown>> }>(`/api/v1/references${qs}`, {
+      token: token(),
+    });
+  },
+  createReference(body: Record<string, unknown>) {
+    return apiFetch("/api/v1/references", {
+      method: "POST",
+      token: token(),
+      body: JSON.stringify(body),
+    });
+  },
+  updateReference(id: string, body: Record<string, unknown>) {
+    return apiFetch(`/api/v1/references/${id}`, {
+      method: "PATCH",
+      token: token(),
+      body: JSON.stringify(body),
+    });
+  },
+  payCommission(body: Record<string, unknown>) {
+    return apiFetch("/api/v1/commissions/pay", {
+      method: "POST",
+      token: token(),
+      body: JSON.stringify(body),
+    });
+  },
+  voidCommissionForSale(saleId: string) {
+    return apiFetch("/api/v1/commissions/void-for-sale", {
+      method: "POST",
+      token: token(),
+      body: JSON.stringify({ saleId }),
+    });
+  },
+  commissionReports() {
+    return apiFetch<Record<string, unknown>>("/api/v1/commissions/reports", { token: token() });
+  },
   upsertAttendance(body: Record<string, unknown>) {
     return apiFetch("/api/v1/hr/attendance", {
       method: "POST",

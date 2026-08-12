@@ -5,6 +5,7 @@ import { assertDiscountAllowed, effectiveDiscountPercent } from "./discount-poli
 import { ValidationDomainError } from "./errors.js";
 import { assertPosPaymentPrepared, preparePosPayments } from "./pos-payment.js";
 import { buildSaleFinalizationAuditRow } from "./sale-finalization.js";
+import { buildCommissionAccrual } from "./pos-commission.js";
 
 export type StockSaleLine = {
   organizationId: string;
@@ -227,6 +228,7 @@ export class SaleTransactionService {
       customer_id: input.customerId ?? null,
       salesman_user_id: input.salesmanUserId ?? null,
       reference_name: input.referenceName ?? null,
+      reference_id: input.referenceId ?? null,
       price_level_id: input.priceLevelId ?? null,
       pos_mode: input.posMode ?? "advanced",
       locale_mode: input.localeMode ?? "en",
@@ -374,16 +376,26 @@ export class SaleTransactionService {
     });
 
     let commissionAmount: number | null = null;
-    if (input.salesmanUserId && (input.commissionPercent ?? 0) > 0) {
-      commissionAmount =
-        Math.round(((totals.grandTotal * (input.commissionPercent ?? 0)) / 100) * 100) / 100;
+    const accrual = buildCommissionAccrual({
+      saleStatus: "posted",
+      saleGrandTotal: totals.grandTotal,
+      commissionPercent: input.commissionPercent ?? 0,
+      salesmanUserId: input.salesmanUserId,
+      saleId: sale.id,
+    });
+    if (accrual?.shouldAccrue) {
+      commissionAmount = accrual.row.commissionAmount;
       await this.ports.postCommission({
         organization_id: input.organizationId,
-        sale_id: sale.id,
-        salesman_user_id: input.salesmanUserId,
-        base_amount: totals.grandTotal,
-        commission_percent: input.commissionPercent,
-        commission_amount: commissionAmount,
+        sale_id: accrual.row.saleId,
+        salesman_user_id: accrual.row.salesmanUserId,
+        employee_id: accrual.row.employeeId,
+        base_amount: accrual.row.baseAmount,
+        commission_percent: accrual.row.commissionPercent,
+        commission_amount: accrual.row.commissionAmount,
+        original_amount: accrual.row.originalAmount,
+        status: accrual.row.status,
+        paid_amount: 0,
       });
     }
 

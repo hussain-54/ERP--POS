@@ -4,15 +4,21 @@ import type {
   CreateIncentiveSchema,
   CreateNotificationInput,
   CreateSalaryRunSchema,
+  CreateSaleReferenceInput,
   CreateTaxDocumentSchema,
   CreateTaxRateInput,
+  PayCommissionInput,
+  UpdateEmployeeInput,
+  UpdateSaleReferenceInput,
   UpsertAttendanceSchema,
   UpsertPerformanceSchema,
   UpsertTaxProfileSchema,
 } from "@electronic-erp/contracts";
 import {
   achievementPct,
+  applyCommissionPayment,
   assertDocumentAccess,
+  assertSalesmanActive,
   calculateNetSalary,
   calculateSalesCommission,
   documentStoragePath,
@@ -20,6 +26,10 @@ import {
   performanceRating,
   splitTaxAmount,
   stockAlertNotifications,
+  summarizeCommissionReports,
+  voidCommissionForCancelledSale,
+  ValidationDomainError,
+  type CommissionRecord,
   type NotificationChannelAdapter,
 } from "@electronic-erp/domain";
 import type { z } from "zod";
@@ -89,6 +99,213 @@ export class EnterpriseRepository {
       .limit(500);
     if (error) throw error;
     return data ?? [];
+  }
+
+  async updateEmployee(input: UpdateEmployeeInput) {
+    const patch: Record<string, unknown> = { updated_at: new Date().toISOString() };
+    if (input.code !== undefined) patch.code = input.code;
+    if (input.fullName !== undefined) patch.full_name = input.fullName;
+    if (input.mobile !== undefined) patch.mobile = input.mobile ?? null;
+    if (input.email !== undefined) patch.email = input.email ?? null;
+    if (input.designation !== undefined) patch.designation = input.designation ?? null;
+    if (input.department !== undefined) patch.department = input.department ?? null;
+    if (input.branchId !== undefined) patch.branch_id = input.branchId ?? null;
+    if (input.userId !== undefined) patch.user_id = input.userId ?? null;
+    if (input.isSalesman !== undefined) patch.is_salesman = input.isSalesman;
+    if (input.baseSalary !== undefined) patch.base_salary = Number(input.baseSalary ?? 0);
+    if (input.commissionPercent !== undefined) patch.commission_percent = input.commissionPercent;
+    if (input.joinDate !== undefined) patch.join_date = input.joinDate ?? null;
+    if (input.isActive !== undefined) patch.is_active = input.isActive;
+
+    const { data, error } = await this.db
+      .from("employees")
+      .update(patch)
+      .eq("id", input.id)
+      .eq("organization_id", input.organizationId)
+      .select("*")
+      .maybeSingle();
+    if (error) throw error;
+    if (!data) throw new ValidationDomainError("Employee not found");
+    return data;
+  }
+
+  async createSaleReference(input: CreateSaleReferenceInput, userId: string | null) {
+    const { data, error } = await this.db
+      .from("sale_references")
+      .insert({
+        organization_id: input.organizationId,
+        name: input.name,
+        mobile: input.mobile ?? null,
+        reference_code: input.referenceCode,
+        reference_type: input.referenceType ?? "outside",
+        is_active: input.isActive ?? true,
+        notes: input.notes ?? null,
+        created_by: userId,
+      })
+      .select("*")
+      .single();
+    if (error) throw error;
+    return data;
+  }
+
+  async updateSaleReference(input: UpdateSaleReferenceInput) {
+    const patch: Record<string, unknown> = { updated_at: new Date().toISOString() };
+    if (input.name !== undefined) patch.name = input.name;
+    if (input.mobile !== undefined) patch.mobile = input.mobile ?? null;
+    if (input.referenceCode !== undefined) patch.reference_code = input.referenceCode;
+    if (input.referenceType !== undefined) patch.reference_type = input.referenceType;
+    if (input.isActive !== undefined) patch.is_active = input.isActive;
+    if (input.notes !== undefined) patch.notes = input.notes ?? null;
+    const { data, error } = await this.db
+      .from("sale_references")
+      .update(patch)
+      .eq("id", input.id)
+      .eq("organization_id", input.organizationId)
+      .select("*")
+      .maybeSingle();
+    if (error) throw error;
+    if (!data) throw new ValidationDomainError("Reference not found");
+    return data;
+  }
+
+  async listSaleReferences(organizationId: string, activeOnly = false) {
+    let q = this.db
+      .from("sale_references")
+      .select("*")
+      .eq("organization_id", organizationId)
+      .order("name")
+      .limit(500);
+    if (activeOnly) q = q.eq("is_active", true);
+    const { data, error } = await q;
+    if (error) throw error;
+    return data ?? [];
+  }
+
+  async payCommission(input: PayCommissionInput) {
+    const { data: row, error } = await this.db
+      .from("sale_commissions")
+      .select("*")
+      .eq("id", input.commissionId)
+      .eq("organization_id", input.organizationId)
+      .maybeSingle();
+    if (error) throw error;
+    if (!row) throw new ValidationDomainError("Commission not found");
+
+    const current: CommissionRecord = {
+      id: String(row.id),
+      saleId: String(row.sale_id),
+      salesmanUserId: String(row.salesman_user_id),
+      employeeId: row.employee_id ? String(row.employee_id) : null,
+      baseAmount: num(row.base_amount),
+      commissionPercent: num(row.commission_percent),
+      commissionAmount: num(row.commission_amount),
+      status: row.status as CommissionRecord["status"],
+      paidAmount: num(row.paid_amount),
+      originalAmount: num(row.original_amount ?? row.commission_amount),
+    };
+    const next = applyCommissionPayment({
+      commission: current,
+      payAmount: Number(input.amount),
+    });
+    const nowIso = new Date().toISOString();
+    const { data, error: updErr } = await this.db
+      .from("sale_commissions")
+      .update({
+        paid_amount: next.paidAmount,
+        status: next.status,
+        paid_at: next.status === "paid" ? nowIso : row.paid_at,
+        payment_reference: input.paymentReference ?? row.payment_reference,
+        updated_at: nowIso,
+      })
+      .eq("id", input.commissionId)
+      .select("*")
+      .single();
+    if (updErr) throw updErr;
+    return data;
+  }
+
+  /** Cancelled sale rule: void unpaid commission via shared domain helper. */
+  async voidCommissionForSale(organizationId: string, saleId: string) {
+    const { data: row, error } = await this.db
+      .from("sale_commissions")
+      .select("*")
+      .eq("organization_id", organizationId)
+      .eq("sale_id", saleId)
+      .maybeSingle();
+    if (error) throw error;
+    if (!row) return null;
+
+    const current: CommissionRecord = {
+      id: String(row.id),
+      saleId: String(row.sale_id),
+      salesmanUserId: String(row.salesman_user_id),
+      employeeId: row.employee_id ? String(row.employee_id) : null,
+      baseAmount: num(row.base_amount),
+      commissionPercent: num(row.commission_percent),
+      commissionAmount: num(row.commission_amount),
+      status: row.status as CommissionRecord["status"],
+      paidAmount: num(row.paid_amount),
+      originalAmount: num(row.original_amount ?? row.commission_amount),
+    };
+    const next = voidCommissionForCancelledSale(current);
+    const nowIso = new Date().toISOString();
+    const { data, error: updErr } = await this.db
+      .from("sale_commissions")
+      .update({
+        base_amount: next.baseAmount,
+        commission_amount: next.commissionAmount,
+        paid_amount: next.paidAmount,
+        status: next.status,
+        voided_at: next.status === "void" ? nowIso : row.voided_at,
+        updated_at: nowIso,
+      })
+      .eq("id", row.id)
+      .select("*")
+      .single();
+    if (updErr) throw updErr;
+    return data;
+  }
+
+  async commissionReports(organizationId: string) {
+    const { data, error } = await this.db
+      .from("sale_commissions")
+      .select("*, sales(grand_total,reference_id,reference_name,status)")
+      .eq("organization_id", organizationId)
+      .limit(2000);
+    if (error) throw error;
+    const rows = (data ?? []).map((r) => {
+      const sale = r.sales as {
+        grand_total?: number;
+        reference_id?: string | null;
+        reference_name?: string | null;
+        status?: string;
+      } | null;
+      return {
+        salesmanUserId: str(r.salesman_user_id),
+        referenceId: sale?.reference_id ?? null,
+        referenceName: sale?.reference_name ?? null,
+        saleGrandTotal: num(sale?.grand_total),
+        commissionAmount: num(r.commission_amount),
+        paidAmount: num(r.paid_amount),
+        status: r.status as CommissionRecord["status"],
+      };
+    });
+    return summarizeCommissionReports(rows);
+  }
+
+  async assertSalesmanEligible(organizationId: string, userId: string) {
+    const { data } = await this.db
+      .from("employees")
+      .select("is_salesman,is_active,commission_percent")
+      .eq("organization_id", organizationId)
+      .eq("user_id", userId)
+      .maybeSingle();
+    if (!data) throw new ValidationDomainError("Salesman profile not found");
+    assertSalesmanActive({
+      isSalesman: Boolean(data.is_salesman),
+      isActive: Boolean(data.is_active),
+    });
+    return data;
   }
 
   async upsertAttendance(input: AttendanceInput) {
@@ -241,11 +458,14 @@ export class EnterpriseRepository {
     if (opts.periodYm) {
       rows = rows.filter((r) => str(r.created_at).startsWith(opts.periodYm!));
     }
-    const total = rows.reduce((s, r) => s + num(r.commission_amount), 0);
+    const active = rows.filter((r) => str(r.status) !== "void");
+    const total = active.reduce((s, r) => s + num(r.commission_amount), 0);
+    const paid = active.reduce((s, r) => s + num(r.paid_amount), 0);
+    const due = Math.round((total - paid) * 100) / 100;
     const preview =
       employee && opts.periodYm
         ? calculateSalesCommission(
-            rows.reduce((s, r) => s + num(r.base_amount), 0),
+            active.reduce((s, r) => s + num(r.base_amount), 0),
             num(employee.commission_percent),
           )
         : null;
@@ -253,6 +473,8 @@ export class EnterpriseRepository {
       employee,
       items: rows,
       totalCommission: Math.round(total * 100) / 100,
+      totalPaid: Math.round(paid * 100) / 100,
+      totalDue: due,
       recomputedFromEmployeeRate: preview,
     };
   }
