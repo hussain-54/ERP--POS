@@ -47,12 +47,18 @@ describe("Phase 17 — Master sale transaction chain", () => {
       postStockSale: vi.fn(async () => {
         trail.push("stock_reduction");
       }),
+      reverseStockSale: vi.fn(async () => undefined),
       postCustomerSaleLedger: vi.fn(async () => {
         trail.push("customer_ledger");
       }),
       postSplitPayment: vi.fn(async () => {
         trail.push("payment_cash_bank");
       }),
+      updateSalePaymentState: vi.fn(async () => undefined),
+      finalizeSaleStatus: vi.fn(async () => {
+        trail.push("finalize_posted");
+      }),
+      voidIncompleteSale: vi.fn(async () => undefined),
       postJournal: vi.fn(async () => {
         trail.push("accounts");
       }),
@@ -67,6 +73,9 @@ describe("Phase 17 — Master sale transaction chain", () => {
       }),
       postAnalytics: vi.fn(async () => {
         trail.push("analytics_reports");
+      }),
+      postAudit: vi.fn(async () => {
+        trail.push("audit");
       }),
     };
 
@@ -122,11 +131,13 @@ describe("Phase 17 — Master sale transaction chain", () => {
       "stock_reduction",
       "customer_ledger",
       "payment_cash_bank",
+      "finalize_posted",
       "accounts",
       "commission",
       "warranty",
       "installment",
       "analytics_reports",
+      "audit",
     ]);
 
     expect(ports.postStockSale).toHaveBeenCalledTimes(1);
@@ -320,6 +331,10 @@ describe("Phase 17 — Failure / security safe paths", () => {
       findSaleByIdempotency: vi.fn(async () => ({
         id: "cccccccc-cccc-4ccc-8ccc-cccccccccccc",
         invoice_number: "INV-EXISTING",
+        status: "posted",
+        paid_total: 10,
+        remaining_total: 0,
+        grand_total: 10,
       })),
       searchStockAvailable: vi.fn(async () => "100"),
       postSaleRecord: vi.fn(async () => ({
@@ -329,8 +344,11 @@ describe("Phase 17 — Failure / security safe paths", () => {
       postSaleItems: vi.fn(async () => undefined),
       postDiscountAudits: vi.fn(async () => undefined),
       postStockSale: vi.fn(async () => undefined),
+      reverseStockSale: vi.fn(async () => undefined),
       postCustomerSaleLedger: vi.fn(async () => undefined),
       postSplitPayment: vi.fn(async () => undefined),
+      finalizeSaleStatus: vi.fn(async () => undefined),
+      voidIncompleteSale: vi.fn(async () => undefined),
       postJournal: vi.fn(async () => undefined),
       postCommission: vi.fn(async () => undefined),
       postWarranties: vi.fn(async () => undefined),

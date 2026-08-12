@@ -4,6 +4,20 @@ import { calculateSaleTotals } from "./sale-totals.js";
 import { assertDiscountAllowed, effectiveDiscountPercent } from "./discount-policy.js";
 import { ValidationDomainError } from "./errors.js";
 import { assertPosPaymentPrepared, preparePosPayments } from "./pos-payment.js";
+import { buildSaleFinalizationAuditRow } from "./sale-finalization.js";
+
+export type StockSaleLine = {
+  organizationId: string;
+  branchId: string;
+  warehouseId: string;
+  productId: string;
+  unitId: string;
+  qty: string;
+  saleId: string;
+  operationId: string;
+  batchId?: string;
+  serialNumberId?: string;
+};
 
 export interface SaleTransactionPorts {
   findSaleByIdempotency(organizationId: string, key: string): Promise<unknown | null>;
@@ -11,18 +25,9 @@ export interface SaleTransactionPorts {
   postSaleRecord(payload: Record<string, unknown>): Promise<{ id: string; invoiceNumber: string }>;
   postSaleItems(saleId: string, items: Array<Record<string, unknown>>): Promise<void>;
   postDiscountAudits(saleId: string, audits: Array<Record<string, unknown>>): Promise<void>;
-  postStockSale(input: {
-    organizationId: string;
-    branchId: string;
-    warehouseId: string;
-    productId: string;
-    unitId: string;
-    qty: string;
-    saleId: string;
-    operationId: string;
-    batchId?: string;
-    serialNumberId?: string;
-  }): Promise<void>;
+  postStockSale(input: StockSaleLine): Promise<void>;
+  /** Reverse a stock deduction when compensating a failed finalization. */
+  reverseStockSale?(input: StockSaleLine): Promise<void>;
   postCustomerSaleLedger(input: {
     organizationId: string;
     branchId: string;
@@ -36,11 +41,26 @@ export interface SaleTransactionPorts {
     saleId: string,
     input: { paidTotal: number; remainingTotal: number; paymentStatus: string },
   ): Promise<void>;
+  /**
+   * Promote draft → posted. Must only run after stock + payment + ledger succeed.
+   * This is the sole transition that marks the sale completed.
+   */
+  finalizeSaleStatus(saleId: string, input: {
+    paidTotal: number;
+    remainingTotal: number;
+    paymentStatus: string;
+    postedAt?: string;
+  }): Promise<void>;
+  /**
+   * Mark incomplete draft as void and free the idempotency key for a safe retry.
+   */
+  voidIncompleteSale(saleId: string, reason: string): Promise<void>;
   postJournal(input: Record<string, unknown>): Promise<void>;
   postCommission(input: Record<string, unknown>): Promise<void>;
   postWarranties(input: Array<Record<string, unknown>>): Promise<void>;
   createInstallment?(input: Record<string, unknown>): Promise<void>;
   postAnalytics(input: Record<string, unknown>): Promise<void>;
+  postAudit?(row: Record<string, unknown>): Promise<void>;
 }
 
 function qtyNumber(qty: SaleItemInput["qty"]): number {
@@ -52,17 +72,41 @@ function moneyNumber(v: number | string | undefined, fallback = 0): number {
   return typeof v === "number" ? v : Number(v);
 }
 
+function readExistingSale(existing: object): {
+  id: string;
+  invoiceNumber: string;
+  status: string;
+  paidTotal: number;
+  remainingTotal: number;
+  grandTotal: number;
+} {
+  const row = existing as Record<string, unknown>;
+  return {
+    id: String(row.id),
+    invoiceNumber: String(row.invoiceNumber ?? row.invoice_number ?? ""),
+    status: String(row.status ?? ""),
+    paidTotal: Number(row.paidTotal ?? row.paid_total ?? 0),
+    remainingTotal: Number(row.remainingTotal ?? row.remaining_total ?? 0),
+    grandTotal: Number(row.grandTotal ?? row.grand_total ?? 0),
+  };
+}
+
 /**
  * Central sale orchestration — UI must NOT duplicate stock/ledger/payment/accounting writes.
  * All side effects go through ports implemented by the POS repository (Supabase online).
  * Offline desktop posts via OfflinePosEngine → sync → PosRepository (same domain path).
  *
- * ATOMICITY LIMIT: steps are sequential Supabase writes (not one Postgres transaction).
- * Idempotency keys reduce duplicate risk; a mid-chain failure can leave partial side effects.
- * A single RPC wrapping the full chain is the intended hardening path — do not claim ACID yet.
+ * Finalization workflow (safe domain transaction):
+ * 1. Idempotency — return posted sale; reject in-progress draft; block void reuse via port
+ * 2. Validate discounts, stock availability, payments
+ * 3. Insert sale as **draft** (not completed)
+ * 4. Items → stock → customer balance → payment → payment state
+ * 5. On mid-chain failure: reverse applied stock, void draft (never leave posted orphan)
+ * 6. **finalizeSaleStatus → posted** only after critical path succeeds
+ * 7. Journal, commission, warranties, installment, analytics, audit (post-commit side effects)
  *
- * Repository interface for sales: SaleTransactionPorts (this file).
- * Cloud implementation: packages/db PosRepository.
+ * Steps are sequential writes (not one Postgres RPC). Draft→posted gate + compensation
+ * prevent “sale completed without stock”. A single DB transaction RPC remains the hardening path.
  */
 export class SaleTransactionService {
   constructor(private readonly ports: SaleTransactionPorts) {}
@@ -78,25 +122,43 @@ export class SaleTransactionService {
       input.organizationId,
       input.idempotencyKey,
     );
-    if (existing && typeof existing === "object" && existing !== null && "id" in existing) {
-      const row = existing as { id: string; invoiceNumber?: string; invoice_number?: string };
-      const totals = calculateSaleTotals(
-        normalizeItems(input.items),
-        input.discountTotal ?? 0,
+    if (existing && typeof existing === "object" && existing !== null) {
+      const row = readExistingSale(existing);
+      if (row.status === "posted") {
+        const totals = calculateSaleTotals(
+          normalizeItems(input.items),
+          input.discountTotal ?? 0,
+        );
+        return {
+          id: row.id,
+          invoiceNumber: row.invoiceNumber,
+          totals,
+          paidTotal: row.paidTotal,
+          remainingTotal:
+            row.remainingTotal ||
+            Math.max(0, Math.round((row.grandTotal - row.paidTotal) * 100) / 100),
+        };
+      }
+      if (row.status === "draft") {
+        throw new ValidationDomainError(
+          "Sale finalization already in progress for this idempotency key — avoid duplicate submission",
+        );
+      }
+      if (row.status === "void") {
+        // Key should have been freed on void; if still present, block duplicate invoice.
+        throw new ValidationDomainError(
+          "Previous attempt for this idempotency key was voided — retry with a fresh key",
+        );
+      }
+      // held / returned / exchanged — treat as duplicate protection
+      throw new ValidationDomainError(
+        `Sale already exists for this idempotency key (status=${row.status})`,
       );
-      return {
-        id: row.id,
-        invoiceNumber: row.invoiceNumber ?? row.invoice_number ?? "",
-        totals,
-        paidTotal: 0,
-        remainingTotal: totals.grandTotal,
-      };
     }
 
     const items = normalizeItems(input.items);
     const totals = calculateSaleTotals(items, input.discountTotal ?? 0);
 
-    // Discount approval checks + audit payloads
     const audits: Array<Record<string, unknown>> = [];
     for (const d of input.discounts ?? []) {
       const percent =
@@ -127,7 +189,6 @@ export class SaleTransactionService {
       });
     }
 
-    // Stock validation for catalog items
     for (const item of items) {
       if (item.isManual || !item.productId) continue;
       const available = await this.ports.searchStockAvailable(input.warehouseId, item.productId);
@@ -157,8 +218,6 @@ export class SaleTransactionService {
     assertPosPaymentPrepared(prep);
     const paidTotal = prep.paidTowardBill;
     const remainingTotal = prep.remaining;
-    // Do not mark paid until payment rows are accepted — start unpaid.
-    const initialPaymentStatus = "unpaid";
 
     const operationId = input.operationId ?? input.idempotencyKey;
     const sale = await this.ports.postSaleRecord({
@@ -177,12 +236,13 @@ export class SaleTransactionService {
       grand_total: totals.grandTotal,
       paid_total: 0,
       remaining_total: totals.grandTotal,
-      payment_status: initialPaymentStatus,
+      payment_status: "unpaid",
       due_date: input.dueDate ?? null,
       notes: input.notes ?? null,
       warranty_notes: input.warrantyNotes ?? null,
-      status: "posted",
-      posted_at: new Date().toISOString(),
+      // Draft until stock + payment + ledger succeed — never mark completed early.
+      status: "draft",
+      posted_at: null,
       idempotency_key: input.idempotencyKey,
       device_id: input.deviceId ?? null,
       offline_transaction_id: input.offlineTransactionId ?? null,
@@ -191,100 +251,110 @@ export class SaleTransactionService {
       created_by: userId ?? null,
     });
 
-    const lineRows = items.map((item, index) => {
-      const qty = qtyNumber(item.qty);
-      const lineGross = qty * item.unitPrice;
-      const lineTotal = Math.round((lineGross - (item.discount ?? 0) + (item.tax ?? 0)) * 100) / 100;
-      return {
-        organization_id: input.organizationId,
-        sale_id: sale.id,
-        line_no: index + 1,
-        product_id: item.productId ?? null,
-        variant_id: item.variantId ?? null,
-        is_manual: Boolean(item.isManual),
-        manual_name: item.manualName ?? null,
-        manual_item_code: item.manualItemCode ?? null,
-        manual_description: item.manualDescription ?? null,
-        unit_id: item.unitId,
-        qty: String(qty),
-        unit_price: item.unitPrice,
-        discount_amount: item.discount ?? 0,
-        discount_percent: item.discountPercent ?? 0,
-        tax_amount: item.tax ?? 0,
-        line_total: lineTotal,
-        batch_id: item.batchId ?? null,
-        serial_number_id: item.serialNumberId ?? null,
-        warranty_days: item.warrantyDays ?? 0,
-        cost_price: item.costPrice ?? 0,
-      };
-    });
-    await this.ports.postSaleItems(sale.id, lineRows);
-    if (audits.length) await this.ports.postDiscountAudits(sale.id, audits);
-
-    // Inventory
-    for (const item of items) {
-      if (item.isManual || !item.productId) continue;
-      await this.ports.postStockSale({
-        organizationId: input.organizationId,
-        branchId: input.branchId,
-        warehouseId: input.warehouseId,
-        productId: item.productId,
-        unitId: item.unitId,
-        qty: String(qtyNumber(item.qty)),
-        saleId: sale.id,
-        operationId: `${operationId}-${item.productId}`,
-        batchId: item.batchId,
-        serialNumberId: item.serialNumberId,
+    const deducted: StockSaleLine[] = [];
+    try {
+      const lineRows = items.map((item, index) => {
+        const qty = qtyNumber(item.qty);
+        const lineGross = qty * item.unitPrice;
+        const lineTotal = Math.round((lineGross - (item.discount ?? 0) + (item.tax ?? 0)) * 100) / 100;
+        return {
+          organization_id: input.organizationId,
+          sale_id: sale.id,
+          line_no: index + 1,
+          product_id: item.productId ?? null,
+          variant_id: item.variantId ?? null,
+          is_manual: Boolean(item.isManual),
+          manual_name: item.manualName ?? null,
+          manual_item_code: item.manualItemCode ?? null,
+          manual_description: item.manualDescription ?? null,
+          unit_id: item.unitId,
+          qty: String(qty),
+          unit_price: item.unitPrice,
+          discount_amount: item.discount ?? 0,
+          discount_percent: item.discountPercent ?? 0,
+          tax_amount: item.tax ?? 0,
+          line_total: lineTotal,
+          batch_id: item.batchId ?? null,
+          serial_number_id: item.serialNumberId ?? null,
+          warranty_days: item.warrantyDays ?? 0,
+          cost_price: item.costPrice ?? 0,
+        };
       });
-    }
+      await this.ports.postSaleItems(sale.id, lineRows);
+      if (audits.length) await this.ports.postDiscountAudits(sale.id, audits);
 
-    // Customer ledger (full invoice as receivable), then payments reduce it.
-    // Walk-in (no customer): skip AR ledger; still post payment rows + journal cash.
-    if (input.customerId) {
-      await this.ports.postCustomerSaleLedger({
-        organizationId: input.organizationId,
-        branchId: input.branchId,
-        customerId: input.customerId,
-        amount: String(totals.grandTotal),
-        saleId: sale.id,
-      });
-    }
+      for (const item of items) {
+        if (item.isManual || !item.productId) continue;
+        const stockLine: StockSaleLine = {
+          organizationId: input.organizationId,
+          branchId: input.branchId,
+          warehouseId: input.warehouseId,
+          productId: item.productId,
+          unitId: item.unitId,
+          qty: String(qtyNumber(item.qty)),
+          saleId: sale.id,
+          operationId: `${operationId}-${item.productId}`,
+          batchId: item.batchId,
+          serialNumberId: item.serialNumberId,
+        };
+        await this.ports.postStockSale(stockLine);
+        deducted.push(stockLine);
+      }
 
-    if (prep.splits.length) {
-      await this.ports.postSplitPayment({
-        organizationId: input.organizationId,
-        branchId: input.branchId,
-        direction: "receive",
-        partyType: "customer",
-        customerId: input.customerId,
-        splits: prep.splits.map((p) => ({
-          paymentMethodId: p.paymentMethodId,
-          amount: p.amount,
-          reference: p.reference,
-        })),
-        billTotal: String(paidTotal || totals.grandTotal),
-        idempotencyKey: input.idempotencyKey,
-        operationId,
-        creditApprovalId: input.creditApprovalId,
-        sourceType: "sale",
-        sourceId: sale.id,
-        deviceId: input.deviceId,
-        offlineTransactionId: input.offlineTransactionId,
-      });
-    }
+      if (input.customerId) {
+        await this.ports.postCustomerSaleLedger({
+          organizationId: input.organizationId,
+          branchId: input.branchId,
+          customerId: input.customerId,
+          amount: String(totals.grandTotal),
+          saleId: sale.id,
+        });
+      }
 
-    // Mark paid only after payment accepted (or unpaid/partial when no/partial tender).
-    if (this.ports.updateSalePaymentState) {
-      await this.ports.updateSalePaymentState(sale.id, {
+      if (prep.splits.length) {
+        await this.ports.postSplitPayment({
+          organizationId: input.organizationId,
+          branchId: input.branchId,
+          direction: "receive",
+          partyType: "customer",
+          customerId: input.customerId,
+          splits: prep.splits.map((p) => ({
+            paymentMethodId: p.paymentMethodId,
+            amount: p.amount,
+            reference: p.reference,
+          })),
+          billTotal: String(paidTotal || totals.grandTotal),
+          idempotencyKey: input.idempotencyKey,
+          operationId,
+          creditApprovalId: input.creditApprovalId,
+          sourceType: "sale",
+          sourceId: sale.id,
+          deviceId: input.deviceId,
+          offlineTransactionId: input.offlineTransactionId,
+        });
+      }
+
+      if (this.ports.updateSalePaymentState) {
+        await this.ports.updateSalePaymentState(sale.id, {
+          paidTotal,
+          remainingTotal,
+          paymentStatus: prep.paymentStatus,
+        });
+      }
+
+      // Critical path complete — only now mark sale completed / invoice posted.
+      await this.ports.finalizeSaleStatus(sale.id, {
         paidTotal,
         remainingTotal,
         paymentStatus: prep.paymentStatus,
+        postedAt: new Date().toISOString(),
       });
-    } else if (prep.splits.length === 0 && paidTotal <= 0) {
-      // Ports without updater leave sale unpaid — correct for credit-only.
+    } catch (err) {
+      await this.compensateFailedFinalization(sale.id, deducted, err);
+      throw err;
     }
 
-    // Automatic double-entry: sales, AR/cash/bank, tax, discount, inventory, COGS
+    // Post-commit side effects (sale already posted). Failures here do not void the sale.
     const cogs = items.reduce((s, i) => s + qtyNumber(i.qty) * (i.costPrice ?? 0), 0);
     await this.ports.postJournal({
       organizationId: input.organizationId,
@@ -303,8 +373,9 @@ export class SaleTransactionService {
       }),
     });
 
+    let commissionAmount: number | null = null;
     if (input.salesmanUserId && (input.commissionPercent ?? 0) > 0) {
-      const commissionAmount =
+      commissionAmount =
         Math.round(((totals.grandTotal * (input.commissionPercent ?? 0)) / 100) * 100) / 100;
       await this.ports.postCommission({
         organization_id: input.organizationId,
@@ -361,8 +432,25 @@ export class SaleTransactionService {
         paidTotal,
         itemCount: items.length,
         offline: Boolean(input.offlineTransactionId),
+        commissionAmount,
       },
     });
+
+    if (this.ports.postAudit) {
+      await this.ports.postAudit(
+        buildSaleFinalizationAuditRow({
+          organizationId: input.organizationId,
+          branchId: input.branchId,
+          saleId: sale.id,
+          invoiceNumber: sale.invoiceNumber,
+          actorUserId: userId,
+          deviceId: input.deviceId,
+          grandTotal: totals.grandTotal,
+          paidTotal,
+          status: "posted",
+        }),
+      );
+    }
 
     return {
       id: sale.id,
@@ -371,6 +459,31 @@ export class SaleTransactionService {
       paidTotal,
       remainingTotal,
     };
+  }
+
+  private async compensateFailedFinalization(
+    saleId: string,
+    deducted: StockSaleLine[],
+    err: unknown,
+  ): Promise<void> {
+    const reason = err instanceof Error ? err.message : String(err);
+    if (this.ports.reverseStockSale) {
+      for (const line of [...deducted].reverse()) {
+        try {
+          await this.ports.reverseStockSale({
+            ...line,
+            operationId: `${line.operationId}-reverse`,
+          });
+        } catch {
+          // Best-effort reverse; void still runs so sale is not marked completed.
+        }
+      }
+    }
+    try {
+      await this.ports.voidIncompleteSale(saleId, reason);
+    } catch {
+      // Avoid masking the original failure.
+    }
   }
 }
 

@@ -6,6 +6,7 @@ import {
   evaluateDiscountApproval,
   evaluatePosCustomerCredit,
   preparePosPayments,
+  PaymentAttemptGate,
   validatePosCheckout,
   type InstallmentFrequency,
   type PosPaymentConfirmationStatus,
@@ -186,6 +187,7 @@ export function PosPage() {
   const searchRef = useRef<HTMLInputElement>(null);
   const customerRef = useRef<HTMLInputElement>(null);
   const discountRef = useRef<HTMLInputElement>(null);
+  const paymentGateRef = useRef(new PaymentAttemptGate());
 
   const canDiscount =
     hasPermission("pos.discount_cashier") ||
@@ -674,10 +676,18 @@ export function PosPage() {
       amountReceived: s.kind === "cash" && cashReceived ? Number(cashReceived) : undefined,
     }));
 
+    const idempotencyKey = checkoutIdempotencyKey;
+    try {
+      paymentGateRef.current.begin(idempotencyKey);
+    } catch (err) {
+      const message = err instanceof Error ? err.message : "Duplicate payment blocked";
+      toast.push({ title: "Duplicate sale blocked", description: message, tone: "danger" });
+      return;
+    }
+
     setPaymentConfirmation("pending");
     setPaymentConfirmationError(null);
     setBusy(true);
-    const idempotencyKey = checkoutIdempotencyKey;
     try {
       const result = await posApi.postSale({
         branchId: branchId!,
@@ -755,6 +765,7 @@ export function PosPage() {
         }
       }
 
+      paymentGateRef.current.succeed(idempotencyKey);
       setPaymentConfirmation("success");
       setLastInvoice(result.invoiceNumber);
       clearSale();
@@ -777,8 +788,10 @@ export function PosPage() {
       });
     } catch (err) {
       const message = err instanceof Error ? err.message : "Error";
+      paymentGateRef.current.fail(idempotencyKey, message);
       setPaymentConfirmation("failure");
       setPaymentConfirmationError(message);
+      setCheckoutIdempotencyKey(uuid());
       toast.push({
         title: "Payment failed",
         description: message,

@@ -424,6 +424,7 @@ export class PosRepository {
   async getInvoice(saleId: string) {
     const { data: sale, error } = await this.db.from("sales").select("*").eq("id", saleId).single();
     if (error) throw error;
+    const mapped = mapSale(sale);
     const { data: items } = await this.db
       .from("sale_items")
       .select("*")
@@ -434,37 +435,126 @@ export class PosRepository {
       const { data } = await this.db.from("customers").select("*").eq("id", sale.customer_id).maybeSingle();
       customer = data;
     }
+    let branchName: string | null = null;
+    {
+      const { data: branch } = await this.db
+        .from("branches")
+        .select("name")
+        .eq("id", sale.branch_id)
+        .maybeSingle();
+      branchName = branch ? String(branch.name) : null;
+    }
+    let cashierName: string | null = null;
+    if (sale.created_by) {
+      const { data: profile } = await this.db
+        .from("user_profiles")
+        .select("full_name,email")
+        .eq("id", sale.created_by)
+        .maybeSingle();
+      cashierName = profile
+        ? String(profile.full_name ?? profile.email ?? sale.created_by)
+        : String(sale.created_by);
+    }
+    let salesmanName: string | null = null;
+    if (sale.salesman_user_id) {
+      const { data: profile } = await this.db
+        .from("user_profiles")
+        .select("full_name,email")
+        .eq("id", sale.salesman_user_id)
+        .maybeSingle();
+      salesmanName = profile
+        ? String(profile.full_name ?? profile.email ?? sale.salesman_user_id)
+        : String(sale.salesman_user_id);
+    }
+    const { data: commission } = await this.db
+      .from("sale_commissions")
+      .select("commission_percent,commission_amount")
+      .eq("sale_id", saleId)
+      .maybeSingle();
+    const { data: paymentRows } = await this.db
+      .from("payments")
+      .select("id,reference,total_amount,payment_splits(amount,payment_methods(name,code))")
+      .eq("source_type", "sale")
+      .eq("source_id", saleId);
+    const payments: Array<{ method: string; amount: number; reference: string | null }> = [];
+    for (const pay of paymentRows ?? []) {
+      const splits = (pay.payment_splits as Array<Row> | null) ?? [];
+      for (const split of splits) {
+        const methodRow = split.payment_methods as Row | null;
+        payments.push({
+          method: String(methodRow?.name ?? methodRow?.code ?? "Payment"),
+          amount: Number(split.amount ?? 0),
+          reference: (pay.reference as string | null) ?? null,
+        });
+      }
+      if (!splits.length && Number(pay.total_amount ?? 0) > 0) {
+        payments.push({
+          method: "Payment",
+          amount: Number(pay.total_amount ?? 0),
+          reference: (pay.reference as string | null) ?? null,
+        });
+      }
+    }
+    const invoiceItems = await Promise.all(
+      (items ?? []).map(async (i) => {
+        let name = i.is_manual ? String(i.manual_name ?? "Manual item") : String(i.product_id);
+        if (!i.is_manual && i.product_id) {
+          const { data: product } = await this.db
+            .from("products")
+            .select("name,sku")
+            .eq("id", i.product_id)
+            .maybeSingle();
+          if (product) name = `${product.name}${product.sku ? ` (${product.sku})` : ""}`;
+        }
+        let unit: string | null = null;
+        if (i.unit_id) {
+          const { data: u } = await this.db
+            .from("units")
+            .select("name,code")
+            .eq("id", i.unit_id)
+            .maybeSingle();
+          unit = u ? String(u.code ?? u.name) : null;
+        }
+        return {
+          id: String(i.id),
+          productId: i.product_id ? String(i.product_id) : null,
+          unitId: String(i.unit_id),
+          name,
+          qty: i.qty,
+          unit,
+          rate: Number(i.unit_price),
+          discount: Number(i.discount_amount),
+          tax: Number(i.tax_amount),
+          total: Number(i.line_total),
+          warrantyDays: Number(i.warranty_days ?? 0),
+        };
+      }),
+    );
     return {
-      sale: mapSale(sale),
+      sale: mapped,
+      invoiceNumber: mapped.invoiceNumber,
+      dateTime: mapped.postedAt ?? mapped.createdAt,
+      branchId: mapped.branchId,
+      branchName,
+      terminalId: mapped.deviceId,
+      cashierId: sale.created_by ? String(sale.created_by) : null,
+      cashierName,
       customerName: customer ? String(customer.name) : null,
       customerMobile: customer ? (customer.mobile as string | null) : null,
       customerAddress: customer ? (customer.address as string | null) : null,
-      items: await Promise.all(
-        (items ?? []).map(async (i) => {
-          let name = i.is_manual ? String(i.manual_name ?? "Manual item") : String(i.product_id);
-          if (!i.is_manual && i.product_id) {
-            const { data: product } = await this.db
-              .from("products")
-              .select("name,sku")
-              .eq("id", i.product_id)
-              .maybeSingle();
-            if (product) name = `${product.name}${product.sku ? ` (${product.sku})` : ""}`;
-          }
-          return {
-            id: String(i.id),
-            productId: i.product_id ? String(i.product_id) : null,
-            unitId: String(i.unit_id),
-            name,
-            qty: i.qty,
-            rate: Number(i.unit_price),
-            discount: Number(i.discount_amount),
-            tax: Number(i.tax_amount),
-            total: Number(i.line_total),
-            warrantyDays: Number(i.warranty_days ?? 0),
-          };
-        }),
-      ),
-      payments: [],
+      customerEmail: customer ? ((customer.email as string | null) ?? null) : null,
+      reference: mapped.referenceName,
+      salesmanId: mapped.salesmanUserId,
+      salesmanName,
+      commissionPercent: commission ? Number(commission.commission_percent ?? 0) : null,
+      commissionAmount: commission ? Number(commission.commission_amount ?? 0) : null,
+      dueDate: mapped.dueDate,
+      terms: mapped.notes,
+      warrantyNotes: (sale.warranty_notes as string | null) ?? null,
+      paidAmount: mapped.paidTotal,
+      remainingAmount: mapped.remainingTotal,
+      items: invoiceItems,
+      payments,
       logoUrl: null,
     };
   }
@@ -509,7 +599,8 @@ export class PosRepository {
         return String(Number(data.qty_on_hand ?? 0) - Number(data.qty_reserved ?? 0));
       },
       async postSaleRecord(payload: Record<string, unknown>) {
-        const invoiceNumber = `INV-${Date.now()}`;
+        const key = String(payload.idempotency_key ?? crypto.randomUUID());
+        const invoiceNumber = `INV-${key.replace(/-/g, "").slice(0, 10).toUpperCase()}-${Date.now().toString(36).toUpperCase()}`;
         const { data, error } = await db
           .from("sales")
           .insert({ ...payload, invoice_number: invoiceNumber })
@@ -595,8 +686,85 @@ export class PosRepository {
             payment_status: input.paymentStatus,
             updated_at: new Date().toISOString(),
           })
-          .eq("id", saleId);
+          .eq("id", saleId)
+          .eq("status", "draft");
         if (error) throw error;
+      },
+      async finalizeSaleStatus(
+        saleId: string,
+        input: {
+          paidTotal: number;
+          remainingTotal: number;
+          paymentStatus: string;
+          postedAt?: string;
+        },
+      ) {
+        const { data, error } = await db
+          .from("sales")
+          .update({
+            status: "posted",
+            posted_at: input.postedAt ?? new Date().toISOString(),
+            paid_total: input.paidTotal,
+            remaining_total: input.remainingTotal,
+            payment_status: input.paymentStatus,
+            updated_at: new Date().toISOString(),
+          })
+          .eq("id", saleId)
+          .eq("status", "draft")
+          .select("id")
+          .maybeSingle();
+        if (error) throw error;
+        if (!data) {
+          throw new ValidationDomainError(
+            "Sale could not be finalized — not in draft status (possible duplicate)",
+          );
+        }
+      },
+      async voidIncompleteSale(saleId: string, reason: string) {
+        // Free the original idempotency key so the cashier can retry with the same client key.
+        const freedKey = crypto.randomUUID();
+        const { error } = await db
+          .from("sales")
+          .update({
+            status: "void",
+            notes: reason.slice(0, 500),
+            idempotency_key: freedKey,
+            updated_at: new Date().toISOString(),
+          })
+          .eq("id", saleId)
+          .eq("status", "draft");
+        if (error) throw error;
+      },
+      async reverseStockSale(input: {
+        organizationId: string;
+        branchId: string;
+        warehouseId: string;
+        productId: string;
+        unitId: string;
+        qty: string;
+        saleId: string;
+        operationId: string;
+        batchId?: string;
+        serialNumberId?: string;
+      }) {
+        await inventory.postMovement(
+          {
+            organizationId: input.organizationId,
+            branchId: input.branchId,
+            warehouseId: input.warehouseId,
+            productId: input.productId,
+            unitId: input.unitId,
+            movementType: "sale_return",
+            qtyDelta: input.qty,
+            sourceType: "sale",
+            sourceId: input.saleId,
+            operationId: input.operationId,
+            batchId: input.batchId,
+            serialNumberId: input.serialNumberId,
+            reason: "Compensate failed sale finalization",
+          },
+          userId,
+        );
       },
       async postJournal(input: Record<string, unknown>) {
         await self.ensureAndPostJournal(input as never);
@@ -635,6 +803,10 @@ export class PosRepository {
       },
       async postAnalytics(input: Record<string, unknown>) {
         const { error } = await db.from("sales_analytics_events").insert(input);
+        if (error) throw error;
+      },
+      async postAudit(row: Record<string, unknown>) {
+        const { error } = await db.from("audit_logs").insert(row);
         if (error) throw error;
       },
     };
