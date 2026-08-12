@@ -23,6 +23,7 @@ export * from "./pos-tax.js";
 export * from "./sale-transaction.js";
 export * from "./sale-finalization.js";
 export * from "./pos-hold.js";
+export * from "./pos-return.js";
 export * from "./purchase-totals.js";
 export * from "./purchase-transaction.js";
 export * from "./supplier-pricing.js";

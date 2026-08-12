@@ -200,17 +200,32 @@ export const CreateSaleReturnSchema = z.object({
   branchId: UuidSchema,
   warehouseId: UuidSchema,
   originalSaleId: UuidSchema,
+  /** Settlement: refund (cash/bank), credit, or exchange. */
   returnType: z.enum(["refund", "credit", "exchange"]),
-  reason: z.string().min(1).max(500),
+  /** full | partial — inferred when omitted. */
+  returnScope: z.enum(["full", "partial"]).optional(),
+  reasonCode: z
+    .enum(["damaged", "wrong_product", "defective", "not_satisfied", "other"])
+    .default("other"),
+  reason: z.string().max(500).optional(),
+  refundMethod: z.enum(["cash", "bank", "customer_credit"]).optional(),
+  confirmationNotes: z.string().max(2000).optional(),
   items: z
     .array(
       z.object({
-        originalSaleItemId: UuidSchema.optional(),
-        productId: UuidSchema.optional(),
+        originalSaleItemId: UuidSchema,
+        productId: UuidSchema.optional().nullable(),
         unitId: UuidSchema,
         qty: z.union([QuantitySchema, PositiveDecimalStringSchema]),
         unitPrice: MoneySchema,
-        exchangeProductId: UuidSchema.optional(),
+        exchangeProductId: UuidSchema.optional().nullable(),
+        condition: z
+          .enum(["good", "opened", "damaged", "defective", "incomplete"])
+          .default("good"),
+        originalPackaging: z.boolean().default(true),
+        accessoriesComplete: z.boolean().default(true),
+        inspectionNotes: z.string().max(1000).optional().nullable(),
+        batchId: UuidSchema.optional().nullable(),
       }),
     )
     .min(1),
@@ -220,6 +235,16 @@ export const CreateSaleReturnSchema = z.object({
   operationId: UuidSchema.optional(),
 });
 export type CreateSaleReturnInput = z.input<typeof CreateSaleReturnSchema>;
+
+export const SearchReturnInvoicesSchema = z.object({
+  branchId: UuidSchema.optional(),
+  invoiceNumber: z.string().max(64).optional(),
+  customerQuery: z.string().max(120).optional(),
+  dateFrom: z.string().optional(),
+  dateTo: z.string().optional(),
+  limit: z.coerce.number().int().min(1).max(100).default(50),
+});
+export type SearchReturnInvoicesInput = z.input<typeof SearchReturnInvoicesSchema>;
 
 export const ProductSearchQuerySchema = z.object({
   q: z.string().min(1).max(200),

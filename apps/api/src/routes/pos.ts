@@ -6,6 +6,7 @@ import {
   HeldSaleFilterSchema,
   HoldSaleSchema,
   ProductSearchQuerySchema,
+  SearchReturnInvoicesSchema,
   TransferHeldSaleSchema,
   type ApproverRole,
 } from "@electronic-erp/contracts";
@@ -264,6 +265,67 @@ posRouter.post("/holds/:id/discard", async (req: AuthedRequest, res, next) => {
         resumeAny: authz(req).can("pos.resume_any"),
       }),
     );
+  } catch (err) {
+    next(err);
+  }
+});
+
+posRouter.get("/returns/search", async (req: AuthedRequest, res, next) => {
+  try {
+    authz(req).assert("pos.return");
+    const input = SearchReturnInvoicesSchema.parse({
+      branchId: req.query.branchId ?? req.authz?.branchId,
+      invoiceNumber: req.query.invoiceNumber,
+      customerQuery: req.query.customerQuery,
+      dateFrom: req.query.dateFrom,
+      dateTo: req.query.dateTo,
+      limit: req.query.limit,
+    });
+    res.json({
+      items: await repo(req).searchSalesForReturn({
+        organizationId: orgId(req),
+        ...input,
+      }),
+    });
+  } catch (err) {
+    next(err);
+  }
+});
+
+posRouter.get("/returns", async (req: AuthedRequest, res, next) => {
+  try {
+    authz(req).assert("pos.return");
+    const branchId = req.query.branchId ? String(req.query.branchId) : undefined;
+    const originalSaleId = req.query.originalSaleId
+      ? String(req.query.originalSaleId)
+      : undefined;
+    res.json({
+      items: await repo(req).listReturns(orgId(req), { branchId, originalSaleId }),
+    });
+  } catch (err) {
+    next(err);
+  }
+});
+
+posRouter.get("/returns/report", async (req: AuthedRequest, res, next) => {
+  try {
+    authz(req).assert("pos.return");
+    res.json(
+      await repo(req).returnHistoryReport(orgId(req), {
+        branchId: req.query.branchId ? String(req.query.branchId) : undefined,
+        dateFrom: req.query.dateFrom ? String(req.query.dateFrom) : undefined,
+        dateTo: req.query.dateTo ? String(req.query.dateTo) : undefined,
+      }),
+    );
+  } catch (err) {
+    next(err);
+  }
+});
+
+posRouter.get("/returns/sale/:saleId", async (req: AuthedRequest, res, next) => {
+  try {
+    authz(req).assert("pos.return");
+    res.json(await repo(req).getReturnableSale(req.params.saleId));
   } catch (err) {
     next(err);
   }

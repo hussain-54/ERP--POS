@@ -404,6 +404,17 @@ describe("supabase foundation migration", () => {
     expect(sql).toContain("discarded");
     expect(sql).toContain("pos.resume_any");
   });
+
+  it("POS returns phase-11 migration adds inspection, scope, refund method", () => {
+    const migration = path.join(root, "supabase/migrations/20260812000006_pos_returns.sql");
+    expect(existsSync(migration)).toBe(true);
+    const sql = readFileSync(migration, "utf8");
+    expect(sql).toContain("return_scope");
+    expect(sql).toContain("reason_code");
+    expect(sql).toContain("refund_method");
+    expect(sql).toContain("original_packaging");
+    expect(sql).toContain("restock_target");
+  });
 });
 
 describe("Phase 17 security — web must not ship service role", () => {

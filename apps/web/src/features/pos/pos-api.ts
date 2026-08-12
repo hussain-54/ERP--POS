@@ -113,6 +113,45 @@ export const posApi = {
       body: JSON.stringify(body),
     });
   },
+  searchReturnInvoices(params: {
+    branchId?: string;
+    invoiceNumber?: string;
+    customerQuery?: string;
+    dateFrom?: string;
+    dateTo?: string;
+  }) {
+    const qs = new URLSearchParams();
+    if (params.branchId) qs.set("branchId", params.branchId);
+    if (params.invoiceNumber) qs.set("invoiceNumber", params.invoiceNumber);
+    if (params.customerQuery) qs.set("customerQuery", params.customerQuery);
+    if (params.dateFrom) qs.set("dateFrom", params.dateFrom);
+    if (params.dateTo) qs.set("dateTo", params.dateTo);
+    return apiFetch<{ items: Array<Record<string, unknown>> }>(
+      `/api/v1/pos/returns/search?${qs}`,
+      { token: token() },
+    );
+  },
+  getReturnableSale(saleId: string) {
+    return apiFetch<Record<string, unknown>>(`/api/v1/pos/returns/sale/${saleId}`, {
+      token: token(),
+    });
+  },
+  listReturns(branchId?: string) {
+    const qs = branchId ? `?branchId=${branchId}` : "";
+    return apiFetch<{ items: Array<Record<string, unknown>> }>(`/api/v1/pos/returns${qs}`, {
+      token: token(),
+    });
+  },
+  returnReport(params: { branchId?: string; dateFrom?: string; dateTo?: string } = {}) {
+    const qs = new URLSearchParams();
+    if (params.branchId) qs.set("branchId", params.branchId);
+    if (params.dateFrom) qs.set("dateFrom", params.dateFrom);
+    if (params.dateTo) qs.set("dateTo", params.dateTo);
+    return apiFetch<{ summary: Record<string, unknown>; items: Array<Record<string, unknown>> }>(
+      `/api/v1/pos/returns/report?${qs}`,
+      { token: token() },
+    );
+  },
   currentShift(branchId: string) {
     return apiFetch<{ item: Record<string, unknown> | null }>(
       `/api/v1/pos/shifts/current?branchId=${branchId}`,

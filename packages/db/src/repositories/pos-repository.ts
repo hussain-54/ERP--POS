@@ -8,16 +8,24 @@ import type {
 import {
   assertHoldActionAllowed,
   assertHoldCartNonEmpty,
+  buildSaleReturnAuditRow,
   buildSaleReturnJournalLines,
   cartLinesForResume,
   computeHoldExpiresAt,
   filterHeldSales,
   holdMustNotReduceInventory,
+  maxReturnableQty,
+  prepareSaleReturn,
   SaleTransactionService,
   statusAfterExpiry,
+  summarizeReturnHistory,
   ValidationDomainError,
   type HeldSaleFilter,
   type HeldSaleRecord,
+  type ReturnableLine,
+  type ReturnCondition,
+  type ReturnReasonCode,
+  type ReturnScope,
 } from "@electronic-erp/domain";
 import type { DatabaseClient } from "../client.js";
 import { InventoryRepository } from "./inventory-repository.js";
@@ -569,6 +577,152 @@ export class PosRepository {
     return mapHeldSale(data);
   }
 
+  async getReturnableSale(saleId: string) {
+    const invoice = await this.getInvoice(saleId);
+    const { data: items } = await this.db
+      .from("sale_items")
+      .select("*")
+      .eq("sale_id", saleId)
+      .order("line_no");
+    const { data: priorReturns } = await this.db
+      .from("sale_returns")
+      .select("id")
+      .eq("original_sale_id", saleId)
+      .eq("status", "posted");
+    const returnIds = (priorReturns ?? []).map((r) => String(r.id));
+    let prior: Array<Row> = [];
+    if (returnIds.length) {
+      const { data } = await this.db
+        .from("sale_return_items")
+        .select("original_sale_item_id,qty")
+        .in("sale_return_id", returnIds);
+      prior = (data ?? []) as Array<Row>;
+    }
+
+    const returnedByItem = new Map<string, number>();
+    for (const row of prior ?? []) {
+      const id = row.original_sale_item_id ? String(row.original_sale_item_id) : "";
+      if (!id) continue;
+      returnedByItem.set(id, (returnedByItem.get(id) ?? 0) + Number(row.qty ?? 0));
+    }
+
+    const returnable: ReturnableLine[] = (items ?? []).map((i) => {
+      const soldQty = Number(i.qty);
+      const previouslyReturnedQty = returnedByItem.get(String(i.id)) ?? 0;
+      return {
+        saleItemId: String(i.id),
+        productId: i.product_id ? String(i.product_id) : null,
+        unitId: String(i.unit_id),
+        soldQty,
+        previouslyReturnedQty,
+        unitPrice: Number(i.unit_price),
+        batchId: i.batch_id ? String(i.batch_id) : null,
+      };
+    });
+
+    return {
+      ...invoice,
+      returnableLines: returnable.map((r) => {
+        const invItem = (invoice.items as Array<Record<string, unknown>>).find(
+          (it) => String(it.id) === r.saleItemId,
+        );
+        return {
+          ...r,
+          name: invItem ? String(invItem.name) : r.saleItemId,
+          maxReturnable: maxReturnableQty(r.soldQty, r.previouslyReturnedQty),
+        };
+      }),
+    };
+  }
+
+  async searchSalesForReturn(input: {
+    organizationId: string;
+    branchId?: string;
+    invoiceNumber?: string;
+    customerQuery?: string;
+    dateFrom?: string;
+    dateTo?: string;
+    limit?: number;
+  }) {
+    let q = this.db
+      .from("sales")
+      .select("*, customers(name,mobile)")
+      .eq("organization_id", input.organizationId)
+      .in("status", ["posted", "returned", "exchanged"])
+      .order("created_at", { ascending: false })
+      .limit(input.limit ?? 50);
+    if (input.branchId) q = q.eq("branch_id", input.branchId);
+    if (input.invoiceNumber?.trim()) {
+      q = q.ilike("invoice_number", `%${input.invoiceNumber.trim()}%`);
+    }
+    if (input.dateFrom) q = q.gte("created_at", input.dateFrom);
+    if (input.dateTo) q = q.lte("created_at", `${input.dateTo}T23:59:59.999Z`);
+    const { data, error } = await q;
+    if (error) throw error;
+
+    let rows = data ?? [];
+    const cq = input.customerQuery?.trim().toLowerCase();
+    if (cq) {
+      rows = rows.filter((r) => {
+        const c = r.customers as { name?: string; mobile?: string } | null;
+        const name = String(c?.name ?? "").toLowerCase();
+        const mobile = String(c?.mobile ?? "").toLowerCase();
+        return name.includes(cq) || mobile.includes(cq) || mobile.replace(/\D/g, "").includes(cq.replace(/\D/g, ""));
+      });
+    }
+    return rows.map((r) => {
+      const c = r.customers as { name?: string; mobile?: string } | null;
+      return {
+        ...mapSale(r),
+        customerName: c?.name ?? null,
+        customerMobile: c?.mobile ?? null,
+      };
+    });
+  }
+
+  async listReturns(
+    organizationId: string,
+    opts: { branchId?: string; originalSaleId?: string; limit?: number } = {},
+  ) {
+    let q = this.db
+      .from("sale_returns")
+      .select("*, sale_return_items(*)")
+      .eq("organization_id", organizationId)
+      .order("created_at", { ascending: false })
+      .limit(opts.limit ?? 100);
+    if (opts.branchId) q = q.eq("branch_id", opts.branchId);
+    if (opts.originalSaleId) q = q.eq("original_sale_id", opts.originalSaleId);
+    const { data, error } = await q;
+    if (error) throw error;
+    return data ?? [];
+  }
+
+  async returnHistoryReport(
+    organizationId: string,
+    opts: { branchId?: string; dateFrom?: string; dateTo?: string } = {},
+  ) {
+    let q = this.db
+      .from("sale_returns")
+      .select("refund_amount,return_type,return_scope,reason_code,status,created_at")
+      .eq("organization_id", organizationId)
+      .eq("status", "posted");
+    if (opts.branchId) q = q.eq("branch_id", opts.branchId);
+    if (opts.dateFrom) q = q.gte("created_at", opts.dateFrom);
+    if (opts.dateTo) q = q.lte("created_at", `${opts.dateTo}T23:59:59.999Z`);
+    const { data, error } = await q;
+    if (error) throw error;
+    const rows = (data ?? []).map((r) => ({
+      refundAmount: Number(r.refund_amount ?? 0),
+      disposition: String(r.return_type),
+      scope: String(r.return_scope ?? "partial"),
+      reasonCode: (r.reason_code as string | null) ?? null,
+    }));
+    return {
+      summary: summarizeReturnHistory(rows),
+      items: data ?? [],
+    };
+  }
+
   async postReturn(input: CreateSaleReturnInput, userId?: string | null) {
     const { data: existing } = await this.db
       .from("sale_returns")
@@ -578,21 +732,57 @@ export class PosRepository {
       .maybeSingle();
     if (existing) return existing;
 
-    const refundAmount = input.items.reduce(
-      (s, i) => s + Number(i.qty) * i.unitPrice,
-      0,
-    );
+    const { data: original, error: saleErr } = await this.db
+      .from("sales")
+      .select("*")
+      .eq("id", input.originalSaleId)
+      .single();
+    if (saleErr) throw saleErr;
+    if (!original || !["posted", "returned", "exchanged"].includes(String(original.status))) {
+      throw new ValidationDomainError("Original sale is not eligible for return");
+    }
 
+    const returnableCtx = await this.getReturnableSale(input.originalSaleId);
+    const prepared = prepareSaleReturn({
+      disposition: input.returnType,
+      scope: input.returnScope as ReturnScope | undefined,
+      reasonCode: (input.reasonCode ?? "other") as ReturnReasonCode,
+      reasonDetail: input.reason,
+      refundMethod: input.refundMethod,
+      hasCustomer: Boolean(original.customer_id),
+      returnable: returnableCtx.returnableLines,
+      lines: input.items.map((i) => ({
+        originalSaleItemId: String(i.originalSaleItemId),
+        productId: i.productId,
+        unitId: i.unitId,
+        qty: Number(i.qty),
+        unitPrice: i.unitPrice,
+        exchangeProductId: i.exchangeProductId,
+        condition: (i.condition ?? "good") as ReturnCondition,
+        originalPackaging: i.originalPackaging ?? true,
+        accessoriesComplete: i.accessoriesComplete ?? true,
+        inspectionNotes: i.inspectionNotes,
+        batchId: i.batchId,
+      })),
+    });
+
+    const nowIso = new Date().toISOString();
     const { data: ret, error } = await this.db
       .from("sale_returns")
       .insert({
         organization_id: input.organizationId,
         branch_id: input.branchId,
+        warehouse_id: input.warehouseId,
         original_sale_id: input.originalSaleId,
-        return_type: input.returnType,
-        reason: input.reason,
-        refund_amount: refundAmount,
+        return_type: prepared.disposition,
+        return_scope: prepared.scope,
+        reason: prepared.reason,
+        reason_code: prepared.reasonCode,
+        refund_method: prepared.refundMethod,
+        refund_amount: prepared.refundAmount,
+        confirmation_notes: input.confirmationNotes ?? null,
         status: "posted",
+        posted_at: nowIso,
         idempotency_key: input.idempotencyKey,
         device_id: input.deviceId ?? null,
         offline_transaction_id: input.offlineTransactionId ?? null,
@@ -604,20 +794,28 @@ export class PosRepository {
       .single();
     if (error) throw error;
 
-    for (const item of input.items) {
+    for (const item of prepared.lines) {
       await this.db.from("sale_return_items").insert({
         organization_id: input.organizationId,
         sale_return_id: ret.id,
-        original_sale_item_id: item.originalSaleItemId ?? null,
+        original_sale_item_id: item.originalSaleItemId,
         product_id: item.productId ?? null,
         unit_id: item.unitId,
         qty: String(item.qty),
         unit_price: item.unitPrice,
-        line_total: Number(item.qty) * item.unitPrice,
+        line_total: item.lineTotal,
         exchange_product_id: item.exchangeProductId ?? null,
+        condition: item.condition,
+        original_packaging: item.originalPackaging,
+        accessories_complete: item.accessoriesComplete,
+        inspection_notes: item.inspectionNotes ?? null,
+        batch_id: item.batchId ?? null,
+        restock_target: item.restockTarget,
+        restocked: item.restock,
       });
 
-      if (item.productId) {
+      if (item.productId && item.restock) {
+        const opBase = `${input.idempotencyKey}-${item.originalSaleItemId}`;
         await this.inventory.postMovement(
           {
             organizationId: input.organizationId,
@@ -629,15 +827,34 @@ export class PosRepository {
             qtyDelta: String(item.qty),
             sourceType: "sale_return",
             sourceId: String(ret.id),
-            operationId: crypto.randomUUID(),
-            reason: input.reason,
+            operationId: `${opBase}-in`,
+            batchId: item.batchId ?? undefined,
+            reason: prepared.reason,
           },
           userId,
         );
+        if (item.restockTarget === "damaged") {
+          await this.inventory.postMovement(
+            {
+              organizationId: input.organizationId,
+              branchId: input.branchId,
+              warehouseId: input.warehouseId,
+              productId: item.productId,
+              unitId: item.unitId,
+              movementType: "damage",
+              qtyDelta: String(item.qty),
+              sourceType: "sale_return",
+              sourceId: String(ret.id),
+              operationId: `${opBase}-dmg`,
+              batchId: item.batchId ?? undefined,
+              reason: `Return inspection: ${item.condition}`,
+            },
+            userId,
+          );
+        }
       }
 
-      // Exchange: issue replacement product (stock out) via inventory engine
-      if (input.returnType === "exchange" && item.exchangeProductId) {
+      if (prepared.disposition === "exchange" && item.exchangeProductId) {
         await this.inventory.postMovement(
           {
             organizationId: input.organizationId,
@@ -657,34 +874,63 @@ export class PosRepository {
       }
     }
 
-    const { data: original } = await this.db
-      .from("sales")
-      .select("*")
-      .eq("id", input.originalSaleId)
-      .maybeSingle();
-
-    if (original?.customer_id) {
+    // Refund settlement
+    if (prepared.disposition === "credit" || prepared.refundMethod === "customer_credit") {
+      if (original.customer_id) {
+        await this.parties.postCustomerLedger({
+          organizationId: input.organizationId,
+          branchId: input.branchId,
+          customerId: String(original.customer_id),
+          entryType: "return",
+          amount: String(prepared.refundAmount),
+          sourceType: "sale_return",
+          sourceId: String(ret.id),
+          description: `Return ${prepared.disposition}: ${prepared.reason}`,
+          userId,
+        });
+      }
+    } else if (
+      prepared.disposition === "refund" &&
+      (prepared.refundMethod === "cash" || prepared.refundMethod === "bank") &&
+      original.customer_id
+    ) {
+      // Cash/bank refund still reduces AR if the sale was on credit; walk-in cash sales skip AR.
+      // Ledger credit documents the refund against customer when present.
       await this.parties.postCustomerLedger({
         organizationId: input.organizationId,
         branchId: input.branchId,
         customerId: String(original.customer_id),
         entryType: "return",
-        amount: String(refundAmount),
+        amount: String(prepared.refundAmount),
         sourceType: "sale_return",
         sourceId: String(ret.id),
-        description: `Return ${input.returnType}: ${input.reason}`,
+        description: `Refund ${prepared.refundMethod}: ${prepared.reason}`,
         userId,
       });
     }
 
-    await this.db
-      .from("sales")
-      .update({
-        status: input.returnType === "exchange" ? "exchanged" : "returned",
-        updated_at: new Date().toISOString(),
-      })
-      .eq("id", input.originalSaleId);
+    // Sale status: full return → returned/exchanged; partial keeps posted unless already returned
+    if (prepared.scope === "full") {
+      await this.db
+        .from("sales")
+        .update({
+          status: prepared.disposition === "exchange" ? "exchanged" : "returned",
+          payment_status:
+            prepared.disposition === "refund" || prepared.disposition === "credit"
+              ? "refunded"
+              : original.payment_status,
+          updated_at: nowIso,
+        })
+        .eq("id", input.originalSaleId);
+    } else if (prepared.disposition === "exchange") {
+      await this.db
+        .from("sales")
+        .update({ status: "exchanged", updated_at: nowIso })
+        .eq("id", input.originalSaleId)
+        .eq("status", "posted");
+    }
 
+    const cogs = prepared.lines.reduce((s, l) => s + l.qty * 0, 0);
     await this.ensureAndPostJournal({
       organizationId: input.organizationId,
       branchId: input.branchId,
@@ -692,8 +938,23 @@ export class PosRepository {
       sourceId: String(ret.id),
       idempotencyKey: input.idempotencyKey,
       memo: `Return ${ret.id}`,
-      lines: buildSaleReturnJournalLines({ refundAmount }),
+      lines: buildSaleReturnJournalLines({ refundAmount: prepared.refundAmount, cogs }),
     });
+
+    await this.db.from("audit_logs").insert(
+      buildSaleReturnAuditRow({
+        organizationId: input.organizationId,
+        branchId: input.branchId,
+        returnId: String(ret.id),
+        originalSaleId: input.originalSaleId,
+        actorUserId: userId,
+        deviceId: input.deviceId,
+        disposition: prepared.disposition,
+        scope: prepared.scope,
+        refundAmount: prepared.refundAmount,
+        reason: prepared.reason,
+      }),
+    );
 
     return ret;
   }
