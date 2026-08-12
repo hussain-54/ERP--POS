@@ -4,6 +4,9 @@ import type {
   ProductSearchQuery,
   ProductSearchResult,
   Sale,
+  SaleListFilterInput,
+  SaleListResponse,
+  SaleManagementTab,
 } from "@electronic-erp/contracts";
 import {
   assertHoldActionAllowed,
@@ -20,6 +23,7 @@ import {
   SaleTransactionService,
   statusAfterExpiry,
   summarizeReturnHistory,
+  summarizeSaleManagement,
   ValidationDomainError,
   type CommissionRecord,
   type HeldSaleFilter,
@@ -1149,6 +1153,238 @@ export class PosRepository {
     const { data, error } = await q;
     if (error) throw error;
     return (data ?? []).map(mapSale);
+  }
+
+  private applySaleManagementTab(q: { eq: Function; in: Function; or: Function; gt: Function; not: Function }, tab: SaleManagementTab) {
+    switch (tab) {
+      case "completed":
+        return q.eq("status", "posted").eq("payment_status", "paid");
+      case "credit":
+        return q
+          .eq("status", "posted")
+          .gt("remaining_total", 0)
+          .not("customer_id", "is", null)
+          .in("payment_status", ["unpaid", "partial"]);
+      case "partial":
+        return q.eq("status", "posted").eq("payment_status", "partial");
+      case "cancelled":
+        return q.eq("status", "void");
+      case "pending":
+        return q.or(
+          "status.eq.draft,status.eq.held,and(status.eq.posted,payment_status.eq.unpaid,remaining_total.gt.0)",
+        );
+      case "all":
+      default:
+        return q.in("status", ["posted", "void", "returned", "exchanged"]);
+    }
+  }
+
+  private async saleIdsForPaymentMethod(organizationId: string, paymentMethodId: string) {
+    const { data, error } = await this.db
+      .from("payments")
+      .select("source_id, payment_splits!inner(payment_method_id)")
+      .eq("organization_id", organizationId)
+      .eq("source_type", "sale")
+      .eq("payment_splits.payment_method_id", paymentMethodId);
+    if (error) throw error;
+    return [...new Set((data ?? []).map((r) => String(r.source_id)))];
+  }
+
+  private buildSalesManagementQuery(input: SaleListFilterInput, select = "*, customers(name,mobile)") {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    let q: any = this.db
+      .from("sales")
+      .select(select, { count: "exact" })
+      .eq("organization_id", input.organizationId)
+      .order("created_at", { ascending: false });
+    q = this.applySaleManagementTab(q, input.tab ?? "all");
+    if (input.branchId) q = q.eq("branch_id", input.branchId);
+    if (input.warehouseId) q = q.eq("warehouse_id", input.warehouseId);
+    if (input.customerId) q = q.eq("customer_id", input.customerId);
+    if (input.cashierUserId) q = q.eq("created_by", input.cashierUserId);
+    if (input.salesmanUserId) q = q.eq("salesman_user_id", input.salesmanUserId);
+    if (input.status) q = q.eq("status", input.status);
+    if (input.paymentStatus) q = q.eq("payment_status", input.paymentStatus);
+    if (input.invoiceNumber?.trim()) {
+      q = q.ilike("invoice_number", `%${input.invoiceNumber.trim()}%`);
+    }
+    if (input.dateFrom) q = q.gte("created_at", input.dateFrom);
+    if (input.dateTo) q = q.lte("created_at", `${input.dateTo}T23:59:59.999Z`);
+    return q;
+  }
+
+  private filterRowsByCustomerQuery<T extends Row>(rows: T[], customerQuery?: string): T[] {
+    const cq = customerQuery?.trim().toLowerCase();
+    if (!cq) return rows;
+    return rows.filter((r) => {
+      const c = r.customers as { name?: string; mobile?: string } | null;
+      const name = String(c?.name ?? "").toLowerCase();
+      const mobile = String(c?.mobile ?? "").toLowerCase();
+      return (
+        name.includes(cq) ||
+        mobile.includes(cq) ||
+        mobile.replace(/\D/g, "").includes(cq.replace(/\D/g, ""))
+      );
+    });
+  }
+
+  async searchSalesManagement(input: SaleListFilterInput): Promise<SaleListResponse> {
+    let paymentSaleIds: string[] | null = null;
+    if (input.paymentMethodId) {
+      paymentSaleIds = await this.saleIdsForPaymentMethod(
+        input.organizationId,
+        input.paymentMethodId,
+      );
+      if (!paymentSaleIds.length) {
+        return {
+          summary: summarizeSaleManagement([]),
+          items: [],
+          total: 0,
+          limit: input.limit ?? 25,
+          offset: input.offset ?? 0,
+        };
+      }
+    }
+
+    const limit = input.limit ?? 25;
+    const offset = input.offset ?? 0;
+    const hasCustomerQuery = Boolean(input.customerQuery?.trim());
+
+    let summaryQuery = this.buildSalesManagementQuery(
+      input,
+      "grand_total,subtotal,discount_total,tax_total,remaining_total,status,payment_status,customer_id,customers(name,mobile)",
+    );
+    if (paymentSaleIds) summaryQuery = summaryQuery.in("id", paymentSaleIds);
+    const { data: summaryRowsRaw, error: summaryErr } = await summaryQuery.limit(5000);
+    if (summaryErr) throw summaryErr;
+    const summaryRows = this.filterRowsByCustomerQuery((summaryRowsRaw ?? []) as Row[], input.customerQuery);
+    const summary = summarizeSaleManagement(
+      summaryRows.map((r) => ({
+        status: r.status as Sale["status"],
+        paymentStatus: r.payment_status as Sale["paymentStatus"],
+        grandTotal: Number(r.grand_total ?? 0),
+        subtotal: Number(r.subtotal ?? 0),
+        discountTotal: Number(r.discount_total ?? 0),
+        taxTotal: Number(r.tax_total ?? 0),
+        paidTotal: 0,
+        remainingTotal: Number(r.remaining_total ?? 0),
+        customerId: r.customer_id ? String(r.customer_id) : null,
+      })),
+    );
+
+    let listQuery = this.buildSalesManagementQuery(input);
+    if (paymentSaleIds) listQuery = listQuery.in("id", paymentSaleIds);
+
+    let rows: Row[] = [];
+    let total = 0;
+
+    if (hasCustomerQuery) {
+      const { data: allRows, error: listErr } = await listQuery.limit(5000);
+      if (listErr) throw listErr;
+      const filtered = this.filterRowsByCustomerQuery((allRows ?? []) as Row[], input.customerQuery);
+      total = filtered.length;
+      rows = filtered.slice(offset, offset + limit);
+    } else {
+      const { data, error: listErr, count } = await listQuery.range(offset, offset + limit - 1);
+      if (listErr) throw listErr;
+      rows = (data ?? []) as Row[];
+      total = count ?? rows.length;
+    }
+
+    const saleIds = rows.map((r) => String(r.id));
+    const itemCounts = new Map<string, number>();
+    if (saleIds.length) {
+      const { data: itemRows } = await this.db
+        .from("sale_items")
+        .select("sale_id")
+        .in("sale_id", saleIds);
+      for (const row of itemRows ?? []) {
+        const id = String(row.sale_id);
+        itemCounts.set(id, (itemCounts.get(id) ?? 0) + 1);
+      }
+    }
+
+    const profileIds = [
+      ...new Set(
+        rows.flatMap((r) => [r.created_by, r.salesman_user_id].filter(Boolean).map(String)),
+      ),
+    ];
+    const profiles = new Map<string, string>();
+    if (profileIds.length) {
+      const { data: profileRows } = await this.db
+        .from("user_profiles")
+        .select("id,full_name,email")
+        .in("id", profileIds);
+      for (const p of profileRows ?? []) {
+        profiles.set(String(p.id), String(p.full_name ?? p.email ?? p.id));
+      }
+    }
+
+    const paymentLabels = new Map<string, string>();
+    if (saleIds.length) {
+      const { data: paymentRows } = await this.db
+        .from("payments")
+        .select("source_id,payment_splits(amount,payment_methods(name,code))")
+        .eq("source_type", "sale")
+        .in("source_id", saleIds);
+      for (const pay of paymentRows ?? []) {
+        const saleId = String(pay.source_id);
+        const splits = (pay.payment_splits as Array<Record<string, unknown>> | null) ?? [];
+        const methods = splits
+          .map((s) => {
+            const m = s.payment_methods as Record<string, unknown> | null;
+            return String(m?.name ?? m?.code ?? "Payment");
+          })
+          .filter(Boolean);
+        if (methods.length) {
+          const existing = paymentLabels.get(saleId);
+          paymentLabels.set(
+            saleId,
+            existing ? `${existing}, ${methods.join(", ")}` : methods.join(", "),
+          );
+        }
+      }
+    }
+
+    const items = rows.map((r) => {
+      const mapped = mapSale(r);
+      const c = r.customers as { name?: string; mobile?: string } | null;
+      const cashierId = r.created_by ? String(r.created_by) : null;
+      const salesmanId = r.salesman_user_id ? String(r.salesman_user_id) : null;
+      return {
+        ...mapped,
+        customerName: c?.name ?? null,
+        customerMobile: c?.mobile ?? null,
+        cashierId,
+        cashierName: cashierId ? (profiles.get(cashierId) ?? cashierId) : null,
+        salesmanName: salesmanId ? (profiles.get(salesmanId) ?? salesmanId) : null,
+        itemCount: itemCounts.get(mapped.id) ?? 0,
+        paymentMethods: paymentLabels.get(mapped.id) ?? null,
+      };
+    });
+
+    return { summary, items, total, limit, offset };
+  }
+
+  async exportSalesManagementCsv(input: SaleListFilterInput): Promise<string> {
+    const { salesManagementExportCsv } = await import("@electronic-erp/domain");
+    const page = await this.searchSalesManagement({ ...input, limit: 5000, offset: 0 });
+    return salesManagementExportCsv(
+      page.items.map((r) => ({
+        invoiceNumber: r.invoiceNumber,
+        dateTime: r.postedAt ?? r.createdAt,
+        customerName: r.customerName,
+        cashierName: r.cashierName,
+        salesmanName: r.salesmanName,
+        itemCount: r.itemCount,
+        grandTotal: Number(r.grandTotal),
+        paidTotal: Number(r.paidTotal),
+        remainingTotal: Number(r.remainingTotal),
+        paymentMethods: r.paymentMethods,
+        status: r.status,
+        paymentStatus: r.paymentStatus,
+      })),
+    );
   }
 
   private buildPorts(userId?: string | null) {

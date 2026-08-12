@@ -1,5 +1,6 @@
 import type { CreateSaleInput, ProductSearchResult, Sale } from "@electronic-erp/contracts";
 import { apiFetch } from "@/lib/api";
+import { env } from "@/lib/env";
 import { authStorage } from "@/features/auth/auth-service";
 
 function token(): string {
@@ -40,6 +41,31 @@ export const posApi = {
   listSales(branchId?: string) {
     const qs = branchId ? `?branchId=${branchId}` : "";
     return apiFetch<{ items: Sale[] }>(`/api/v1/pos/sales${qs}`, { token: token() });
+  },
+  searchSalesManagement(params: Record<string, string | number | undefined>) {
+    const qs = new URLSearchParams();
+    for (const [k, v] of Object.entries(params)) {
+      if (v !== undefined && v !== "") qs.set(k, String(v));
+    }
+    return apiFetch<{
+      summary: Record<string, unknown>;
+      items: Array<Record<string, unknown>>;
+      total: number;
+      limit: number;
+      offset: number;
+    }>(`/api/v1/pos/sales/management?${qs}`, { token: token() });
+  },
+  exportSalesManagement(params: Record<string, string | number | undefined>) {
+    const qs = new URLSearchParams();
+    for (const [k, v] of Object.entries(params)) {
+      if (v !== undefined && v !== "") qs.set(k, String(v));
+    }
+    return fetch(`${env.apiUrl}/api/v1/pos/sales/management/export?${qs}`, {
+      headers: { Authorization: `Bearer ${token()}` },
+    }).then(async (res) => {
+      if (!res.ok) throw new Error(await res.text());
+      return res.text();
+    });
   },
   getInvoice(id: string) {
     return apiFetch(`/api/v1/pos/sales/${id}/invoice`, { token: token() });

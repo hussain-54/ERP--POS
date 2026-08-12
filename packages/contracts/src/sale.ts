@@ -371,3 +371,65 @@ export const InvoiceViewSchema = z.object({
   logoUrl: z.string().nullable().optional(),
 });
 export type InvoiceView = z.infer<typeof InvoiceViewSchema>;
+
+// ─── Sales management (Phase 13) ───────────────────────────
+
+export const SaleManagementTabSchema = z.enum([
+  "all",
+  "completed",
+  "credit",
+  "partial",
+  "cancelled",
+  "pending",
+]);
+export type SaleManagementTab = z.infer<typeof SaleManagementTabSchema>;
+
+export const SaleListFilterSchema = z.object({
+  organizationId: UuidSchema,
+  branchId: UuidSchema.optional(),
+  warehouseId: UuidSchema.optional(),
+  tab: SaleManagementTabSchema.default("all"),
+  dateFrom: z.string().optional(),
+  dateTo: z.string().optional(),
+  customerId: UuidSchema.optional(),
+  customerQuery: z.string().max(120).optional(),
+  cashierUserId: UuidSchema.optional(),
+  salesmanUserId: UuidSchema.optional(),
+  paymentMethodId: UuidSchema.optional(),
+  invoiceNumber: z.string().max(64).optional(),
+  status: SaleStatusSchema.optional(),
+  paymentStatus: PaymentStatusSchema.optional(),
+  limit: z.coerce.number().int().min(1).max(100).default(25),
+  offset: z.coerce.number().int().min(0).default(0),
+});
+export type SaleListFilterInput = z.input<typeof SaleListFilterSchema>;
+
+export const SaleManagementSummarySchema = z.object({
+  totalSales: MoneySchema,
+  totalInvoices: z.number().int().min(0),
+  netSales: MoneySchema,
+  totalDiscount: MoneySchema,
+  totalTax: MoneySchema,
+  pendingAmount: MoneySchema,
+});
+export type SaleManagementSummary = z.infer<typeof SaleManagementSummarySchema>;
+
+export const SaleListRowSchema = SaleSchema.extend({
+  customerName: z.string().nullable().optional(),
+  customerMobile: z.string().nullable().optional(),
+  cashierId: UuidSchema.nullable().optional(),
+  cashierName: z.string().nullable().optional(),
+  salesmanName: z.string().nullable().optional(),
+  itemCount: z.number().int().min(0).default(0),
+  paymentMethods: z.string().nullable().optional(),
+});
+export type SaleListRow = z.infer<typeof SaleListRowSchema>;
+
+export const SaleListResponseSchema = z.object({
+  summary: SaleManagementSummarySchema,
+  items: z.array(SaleListRowSchema),
+  total: z.number().int().min(0),
+  limit: z.number().int().min(1),
+  offset: z.number().int().min(0),
+});
+export type SaleListResponse = z.infer<typeof SaleListResponseSchema>;

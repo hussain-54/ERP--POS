@@ -22,6 +22,7 @@ export const ERP_MODULES: ErpModuleRoute[] = [
   { path: "/installments", title: "Installments", group: "Sales", description: "Installment plans and dues." },
   { path: "/returns", title: "Sales Returns / Exchange", group: "Sales", description: "Returns and exchanges." },
   { path: "/invoices", title: "Invoice Management", group: "Sales", description: "Invoice register and reprints." },
+  { path: "/sales-management", title: "Sales Management", group: "Sales", description: "Sales register, filters, KPIs, and reports." },
   { path: "/held-sales", title: "Hold / Resume Sale", group: "Sales", description: "Parked POS carts." },
   { path: "/salesman", title: "Salesman / References", group: "Sales", description: "Commissions and targets." },
   { path: "/purchases", title: "Purchases", group: "Purchasing", description: "Purchase invoices, stock-in, supplier prices." },

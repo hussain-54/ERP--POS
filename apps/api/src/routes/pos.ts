@@ -7,6 +7,7 @@ import {
   HoldSaleSchema,
   ProductSearchQuerySchema,
   SearchReturnInvoicesSchema,
+  SaleListFilterSchema,
   TransferHeldSaleSchema,
   type ApproverRole,
 } from "@electronic-erp/contracts";
@@ -100,6 +101,63 @@ posRouter.post("/sales", async (req: AuthedRequest, res, next) => {
     }
 
     res.status(201).json(await repo(req).postSale(input, userId(req)));
+  } catch (err) {
+    next(err);
+  }
+});
+
+posRouter.get("/sales/management", async (req: AuthedRequest, res, next) => {
+  try {
+    authz(req).assert("pos.view_invoices");
+    const input = SaleListFilterSchema.parse({
+      organizationId: orgId(req),
+      branchId: req.query.branchId || undefined,
+      warehouseId: req.query.warehouseId || undefined,
+      tab: req.query.tab || "all",
+      dateFrom: req.query.dateFrom || undefined,
+      dateTo: req.query.dateTo || undefined,
+      customerId: req.query.customerId || undefined,
+      customerQuery: req.query.customerQuery || undefined,
+      cashierUserId: req.query.cashierUserId || undefined,
+      salesmanUserId: req.query.salesmanUserId || undefined,
+      paymentMethodId: req.query.paymentMethodId || undefined,
+      invoiceNumber: req.query.invoiceNumber || undefined,
+      status: req.query.status || undefined,
+      paymentStatus: req.query.paymentStatus || undefined,
+      limit: req.query.limit,
+      offset: req.query.offset,
+    });
+    res.json(await repo(req).searchSalesManagement(input));
+  } catch (err) {
+    next(err);
+  }
+});
+
+posRouter.get("/sales/management/export", async (req: AuthedRequest, res, next) => {
+  try {
+    authz(req).assert("pos.view_invoices");
+    const input = SaleListFilterSchema.parse({
+      organizationId: orgId(req),
+      branchId: req.query.branchId || undefined,
+      warehouseId: req.query.warehouseId || undefined,
+      tab: req.query.tab || "all",
+      dateFrom: req.query.dateFrom || undefined,
+      dateTo: req.query.dateTo || undefined,
+      customerId: req.query.customerId || undefined,
+      customerQuery: req.query.customerQuery || undefined,
+      cashierUserId: req.query.cashierUserId || undefined,
+      salesmanUserId: req.query.salesmanUserId || undefined,
+      paymentMethodId: req.query.paymentMethodId || undefined,
+      invoiceNumber: req.query.invoiceNumber || undefined,
+      status: req.query.status || undefined,
+      paymentStatus: req.query.paymentStatus || undefined,
+      limit: 5000,
+      offset: 0,
+    });
+    const csv = await repo(req).exportSalesManagementCsv(input);
+    res.setHeader("Content-Type", "text/csv; charset=utf-8");
+    res.setHeader("Content-Disposition", 'attachment; filename="sales-export.csv"');
+    res.send(csv);
   } catch (err) {
     next(err);
   }
