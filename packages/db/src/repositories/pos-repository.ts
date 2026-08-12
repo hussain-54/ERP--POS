@@ -6,9 +6,18 @@ import type {
   Sale,
 } from "@electronic-erp/contracts";
 import {
+  assertHoldActionAllowed,
+  assertHoldCartNonEmpty,
   buildSaleReturnJournalLines,
+  cartLinesForResume,
+  computeHoldExpiresAt,
+  filterHeldSales,
+  holdMustNotReduceInventory,
   SaleTransactionService,
+  statusAfterExpiry,
   ValidationDomainError,
+  type HeldSaleFilter,
+  type HeldSaleRecord,
 } from "@electronic-erp/domain";
 import type { DatabaseClient } from "../client.js";
 import { InventoryRepository } from "./inventory-repository.js";
@@ -217,12 +226,27 @@ export class PosRepository {
   async holdSale(input: {
     organizationId: string;
     branchId: string;
+    warehouseId: string;
     holdLabel?: string;
+    holdReason?: string;
+    notes?: string;
+    customerId?: string | null;
     cartSnapshot: Record<string, unknown>;
     deviceId?: string;
     userId?: string | null;
-    warehouseId: string;
+    expiresAt?: string;
   }) {
+    assertHoldCartNonEmpty(input.cartSnapshot);
+    // Invariant: hold parks snapshot only — never inserts sale_items or stock movements.
+    void holdMustNotReduceInventory();
+
+    const heldAt = new Date().toISOString();
+    const expiresAt = input.expiresAt ?? computeHoldExpiresAt(heldAt);
+    const customerId =
+      input.customerId ??
+      (typeof input.cartSnapshot.customerId === "string" && input.cartSnapshot.customerId
+        ? String(input.cartSnapshot.customerId)
+        : null);
     const invoiceNumber = `HOLD-${Date.now()}`;
     const { data: sale, error } = await this.db
       .from("sales")
@@ -232,7 +256,9 @@ export class PosRepository {
         warehouse_id: input.warehouseId,
         invoice_number: invoiceNumber,
         status: "held",
-        held_at: new Date().toISOString(),
+        customer_id: customerId,
+        notes: input.notes ?? null,
+        held_at: heldAt,
         idempotency_key: crypto.randomUUID(),
         device_id: input.deviceId ?? null,
         created_by: input.userId ?? null,
@@ -248,48 +274,299 @@ export class PosRepository {
         branch_id: input.branchId,
         sale_id: sale.id,
         hold_label: input.holdLabel ?? invoiceNumber,
+        hold_reason: input.holdReason ?? null,
+        notes: input.notes ?? null,
+        customer_id: customerId,
         held_by: input.userId ?? null,
         cart_snapshot: input.cartSnapshot,
         device_id: input.deviceId ?? null,
+        held_at: heldAt,
+        expires_at: expiresAt,
         status: "held",
       })
       .select("*")
       .single();
     if (heldErr) throw heldErr;
-    return { sale: mapSale(sale), held };
+    return { sale: mapSale(sale), held: mapHeldSale(held) };
   }
 
-  async listHeldSales(organizationId: string, branchId: string) {
+  async listHeldSales(
+    organizationId: string,
+    branchId: string,
+    opts: {
+      filter?: HeldSaleFilter;
+      userId?: string | null;
+      resumeAny?: boolean;
+      applyExpiry?: boolean;
+    } = {},
+  ) {
+    if (opts.applyExpiry !== false) {
+      await this.expireDueHolds(organizationId, branchId);
+    }
+
     const { data, error } = await this.db
       .from("held_sales")
       .select("*, sales(*)")
       .eq("organization_id", organizationId)
       .eq("branch_id", branchId)
-      .eq("status", "held")
+      .in("status", ["held", "expired"])
       .order("held_at", { ascending: false });
     if (error) throw error;
-    return data ?? [];
+
+    const records = (data ?? []).map((row) => mapHeldSale(row));
+    const filter = opts.filter ?? "all_pending";
+    return filterHeldSales(records, filter, { userId: opts.userId, now: new Date() });
   }
 
-  async resumeHeldSale(heldId: string) {
-    const { data: held, error } = await this.db
+  async expireDueHolds(organizationId: string, branchId?: string) {
+    const nowIso = new Date().toISOString();
+    let q = this.db
       .from("held_sales")
-      .select("*")
-      .eq("id", heldId)
-      .single();
+      .select("id,sale_id,expires_at,status")
+      .eq("organization_id", organizationId)
+      .eq("status", "held")
+      .not("expires_at", "is", null)
+      .lte("expires_at", nowIso);
+    if (branchId) q = q.eq("branch_id", branchId);
+    const { data, error } = await q;
     if (error) throw error;
-    if (!held || held.status !== "held") throw new ValidationDomainError("Held bill not found");
+    const due = data ?? [];
+    for (const row of due) {
+      await this.db
+        .from("held_sales")
+        .update({
+          status: statusAfterExpiry(),
+          updated_at: nowIso,
+        })
+        .eq("id", row.id)
+        .eq("status", "held");
+      await this.db
+        .from("sales")
+        .update({ status: "void", updated_at: nowIso, notes: "Hold expired" })
+        .eq("id", row.sale_id)
+        .eq("status", "held");
+    }
+    return due.length;
+  }
 
-    await this.db
+  async resumeHeldSale(
+    heldId: string,
+    opts: {
+      actorUserId?: string | null;
+      resumeAny?: boolean;
+      checkout?: boolean;
+    } = {},
+  ) {
+    const held = await this.getHeldSaleOrThrow(heldId);
+    assertHoldActionAllowed(held, opts.checkout ? "resume_and_checkout" : "resume", {
+      actorUserId: opts.actorUserId,
+      resumeAny: opts.resumeAny,
+    });
+    // Resume restores snapshot via replaceCart on client — never appends (no duplicate lines).
+    const cart = cartLinesForResume(held.cartSnapshot);
+
+    const nowIso = new Date().toISOString();
+    const { data, error } = await this.db
       .from("held_sales")
-      .update({ status: "resumed", resumed_at: new Date().toISOString() })
-      .eq("id", heldId);
+      .update({ status: "resumed", resumed_at: nowIso, updated_at: nowIso })
+      .eq("id", heldId)
+      .eq("status", "held")
+      .select("*")
+      .maybeSingle();
+    if (error) throw error;
+    if (!data) throw new ValidationDomainError("Held bill not found or already closed");
+
     await this.db
       .from("sales")
-      .update({ status: "draft", updated_at: new Date().toISOString() })
-      .eq("id", held.sale_id);
+      .update({ status: "draft", updated_at: nowIso })
+      .eq("id", held.saleId)
+      .eq("status", "held");
 
-    return held;
+    return {
+      ...mapHeldSale(data),
+      cartLines: cart,
+      checkout: Boolean(opts.checkout),
+    };
+  }
+
+  async editHeldSale(
+    heldId: string,
+    input: {
+      holdLabel?: string;
+      holdReason?: string;
+      notes?: string;
+      customerId?: string | null;
+      cartSnapshot?: Record<string, unknown>;
+      expiresAt?: string;
+      actorUserId?: string | null;
+      resumeAny?: boolean;
+    },
+  ) {
+    const held = await this.getHeldSaleOrThrow(heldId);
+    assertHoldActionAllowed(held, "edit", {
+      actorUserId: input.actorUserId,
+      resumeAny: input.resumeAny,
+    });
+    if (input.cartSnapshot) assertHoldCartNonEmpty(input.cartSnapshot);
+
+    const patch: Record<string, unknown> = { updated_at: new Date().toISOString() };
+    if (input.holdLabel !== undefined) patch.hold_label = input.holdLabel;
+    if (input.holdReason !== undefined) patch.hold_reason = input.holdReason;
+    if (input.notes !== undefined) patch.notes = input.notes;
+    if (input.customerId !== undefined) patch.customer_id = input.customerId;
+    if (input.cartSnapshot !== undefined) patch.cart_snapshot = input.cartSnapshot;
+    if (input.expiresAt !== undefined) patch.expires_at = input.expiresAt;
+
+    const { data, error } = await this.db
+      .from("held_sales")
+      .update(patch)
+      .eq("id", heldId)
+      .eq("status", "held")
+      .select("*")
+      .maybeSingle();
+    if (error) throw error;
+    if (!data) throw new ValidationDomainError("Held bill not found");
+
+    if (input.customerId !== undefined || input.notes !== undefined) {
+      const salePatch: Record<string, unknown> = { updated_at: new Date().toISOString() };
+      if (input.customerId !== undefined) salePatch.customer_id = input.customerId;
+      if (input.notes !== undefined) salePatch.notes = input.notes;
+      await this.db.from("sales").update(salePatch).eq("id", held.saleId);
+    }
+    return mapHeldSale(data);
+  }
+
+  async duplicateHeldSale(
+    heldId: string,
+    opts: { actorUserId?: string | null; deviceId?: string | null; warehouseId: string },
+  ) {
+    const held = await this.getHeldSaleOrThrow(heldId);
+    assertHoldActionAllowed(held, "duplicate", { actorUserId: opts.actorUserId, resumeAny: true });
+    return this.holdSale({
+      organizationId: held.organizationId,
+      branchId: held.branchId,
+      warehouseId: opts.warehouseId,
+      holdLabel: held.holdLabel ? `${held.holdLabel} (copy)` : `Hold copy ${new Date().toLocaleTimeString()}`,
+      holdReason: held.holdReason ?? undefined,
+      notes: held.notes ?? undefined,
+      customerId: held.customerId,
+      cartSnapshot: { ...held.cartSnapshot },
+      deviceId: opts.deviceId ?? held.deviceId ?? undefined,
+      userId: opts.actorUserId,
+    });
+  }
+
+  async transferHeldSale(
+    heldId: string,
+    input: {
+      toUserId: string;
+      branchId?: string;
+      actorUserId?: string | null;
+      resumeAny?: boolean;
+    },
+  ) {
+    const held = await this.getHeldSaleOrThrow(heldId);
+    assertHoldActionAllowed(held, "transfer", {
+      actorUserId: input.actorUserId,
+      resumeAny: input.resumeAny,
+    });
+    const patch: Record<string, unknown> = {
+      held_by: input.toUserId,
+      transferred_to: input.toUserId,
+      updated_at: new Date().toISOString(),
+    };
+    if (input.branchId) patch.branch_id = input.branchId;
+
+    const { data, error } = await this.db
+      .from("held_sales")
+      .update(patch)
+      .eq("id", heldId)
+      .eq("status", "held")
+      .select("*")
+      .maybeSingle();
+    if (error) throw error;
+    if (!data) throw new ValidationDomainError("Held bill not found");
+
+    if (input.branchId) {
+      await this.db
+        .from("sales")
+        .update({ branch_id: input.branchId, updated_at: new Date().toISOString() })
+        .eq("id", held.saleId);
+    }
+    return mapHeldSale(data);
+  }
+
+  async cancelHeldSale(
+    heldId: string,
+    opts: { actorUserId?: string | null; resumeAny?: boolean; reason?: string } = {},
+  ) {
+    const held = await this.getHeldSaleOrThrow(heldId);
+    assertHoldActionAllowed(held, "cancel", {
+      actorUserId: opts.actorUserId,
+      resumeAny: opts.resumeAny,
+    });
+    const nowIso = new Date().toISOString();
+    const { data, error } = await this.db
+      .from("held_sales")
+      .update({
+        status: "cancelled",
+        cancelled_at: nowIso,
+        notes: opts.reason ?? held.notes,
+        updated_at: nowIso,
+      })
+      .eq("id", heldId)
+      .eq("status", "held")
+      .select("*")
+      .maybeSingle();
+    if (error) throw error;
+    if (!data) throw new ValidationDomainError("Held bill not found");
+
+    await this.db
+      .from("sales")
+      .update({ status: "void", updated_at: nowIso, notes: opts.reason ?? "Hold cancelled" })
+      .eq("id", held.saleId)
+      .eq("status", "held");
+
+    return mapHeldSale(data);
+  }
+
+  async discardHeldSale(
+    heldId: string,
+    opts: { actorUserId?: string | null; resumeAny?: boolean } = {},
+  ) {
+    const held = await this.getHeldSaleOrThrow(heldId);
+    assertHoldActionAllowed(held, "discard", {
+      actorUserId: opts.actorUserId,
+      resumeAny: opts.resumeAny,
+    });
+    const nowIso = new Date().toISOString();
+    const { data, error } = await this.db
+      .from("held_sales")
+      .update({
+        status: "discarded",
+        discarded_at: nowIso,
+        updated_at: nowIso,
+      })
+      .eq("id", heldId)
+      .in("status", ["held", "expired"])
+      .select("*")
+      .maybeSingle();
+    if (error) throw error;
+    if (!data) throw new ValidationDomainError("Held bill not found");
+
+    await this.db
+      .from("sales")
+      .update({ status: "void", updated_at: nowIso, notes: "Hold discarded" })
+      .eq("id", held.saleId);
+
+    return mapHeldSale(data);
+  }
+
+  private async getHeldSaleOrThrow(heldId: string) {
+    const { data, error } = await this.db.from("held_sales").select("*").eq("id", heldId).single();
+    if (error) throw error;
+    if (!data) throw new ValidationDomainError("Held bill not found");
+    return mapHeldSale(data);
   }
 
   async postReturn(input: CreateSaleReturnInput, userId?: string | null) {
@@ -1028,5 +1305,25 @@ function mapSale(row: Row): Sale {
     createdAt: String(row.created_at),
     updatedAt: String(row.updated_at ?? row.created_at),
     version: Number(row.version ?? 1),
+  };
+}
+
+function mapHeldSale(row: Row): HeldSaleRecord {
+  return {
+    id: String(row.id),
+    organizationId: String(row.organization_id),
+    branchId: String(row.branch_id),
+    saleId: String(row.sale_id),
+    holdLabel: (row.hold_label as string | null) ?? null,
+    holdReason: (row.hold_reason as string | null) ?? null,
+    notes: (row.notes as string | null) ?? null,
+    heldBy: (row.held_by as string | null) ?? null,
+    customerId: (row.customer_id as string | null) ?? null,
+    cartSnapshot: (row.cart_snapshot as Record<string, unknown>) ?? {},
+    heldAt: String(row.held_at),
+    expiresAt: (row.expires_at as string | null) ?? null,
+    resumedAt: (row.resumed_at as string | null) ?? null,
+    status: row.status as HeldSaleRecord["status"],
+    deviceId: (row.device_id as string | null) ?? null,
   };
 }

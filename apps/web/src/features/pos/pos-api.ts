@@ -51,14 +51,60 @@ export const posApi = {
       body: JSON.stringify(body),
     });
   },
-  listHolds(branchId: string) {
-    return apiFetch<{ items: Array<Record<string, unknown>> }>(
-      `/api/v1/pos/holds?branchId=${branchId}`,
-      { token: token() },
-    );
+  listHolds(branchId: string, filter?: string) {
+    const qs = new URLSearchParams({ branchId });
+    if (filter) qs.set("filter", filter);
+    return apiFetch<{ items: Array<Record<string, unknown>> }>(`/api/v1/pos/holds?${qs}`, {
+      token: token(),
+    });
   },
-  resumeHold(id: string) {
-    return apiFetch(`/api/v1/pos/holds/${id}/resume`, { method: "POST", token: token() });
+  resumeHold(id: string, checkout = false) {
+    return apiFetch(`/api/v1/pos/holds/${id}/resume`, {
+      method: "POST",
+      token: token(),
+      body: JSON.stringify({ checkout }),
+    });
+  },
+  editHold(id: string, body: Record<string, unknown>) {
+    return apiFetch(`/api/v1/pos/holds/${id}`, {
+      method: "PATCH",
+      token: token(),
+      body: JSON.stringify(body),
+    });
+  },
+  duplicateHold(id: string, body: { warehouseId: string; deviceId?: string }) {
+    return apiFetch(`/api/v1/pos/holds/${id}/duplicate`, {
+      method: "POST",
+      token: token(),
+      body: JSON.stringify(body),
+    });
+  },
+  transferHold(id: string, body: { toUserId: string; branchId?: string }) {
+    return apiFetch(`/api/v1/pos/holds/${id}/transfer`, {
+      method: "POST",
+      token: token(),
+      body: JSON.stringify(body),
+    });
+  },
+  cancelHold(id: string, reason?: string) {
+    return apiFetch(`/api/v1/pos/holds/${id}/cancel`, {
+      method: "POST",
+      token: token(),
+      body: JSON.stringify({ reason }),
+    });
+  },
+  discardHold(id: string) {
+    return apiFetch(`/api/v1/pos/holds/${id}/discard`, {
+      method: "POST",
+      token: token(),
+    });
+  },
+  expireHolds(branchId?: string) {
+    return apiFetch<{ expired: number }>("/api/v1/pos/holds/expire", {
+      method: "POST",
+      token: token(),
+      body: JSON.stringify({ branchId }),
+    });
   },
   postReturn(body: Record<string, unknown>) {
     return apiFetch("/api/v1/pos/returns", {

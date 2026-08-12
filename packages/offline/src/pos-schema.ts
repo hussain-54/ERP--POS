@@ -35,8 +35,13 @@ CREATE TABLE IF NOT EXISTS held_sales (
   branch_id TEXT NOT NULL,
   sale_id TEXT NOT NULL,
   hold_label TEXT,
+  hold_reason TEXT,
+  notes TEXT,
+  held_by TEXT,
+  customer_id TEXT,
   cart_snapshot TEXT NOT NULL,
   held_at TEXT NOT NULL,
+  expires_at TEXT,
   status TEXT NOT NULL,
   device_id TEXT
 );

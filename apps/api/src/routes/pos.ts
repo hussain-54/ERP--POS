@@ -2,7 +2,11 @@ import { Router } from "express";
 import {
   CreateSaleReturnSchema,
   CreateSaleSchema,
+  EditHeldSaleSchema,
+  HeldSaleFilterSchema,
+  HoldSaleSchema,
   ProductSearchQuerySchema,
+  TransferHeldSaleSchema,
   type ApproverRole,
 } from "@electronic-erp/contracts";
 import { PosRepository } from "@electronic-erp/db";
@@ -122,14 +126,19 @@ posRouter.get("/sales/:id/invoice", async (req: AuthedRequest, res, next) => {
 posRouter.post("/holds", async (req: AuthedRequest, res, next) => {
   try {
     authz(req).assert("pos.hold");
+    const input = HoldSaleSchema.parse({ ...req.body, organizationId: orgId(req) });
     res.status(201).json(
       await repo(req).holdSale({
-        organizationId: orgId(req),
-        branchId: String(req.body.branchId),
-        warehouseId: String(req.body.warehouseId),
-        holdLabel: req.body.holdLabel,
-        cartSnapshot: (req.body.cartSnapshot ?? {}) as Record<string, unknown>,
-        deviceId: req.body.deviceId,
+        organizationId: input.organizationId,
+        branchId: input.branchId,
+        warehouseId: input.warehouseId,
+        holdLabel: input.holdLabel,
+        holdReason: input.holdReason,
+        notes: input.notes,
+        customerId: input.customerId,
+        cartSnapshot: input.cartSnapshot as Record<string, unknown>,
+        deviceId: input.deviceId,
+        expiresAt: input.expiresAt,
         userId: userId(req),
       }),
     );
@@ -143,7 +152,25 @@ posRouter.get("/holds", async (req: AuthedRequest, res, next) => {
     authz(req).assert("pos.hold");
     const branchId = String(req.query.branchId ?? req.authz?.branchId ?? "");
     if (!branchId) throw new Error("branchId required");
-    res.json({ items: await repo(req).listHeldSales(orgId(req), branchId) });
+    const filter = HeldSaleFilterSchema.catch("all_pending").parse(req.query.filter ?? "all_pending");
+    res.json({
+      items: await repo(req).listHeldSales(orgId(req), branchId, {
+        filter,
+        userId: userId(req),
+        resumeAny: authz(req).can("pos.resume_any"),
+      }),
+    });
+  } catch (err) {
+    next(err);
+  }
+});
+
+posRouter.post("/holds/expire", async (req: AuthedRequest, res, next) => {
+  try {
+    authz(req).assert("pos.hold");
+    const branchId = req.body?.branchId ? String(req.body.branchId) : undefined;
+    const count = await repo(req).expireDueHolds(orgId(req), branchId);
+    res.json({ expired: count });
   } catch (err) {
     next(err);
   }
@@ -152,7 +179,91 @@ posRouter.get("/holds", async (req: AuthedRequest, res, next) => {
 posRouter.post("/holds/:id/resume", async (req: AuthedRequest, res, next) => {
   try {
     authz(req).assert("pos.hold");
-    res.json(await repo(req).resumeHeldSale(req.params.id));
+    res.json(
+      await repo(req).resumeHeldSale(req.params.id, {
+        actorUserId: userId(req),
+        resumeAny: authz(req).can("pos.resume_any"),
+        checkout: Boolean(req.body?.checkout),
+      }),
+    );
+  } catch (err) {
+    next(err);
+  }
+});
+
+posRouter.patch("/holds/:id", async (req: AuthedRequest, res, next) => {
+  try {
+    authz(req).assert("pos.hold");
+    const input = EditHeldSaleSchema.parse(req.body ?? {});
+    res.json(
+      await repo(req).editHeldSale(req.params.id, {
+        ...input,
+        actorUserId: userId(req),
+        resumeAny: authz(req).can("pos.resume_any"),
+      }),
+    );
+  } catch (err) {
+    next(err);
+  }
+});
+
+posRouter.post("/holds/:id/duplicate", async (req: AuthedRequest, res, next) => {
+  try {
+    authz(req).assert("pos.hold");
+    const warehouseId = String(req.body?.warehouseId ?? "");
+    if (!warehouseId) throw new Error("warehouseId required");
+    res.status(201).json(
+      await repo(req).duplicateHeldSale(req.params.id, {
+        actorUserId: userId(req),
+        deviceId: req.body?.deviceId ? String(req.body.deviceId) : null,
+        warehouseId,
+      }),
+    );
+  } catch (err) {
+    next(err);
+  }
+});
+
+posRouter.post("/holds/:id/transfer", async (req: AuthedRequest, res, next) => {
+  try {
+    authz(req).assert("pos.hold");
+    const input = TransferHeldSaleSchema.parse(req.body ?? {});
+    res.json(
+      await repo(req).transferHeldSale(req.params.id, {
+        ...input,
+        actorUserId: userId(req),
+        resumeAny: authz(req).can("pos.resume_any"),
+      }),
+    );
+  } catch (err) {
+    next(err);
+  }
+});
+
+posRouter.post("/holds/:id/cancel", async (req: AuthedRequest, res, next) => {
+  try {
+    authz(req).assert("pos.hold");
+    res.json(
+      await repo(req).cancelHeldSale(req.params.id, {
+        actorUserId: userId(req),
+        resumeAny: authz(req).can("pos.resume_any"),
+        reason: req.body?.reason ? String(req.body.reason) : undefined,
+      }),
+    );
+  } catch (err) {
+    next(err);
+  }
+});
+
+posRouter.post("/holds/:id/discard", async (req: AuthedRequest, res, next) => {
+  try {
+    authz(req).assert("pos.hold");
+    res.json(
+      await repo(req).discardHeldSale(req.params.id, {
+        actorUserId: userId(req),
+        resumeAny: authz(req).can("pos.resume_any"),
+      }),
+    );
   } catch (err) {
     next(err);
   }

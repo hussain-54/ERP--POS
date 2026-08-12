@@ -394,6 +394,16 @@ describe("supabase foundation migration", () => {
     expect(sql).toContain("purchase_items_org_product_idx");
     expect(sql).toContain("installment_schedule_due_idx");
   });
+  it("POS holds phase-10 migration adds reason, notes, expiry, lifecycle statuses", () => {
+    const migration = path.join(root, "supabase/migrations/20260812000005_pos_holds.sql");
+    expect(existsSync(migration)).toBe(true);
+    const sql = readFileSync(migration, "utf8");
+    expect(sql).toContain("hold_reason");
+    expect(sql).toContain("expires_at");
+    expect(sql).toContain("cancelled");
+    expect(sql).toContain("discarded");
+    expect(sql).toContain("pos.resume_any");
+  });
 });
 
 describe("Phase 17 security — web must not ship service role", () => {

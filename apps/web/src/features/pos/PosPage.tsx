@@ -3,6 +3,8 @@ import type { ProductSearchResult } from "@electronic-erp/contracts";
 import {
   applyDiscount,
   approverRoleFromPermissions,
+  buildHoldSnapshot,
+  cartLinesForResume,
   evaluateDiscountApproval,
   evaluatePosCustomerCredit,
   preparePosPayments,
@@ -11,6 +13,7 @@ import {
   type InstallmentFrequency,
   type PosPaymentConfirmationStatus,
 } from "@electronic-erp/domain";
+import type { HeldSaleFilter } from "@electronic-erp/contracts";
 import { useToast } from "@electronic-erp/ui";
 import { useAuth } from "@/features/auth/AuthContext";
 import { posApi } from "./pos-api";
@@ -29,6 +32,7 @@ import { PosCartPanel } from "./components/PosCartPanel";
 import { PosPaymentPanel } from "./components/PosPaymentPanel";
 import { PosApprovalDialog } from "./components/PosApprovalDialog";
 import { ReceiptPreview, type InvoicePreview } from "./components/ReceiptPreview";
+import { PosHoldsPanel, type HeldSaleListItem } from "./components/PosHoldsPanel";
 import { catalogApi } from "@/features/catalog/catalog-api";
 import { usePosSession } from "./session/usePosSession";
 import { posCustomerRepository } from "./session/pos-customer-repository";
@@ -40,7 +44,6 @@ import {
   POSButton,
   POSCard,
   POSDrawer,
-  POSEmptyState,
   POSInput,
   POSLayout,
 } from "./design-system";
@@ -167,7 +170,10 @@ export function PosPage() {
   const [shift, setShift] = useState<Record<string, unknown> | null>(null);
   const [notes, setNotes] = useState("");
   const [methods, setMethods] = useState<Array<{ id: string; name: string; code?: string; kind?: string }>>([]);
-  const [holds, setHolds] = useState<Array<Record<string, unknown>>>([]);
+  const [holds, setHolds] = useState<HeldSaleListItem[]>([]);
+  const [holdsFilter, setHoldsFilter] = useState<HeldSaleFilter>("all_pending");
+  const [holdReason, setHoldReason] = useState("");
+  const [holdNotes, setHoldNotes] = useState("");
   const [busy, setBusy] = useState(false);
   const [lastInvoice, setLastInvoice] = useState<string | null>(null);
   const [receipt, setReceipt] = useState<InvoicePreview | null>(null);
@@ -306,12 +312,24 @@ export function PosPage() {
 
   useEffect(() => {
     if (!branchId) return;
-    void posApi.listHolds(branchId).then((res) => setHolds(res.items)).catch(() => undefined);
+    void refreshHolds();
     void posApi
       .currentShift(branchId)
       .then((res) => setShift(res.item))
       .catch(() => setShift(null));
-  }, [branchId]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [branchId, holdsFilter]);
+
+  async function refreshHolds() {
+    if (!branchId) return;
+    try {
+      await posApi.expireHolds(branchId).catch(() => undefined);
+      const res = await posApi.listHolds(branchId, holdsFilter);
+      setHolds(res.items as HeldSaleListItem[]);
+    } catch {
+      /* ignore */
+    }
+  }
 
   useEffect(() => {
     if (tab !== "categories") return;
@@ -806,29 +824,34 @@ export function PosPage() {
     if (!branchId || !warehouseId || !cart.length) return;
     setBusy(true);
     try {
+      const cartSnapshot = buildHoldSnapshot({
+        cart,
+        customerId: walkIn ? "" : customerId,
+        walkIn,
+        invoiceDiscount,
+        locale,
+        mode,
+        payments,
+        notes: holdNotes || notes,
+        delivery,
+        priceLevel,
+        salesmanUserId,
+      });
       await posApi.hold({
         branchId,
         warehouseId,
         holdLabel: `Hold ${new Date().toLocaleTimeString()}`,
-        cartSnapshot: {
-          cart,
-          customerId: walkIn ? "" : customerId,
-          walkIn,
-          invoiceDiscount,
-          locale,
-          mode,
-          payments,
-          notes,
-          delivery,
-          priceLevel,
-          salesmanUserId,
-        },
+        holdReason: holdReason || undefined,
+        notes: holdNotes || notes || undefined,
+        customerId: walkIn ? undefined : customerId || undefined,
+        cartSnapshot,
         deviceId,
       });
       clearSale();
+      setHoldReason("");
+      setHoldNotes("");
       toast.push({ title: "Bill held", tone: "success" });
-      const res = await posApi.listHolds(branchId);
-      setHolds(res.items);
+      await refreshHolds();
       setShowHolds(true);
     } catch (err) {
       toast.push({
@@ -841,28 +864,147 @@ export function PosPage() {
     }
   }
 
-  async function resume(id: string) {
-    const held = await posApi.resumeHold(id);
-    const snap = (held as { cart_snapshot?: Record<string, unknown> }).cart_snapshot;
-    if (snap?.cart && Array.isArray(snap.cart)) {
-      replaceCart(snap.cart as CartLine[]);
-      if (typeof snap.invoiceDiscount === "string") setInvoiceDiscount(snap.invoiceDiscount);
-      if (typeof snap.notes === "string") setNotes(snap.notes);
-      if (typeof snap.walkIn === "boolean") setWalkIn(snap.walkIn);
-      if (typeof snap.customerId === "string" && snap.customerId) {
-        void selectCustomer(snap.customerId);
+  function applyHoldSnapshot(snap: Record<string, unknown>) {
+    // Always replace cart — never concat — to avoid duplicate lines on resume.
+    const lines = cartLinesForResume(snap) as CartLine[];
+    replaceCart(lines);
+    if (typeof snap.invoiceDiscount === "string") setInvoiceDiscount(snap.invoiceDiscount);
+    if (typeof snap.notes === "string") setNotes(snap.notes);
+    if (typeof snap.walkIn === "boolean") setWalkIn(snap.walkIn);
+    if (typeof snap.customerId === "string" && snap.customerId) {
+      void selectCustomer(snap.customerId);
+    } else if (snap.walkIn) {
+      selectWalkIn();
+    }
+    if (Array.isArray(snap.payments)) setPayments(snap.payments as PaySplit[]);
+    if (typeof snap.priceLevel === "string") setPriceLevel(snap.priceLevel as PriceLevel);
+    if (typeof snap.salesmanUserId === "string") setSalesmanUserId(snap.salesmanUserId);
+    if (typeof snap.delivery === "boolean") setDelivery(snap.delivery);
+  }
+
+  async function resume(id: string, andCheckout = false) {
+    try {
+      const held = await posApi.resumeHold(id, andCheckout);
+      const snap =
+        (held as { cartSnapshot?: Record<string, unknown>; cart_snapshot?: Record<string, unknown> })
+          .cartSnapshot ??
+        (held as { cart_snapshot?: Record<string, unknown> }).cart_snapshot;
+      if (snap) applyHoldSnapshot(snap);
+      toast.push({
+        title: andCheckout ? "Bill resumed — complete payment" : "Bill resumed",
+        tone: "success",
+      });
+      await refreshHolds();
+      setShowHolds(false);
+      if (andCheckout) {
+        // Defer checkout so cart state from replaceCart is committed.
+        setTimeout(() => void checkout(), 0);
       }
-      if (Array.isArray(snap.payments)) setPayments(snap.payments as PaySplit[]);
-      if (typeof snap.priceLevel === "string") setPriceLevel(snap.priceLevel as PriceLevel);
-      if (typeof snap.salesmanUserId === "string") setSalesmanUserId(snap.salesmanUserId);
-      if (typeof snap.delivery === "boolean") setDelivery(snap.delivery);
+    } catch (err) {
+      toast.push({
+        title: "Resume failed",
+        description: err instanceof Error ? err.message : "Error",
+        tone: "danger",
+      });
     }
-    toast.push({ title: "Bill resumed", tone: "success" });
-    if (branchId) {
-      const res = await posApi.listHolds(branchId);
-      setHolds(res.items);
+  }
+
+  async function editHold(id: string) {
+    const hold = holds.find((h) => h.id === id);
+    if (!hold) return;
+    try {
+      // Load snapshot into cart for editing, keep hold open until re-saved or cancelled.
+      if (hold.cartSnapshot) applyHoldSnapshot(hold.cartSnapshot);
+      else {
+        const snap = (hold as { cart_snapshot?: Record<string, unknown> }).cart_snapshot;
+        if (snap) applyHoldSnapshot(snap);
+      }
+      const reason = window.prompt("Hold reason", hold.holdReason ?? "") ?? hold.holdReason ?? "";
+      const note = window.prompt("Hold notes", hold.notes ?? "") ?? hold.notes ?? "";
+      await posApi.editHold(id, {
+        holdReason: reason || undefined,
+        notes: note || undefined,
+        cartSnapshot: buildHoldSnapshot({
+          cart,
+          customerId: walkIn ? "" : customerId,
+          walkIn,
+          invoiceDiscount,
+          notes: note || notes,
+          payments,
+          delivery,
+          priceLevel,
+          salesmanUserId,
+        }),
+        customerId: walkIn ? null : customerId || null,
+      });
+      toast.push({ title: "Hold updated", tone: "success" });
+      await refreshHolds();
+    } catch (err) {
+      toast.push({
+        title: "Edit failed",
+        description: err instanceof Error ? err.message : "Error",
+        tone: "danger",
+      });
     }
-    setShowHolds(false);
+  }
+
+  async function duplicateHold(id: string) {
+    if (!warehouseId) return;
+    try {
+      await posApi.duplicateHold(id, { warehouseId, deviceId });
+      toast.push({ title: "Hold duplicated", tone: "success" });
+      await refreshHolds();
+    } catch (err) {
+      toast.push({
+        title: "Duplicate failed",
+        description: err instanceof Error ? err.message : "Error",
+        tone: "danger",
+      });
+    }
+  }
+
+  async function transferHold(id: string) {
+    const toUserId = window.prompt("Transfer to user profile id");
+    if (!toUserId) return;
+    try {
+      await posApi.transferHold(id, { toUserId });
+      toast.push({ title: "Hold transferred", tone: "success" });
+      await refreshHolds();
+    } catch (err) {
+      toast.push({
+        title: "Transfer failed",
+        description: err instanceof Error ? err.message : "Error",
+        tone: "danger",
+      });
+    }
+  }
+
+  async function cancelHold(id: string) {
+    try {
+      await posApi.cancelHold(id, "Cancelled from POS");
+      toast.push({ title: "Hold cancelled", tone: "success" });
+      await refreshHolds();
+    } catch (err) {
+      toast.push({
+        title: "Cancel failed",
+        description: err instanceof Error ? err.message : "Error",
+        tone: "danger",
+      });
+    }
+  }
+
+  async function discardHold(id: string) {
+    try {
+      await posApi.discardHold(id);
+      toast.push({ title: "Hold discarded", tone: "success" });
+      await refreshHolds();
+    } catch (err) {
+      toast.push({
+        title: "Discard failed",
+        description: err instanceof Error ? err.message : "Error",
+        tone: "danger",
+      });
+    }
   }
 
   function barcodeScanHint() {
@@ -1327,23 +1469,25 @@ export function PosPage() {
       </POSLayout>
 
       <POSDrawer open={showHolds} title="Held sales" onClose={() => setShowHolds(false)} side="right">
-        {holds.length === 0 ? (
-          <POSEmptyState title="No held bills" description="Hold a sale to resume later (F2)" />
-        ) : (
-          <ul className="space-y-2 text-sm">
-            {holds.map((h) => (
-              <li
-                key={String(h.id)}
-                className="flex items-center justify-between gap-2 rounded-[var(--pos-radius-sm)] border border-[var(--pos-border)] px-3 py-2"
-              >
-                <span className="truncate font-medium">{String(h.hold_label ?? h.id)}</span>
-                <POSButton size="sm" onClick={() => void resume(String(h.id))}>
-                  Resume
-                </POSButton>
-              </li>
-            ))}
-          </ul>
-        )}
+        <PosHoldsPanel
+          holds={holds}
+          filter={holdsFilter}
+          onFilterChange={setHoldsFilter}
+          holdReason={holdReason}
+          onHoldReasonChange={setHoldReason}
+          holdNotes={holdNotes}
+          onHoldNotesChange={setHoldNotes}
+          busy={busy}
+          canCreateHold={Boolean(branchId && warehouseId && cart.length)}
+          onCreateHold={() => void holdBill()}
+          onResume={(id) => void resume(id, false)}
+          onResumeCheckout={(id) => void resume(id, true)}
+          onEdit={(id) => void editHold(id)}
+          onDuplicate={(id) => void duplicateHold(id)}
+          onTransfer={(id) => void transferHold(id)}
+          onCancel={(id) => void cancelHold(id)}
+          onDiscard={(id) => void discardHold(id)}
+        />
       </POSDrawer>
 
       <PosApprovalDialog

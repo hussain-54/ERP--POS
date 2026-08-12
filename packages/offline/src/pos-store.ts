@@ -22,10 +22,15 @@ export interface OfflineHeldBill {
   organizationId: string;
   branchId: string;
   holdLabel: string;
+  holdReason?: string | null;
+  notes?: string | null;
+  heldBy?: string | null;
+  customerId?: string | null;
   cartSnapshot: Record<string, unknown>;
   heldAt: string;
+  expiresAt?: string | null;
   deviceId: string;
-  status: "held" | "resumed";
+  status: "held" | "resumed" | "expired" | "cancelled" | "discarded";
 }
 
 export interface OfflineReturnRecord {

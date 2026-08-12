@@ -144,13 +144,56 @@ export type CreateSaleInput = z.input<typeof CreateSaleSchema>;
 export const HoldSaleSchema = z.object({
   organizationId: UuidSchema,
   branchId: UuidSchema,
+  warehouseId: UuidSchema,
   saleId: UuidSchema.optional(),
   holdLabel: z.string().max(120).optional(),
+  holdReason: z.string().max(500).optional(),
+  notes: z.string().max(2000).optional(),
+  customerId: UuidSchema.optional().nullable(),
   cartSnapshot: z.record(z.unknown()),
   deviceId: z.string().max(128).optional(),
+  /** Optional override; default is held_at + 24h. */
+  expiresAt: z.string().datetime({ offset: true }).optional(),
   draft: CreateSaleBaseSchema.partial().optional(),
 });
 export type HoldSaleInput = z.input<typeof HoldSaleSchema>;
+
+export const HeldSaleFilterSchema = z.enum([
+  "active",
+  "expiring",
+  "expired",
+  "today",
+  "mine",
+  "all_pending",
+]);
+export type HeldSaleFilter = z.infer<typeof HeldSaleFilterSchema>;
+
+export const HeldSaleActionSchema = z.enum([
+  "resume",
+  "resume_and_checkout",
+  "edit",
+  "duplicate",
+  "transfer",
+  "cancel",
+  "discard",
+]);
+export type HeldSaleAction = z.infer<typeof HeldSaleActionSchema>;
+
+export const EditHeldSaleSchema = z.object({
+  holdLabel: z.string().max(120).optional(),
+  holdReason: z.string().max(500).optional(),
+  notes: z.string().max(2000).optional(),
+  customerId: UuidSchema.optional().nullable(),
+  cartSnapshot: z.record(z.unknown()).optional(),
+  expiresAt: z.string().datetime({ offset: true }).optional(),
+});
+export type EditHeldSaleInput = z.input<typeof EditHeldSaleSchema>;
+
+export const TransferHeldSaleSchema = z.object({
+  toUserId: UuidSchema,
+  branchId: UuidSchema.optional(),
+});
+export type TransferHeldSaleInput = z.input<typeof TransferHeldSaleSchema>;
 
 export const CreateSaleReturnSchema = z.object({
   organizationId: UuidSchema,
