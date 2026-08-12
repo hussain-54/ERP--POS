@@ -402,7 +402,7 @@ export function SalesManagementPage() {
       </div>
 
       <Card>
-        <div className="overflow-x-auto">
+        <div className="hidden overflow-x-auto md:block">
           <table className="min-w-full text-sm">
             <thead>
               <tr className="border-b border-[var(--erp-border)] text-left text-[var(--erp-muted)]">
@@ -468,6 +468,49 @@ export function SalesManagementPage() {
               ) : null}
             </tbody>
           </table>
+        </div>
+        <div className="space-y-2 md:hidden">
+          {items.map((s) => (
+            <div key={s.id} className="rounded-lg border border-[var(--erp-border)] p-3 text-sm">
+              <div className="flex items-start justify-between gap-2">
+                <div>
+                  <div className="font-semibold">{s.invoiceNumber}</div>
+                  <div className="text-xs text-[var(--erp-muted)]">
+                    {new Date(s.postedAt ?? s.createdAt).toLocaleString()}
+                  </div>
+                </div>
+                <span className="rounded bg-[var(--erp-surface)] px-2 py-0.5 text-xs">
+                  {s.status} / {s.paymentStatus}
+                </span>
+              </div>
+              <div className="mt-2 grid grid-cols-2 gap-2 text-xs text-[var(--erp-muted)]">
+                <div>Customer: {s.customerName ?? "Walk-in"}</div>
+                <div>Cashier: {s.cashierName ?? "—"}</div>
+                <div>Salesman: {s.salesmanName ?? "—"}</div>
+                <div>Items: {s.itemCount ?? 0}</div>
+                <div>Total: {Number(s.grandTotal).toFixed(2)}</div>
+                <div>Paid: {Number(s.paidTotal).toFixed(2)}</div>
+                <div>Due: {Number(s.remainingTotal).toFixed(2)}</div>
+                <div>Pay: {s.paymentMethods ?? "—"}</div>
+              </div>
+              <div className="mt-2 flex flex-wrap gap-1">
+                <Button size="sm" variant="ghost" onClick={() => void openInvoice(s.id)}>
+                  View
+                </Button>
+                <Button size="sm" variant="ghost" onClick={() => void openInvoice(s.id)}>
+                  Print
+                </Button>
+                <Button size="sm" variant="ghost" onClick={() => void openInvoice(s.id)}>
+                  Invoice
+                </Button>
+              </div>
+            </div>
+          ))}
+          {!items.length ? (
+            <div className="rounded-lg border border-dashed border-[var(--erp-border)] px-3 py-8 text-center text-sm text-[var(--erp-muted)]">
+              {loading ? "Loading…" : "No sales found for current filters"}
+            </div>
+          ) : null}
         </div>
         <div className="mt-3 flex items-center justify-between gap-2 text-sm">
           <span className="text-[var(--erp-muted)]">

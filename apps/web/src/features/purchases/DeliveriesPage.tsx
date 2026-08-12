@@ -205,11 +205,10 @@ export function DeliveriesPage() {
         <Form onSubmit={onCreate}>
           <div className="grid gap-3 md:grid-cols-2 lg:grid-cols-3">
             <Input label="Sale / invoice ID" value={form.saleId} onChange={(e) => setForm((p) => ({ ...p, saleId: e.target.value }))} />
-            <Select
-              label="Customer"
+            <Input
+              label="Customer ID"
               value={form.customerId}
               onChange={(e) => setForm((p) => ({ ...p, customerId: e.target.value }))}
-              options={[{ value: "", label: "—" }]}
             />
             <Input label="Address" value={form.address} onChange={(e) => setForm((p) => ({ ...p, address: e.target.value }))} />
             <Input label="Mobile" value={form.mobile} onChange={(e) => setForm((p) => ({ ...p, mobile: e.target.value }))} />

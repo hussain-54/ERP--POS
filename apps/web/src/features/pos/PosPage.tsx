@@ -1111,26 +1111,52 @@ export function PosPage() {
     function onKey(e: KeyboardEvent) {
       const tag = (e.target as HTMLElement | null)?.tagName;
       const typing = tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT";
-      if (e.key === "F1") {
+      // Keep browser/system defaults unless Alt is held for common conflicts.
+      if (e.key === "F1" && e.altKey) {
         e.preventDefault();
+        clearSale();
         searchRef.current?.focus();
         return;
       }
       if (e.key === "F2") {
         e.preventDefault();
-        if (e.shiftKey) setShowHolds((v) => !v);
-        else void holdBill();
+        if (showHolds) setShowHolds(false);
+        else if (cart.length > 0) void holdBill();
+        else setShowHolds(true);
         return;
       }
-      if (e.key === "F3") {
+      if (e.key === "F3" && e.altKey) {
         e.preventDefault();
         setWalkIn(false);
         customerRef.current?.focus();
         return;
       }
-      if (e.key === "F5") {
+      if (e.key === "F4") {
+        e.preventDefault();
+        if (canPriceOverride) {
+          toast.push({
+            title: "Price override enabled",
+            description: "Edit line rate directly in cart.",
+            tone: "info",
+          });
+        } else {
+          setPendingInvoiceDiscount(null);
+          setApprovalReason("price:");
+          setApprovalOpen(true);
+        }
+        return;
+      }
+      if (e.key === "F5" && e.altKey) {
         e.preventDefault();
         discountRef.current?.focus();
+        return;
+      }
+      if (e.key === "F6" && e.altKey) {
+        e.preventDefault();
+        // Re-apply discount math and totals from current inputs.
+        requestInvoiceDiscount(invoiceDiscount);
+        setPayments((prev) => [...prev]);
+        toast.push({ title: "Totals recalculated", tone: "info" });
         return;
       }
       if (e.key === "F7" && !typing) {
@@ -1147,7 +1173,7 @@ export function PosPage() {
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [cart, payments, branchId, warehouseId]);
+  }, [cart, payments, branchId, warehouseId, showHolds, canPriceOverride, invoiceDiscount]);
 
   useEffect(() => {
     if (payments.length === 1 && totals.grand > 0 && !payments[0].amount) {

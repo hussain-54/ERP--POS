@@ -78,7 +78,12 @@ export function InvoicesPage() {
           value={q}
           onChange={(e) => setQ(e.target.value)}
         />
-        <ul className="mt-3 divide-y text-sm">
+        {loading ? (
+          <div className="mt-3 rounded-lg border border-dashed border-[var(--erp-border)] px-3 py-8 text-center text-sm text-[var(--erp-muted)]">
+            Loading invoices…
+          </div>
+        ) : null}
+        <ul className="mt-3 hidden divide-y text-sm md:block">
           {filtered.map((s) => (
             <li key={s.id} className="flex items-center justify-between gap-2 py-2">
               <div>
@@ -100,6 +105,33 @@ export function InvoicesPage() {
             <li className="py-6 text-center text-[var(--erp-muted)]">No invoices found</li>
           ) : null}
         </ul>
+        <div className="mt-3 space-y-2 md:hidden">
+          {filtered.map((s) => (
+            <div key={s.id} className="rounded-lg border border-[var(--erp-border)] p-3 text-sm">
+              <div className="font-semibold">{s.invoiceNumber}</div>
+              <div className="mt-1 text-xs text-[var(--erp-muted)]">
+                {s.status} · {s.paymentStatus}
+              </div>
+              <div className="mt-1 text-xs text-[var(--erp-muted)]">
+                Total {Number(s.grandTotal).toFixed(2)} · Paid {Number(s.paidTotal).toFixed(2)} · Due{" "}
+                {Number(s.remainingTotal).toFixed(2)}
+              </div>
+              <div className="mt-1 text-xs text-[var(--erp-muted)]">
+                {new Date(s.createdAt).toLocaleString()}
+              </div>
+              <div className="mt-2">
+                <Button size="sm" variant="secondary" onClick={() => void openInvoice(s.id)}>
+                  View / print
+                </Button>
+              </div>
+            </div>
+          ))}
+          {!filtered.length ? (
+            <div className="rounded-lg border border-dashed border-[var(--erp-border)] px-3 py-8 text-center text-sm text-[var(--erp-muted)]">
+              No invoices found
+            </div>
+          ) : null}
+        </div>
       </Card>
 
       {invoice ? (

@@ -43,10 +43,12 @@ export function calcTotals(cart: CartLine[], invoiceDiscount: string) {
 }
 
 export const POS_SHORTCUTS = [
-  { key: "F1", label: "New sale / clear focus" },
+  { key: "Alt+F1", label: "New sale" },
   { key: "F2", label: "Hold / resume" },
-  { key: "F3", label: "Focus customer" },
-  { key: "F5", label: "Invoice discount" },
+  { key: "Alt+F3", label: "Customers" },
+  { key: "F4", label: "Price override" },
+  { key: "Alt+F5", label: "Discount" },
+  { key: "Alt+F6", label: "Recalculate" },
   { key: "F7", label: "Clear cart" },
-  { key: "F8", label: "Cancel / clear sale" },
+  { key: "F8", label: "Cancel sale" },
 ] as const;
