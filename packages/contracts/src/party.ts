@@ -173,6 +173,9 @@ export const CreateInstallmentPlanSchema = z.object({
   downPayment: DecimalStringSchema.default("0"),
   installmentCount: z.number().int().positive(),
   startDate: z.string().min(8), // YYYY-MM-DD
+  frequency: z.enum(["weekly", "biweekly", "monthly", "quarterly"]).default("monthly"),
+  lateFeePercent: z.number().min(0).max(100).default(0),
+  lateFeeFixed: DecimalStringSchema.default("0"),
 });
 export type CreateInstallmentPlanInput = z.input<typeof CreateInstallmentPlanSchema>;
 

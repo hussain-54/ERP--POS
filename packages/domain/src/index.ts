@@ -13,6 +13,7 @@ export * from "./inventory-valuation.js";
 export * from "./party-ledger.js";
 export * from "./credit.js";
 export * from "./split-payment.js";
+export * from "./pos-payment.js";
 export * from "./installments.js";
 export * from "./discount-policy.js";
 export * from "./money.js";

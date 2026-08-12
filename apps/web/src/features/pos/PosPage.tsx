@@ -5,7 +5,10 @@ import {
   approverRoleFromPermissions,
   evaluateDiscountApproval,
   evaluatePosCustomerCredit,
+  preparePosPayments,
   validatePosCheckout,
+  type InstallmentFrequency,
+  type PosPaymentConfirmationStatus,
 } from "@electronic-erp/domain";
 import { useToast } from "@electronic-erp/ui";
 import { useAuth } from "@/features/auth/AuthContext";
@@ -150,9 +153,19 @@ export function PosPage() {
   const [useInstallment, setUseInstallment] = useState(false);
   const [installmentCount, setInstallmentCount] = useState("3");
   const [downPayment, setDownPayment] = useState("0");
+  const [installmentFrequency, setInstallmentFrequency] =
+    useState<InstallmentFrequency>("monthly");
+  const [lateFeePercent, setLateFeePercent] = useState("0");
+  const [lateFeeFixed, setLateFeeFixed] = useState("0");
+  const [isAdvance, setIsAdvance] = useState(false);
+  const [cashReceived, setCashReceived] = useState("");
+  const [checkoutIdempotencyKey, setCheckoutIdempotencyKey] = useState(() => uuid());
+  const [paymentConfirmation, setPaymentConfirmation] =
+    useState<PosPaymentConfirmationStatus | null>(null);
+  const [paymentConfirmationError, setPaymentConfirmationError] = useState<string | null>(null);
   const [shift, setShift] = useState<Record<string, unknown> | null>(null);
   const [notes, setNotes] = useState("");
-  const [methods, setMethods] = useState<Array<{ id: string; name: string; code?: string }>>([]);
+  const [methods, setMethods] = useState<Array<{ id: string; name: string; code?: string; kind?: string }>>([]);
   const [holds, setHolds] = useState<Array<Record<string, unknown>>>([]);
   const [busy, setBusy] = useState(false);
   const [lastInvoice, setLastInvoice] = useState<string | null>(null);
@@ -214,12 +227,20 @@ export function PosPage() {
       const mapped = r.items.map((m) => ({
         id: String(m.id),
         name: String(m.name ?? m.kind ?? "Method"),
-        code: m.kind != null ? String(m.kind) : undefined,
+        code: m.code != null ? String(m.code).toLowerCase() : undefined,
+        kind: m.kind != null ? String(m.kind).toLowerCase() : undefined,
       }));
       setMethods(mapped);
-      const cash = mapped.find((m) => m.code === "cash") ?? mapped[0];
+      const cash = mapped.find((m) => m.kind === "cash" || m.code === "cash") ?? mapped[0];
       if (cash) {
-        setPayments([{ id: uuid(), paymentMethodId: cash.id, amount: "" }]);
+        setPayments([
+          {
+            id: uuid(),
+            paymentMethodId: cash.id,
+            amount: "",
+            methodKind: cash.kind ?? "cash",
+          },
+        ]);
       }
     });
     void inventoryApi.listWarehouses().then((r) => {
@@ -431,9 +452,26 @@ export function PosPage() {
     setNotes("");
     setDelivery(false);
     setUseInstallment(false);
+    setIsAdvance(false);
+    setCashReceived("");
+    setDownPayment("0");
+    setInstallmentCount("3");
+    setInstallmentFrequency("monthly");
+    setLateFeePercent("0");
+    setLateFeeFixed("0");
+    setPaymentConfirmation(null);
+    setPaymentConfirmationError(null);
+    setCheckoutIdempotencyKey(uuid());
     setPayments((prev) =>
       prev[0]
-        ? [{ id: uuid(), paymentMethodId: prev[0].paymentMethodId, amount: "" }]
+        ? [
+            {
+              id: uuid(),
+              paymentMethodId: prev[0].paymentMethodId,
+              amount: "",
+              methodKind: prev[0].methodKind,
+            },
+          ]
         : [],
     );
     setLastInvoice(null);
@@ -560,10 +598,34 @@ export function PosPage() {
   }
 
   async function checkout() {
-    const paymentLines = payments
-      .filter((s) => s.paymentMethodId && Number(s.amount) > 0)
-      .map((s) => ({ paymentMethodId: s.paymentMethodId, amount: Number(s.amount) }));
-    const paid = paymentLines.reduce((s, p) => s + p.amount, 0);
+    if (busy || paymentConfirmation === "pending") return;
+
+    const kindById = new Map(methods.map((m) => [m.id, m.kind ?? m.code ?? ""]));
+    const prep = preparePosPayments({
+      grandTotal: totals.grand,
+      lines: payments.map((p) => ({
+        paymentMethodId: p.paymentMethodId,
+        amount: p.amount,
+        amountReceived:
+          (kindById.get(p.paymentMethodId) === "cash" || p.methodKind === "cash") && cashReceived
+            ? cashReceived
+            : p.amountReceived,
+        kind: kindById.get(p.paymentMethodId) || p.methodKind,
+      })),
+      walkIn,
+      hasCustomer: Boolean(customerId) && !walkIn,
+      allowCreditDue: !walkIn && Boolean(customerId),
+      useInstallment,
+      isAdvance,
+      allowRemaining: (!walkIn && Boolean(customerId)) || useInstallment,
+    });
+    if (!prep.ok) {
+      setPaymentConfirmation("failure");
+      setPaymentConfirmationError(prep.errors[0] ?? "Payment invalid");
+      toast.push({ title: prep.errors[0] ?? "Payment invalid", tone: "danger" });
+      return;
+    }
+
     const allowCredit = !walkIn && Boolean(customerId);
     const validation = validatePosCheckout({
       cart,
@@ -572,35 +634,50 @@ export function PosPage() {
       warehouseId,
       walkIn,
       customerId,
-      paidTotal: paid,
+      paidTotal: prep.paidTowardBill,
       allowCreditDue: allowCredit,
     });
     if (!validation.ok) {
+      setPaymentConfirmation("failure");
+      setPaymentConfirmationError(validation.errors[0] ?? "Checkout invalid");
       toast.push({ title: validation.errors[0] ?? "Checkout invalid", tone: "danger" });
       return;
     }
-    if (!walkIn && customer) {
-      const due = Math.max(0, totals.grand - paid);
-      if (due > 0) {
-        const credit = evaluatePosCustomerCredit({
-          customer,
-          additionalCredit: String(due),
+    if (!walkIn && customer && prep.remaining > 0) {
+      const credit = evaluatePosCustomerCredit({
+        customer,
+        additionalCredit: String(prep.remaining),
+      });
+      if (customer.isBlocked) {
+        setPaymentConfirmation("failure");
+        setPaymentConfirmationError("Customer is blocked");
+        toast.push({ title: "Customer is blocked", tone: "danger" });
+        return;
+      }
+      if (credit.requiresApproval && !hasPermission("credit.approve")) {
+        setPaymentConfirmation("failure");
+        setPaymentConfirmationError(credit.reason ?? "Credit approval required");
+        toast.push({
+          title: "Credit approval required",
+          description: credit.reason ?? "Limit exceeded",
+          tone: "danger",
         });
-        if (customer.isBlocked) {
-          toast.push({ title: "Customer is blocked", tone: "danger" });
-          return;
-        }
-        if (credit.requiresApproval && !hasPermission("credit.approve")) {
-          toast.push({
-            title: "Credit approval required",
-            description: credit.reason ?? "Limit exceeded",
-            tone: "danger",
-          });
-          return;
-        }
+        return;
       }
     }
+
+    const paymentLines = prep.splits.map((s) => ({
+      paymentMethodId: s.paymentMethodId,
+      amount: Number(s.amount),
+      reference: s.reference,
+      methodKind: s.kind,
+      amountReceived: s.kind === "cash" && cashReceived ? Number(cashReceived) : undefined,
+    }));
+
+    setPaymentConfirmation("pending");
+    setPaymentConfirmationError(null);
     setBusy(true);
+    const idempotencyKey = checkoutIdempotencyKey;
     try {
       const result = await posApi.postSale({
         branchId: branchId!,
@@ -613,6 +690,7 @@ export function PosPage() {
         localeMode: locale,
         items: saleItems,
         payments: paymentLines,
+        isAdvancePayment: isAdvance || undefined,
         discountTotal: Number(invoiceDiscount || 0),
         discounts:
           Number(invoiceDiscount || 0) > 0
@@ -632,11 +710,14 @@ export function PosPage() {
                 downPayment: downPayment || "0",
                 installmentCount: Number(installmentCount || 1),
                 startDate: new Date().toISOString().slice(0, 10),
+                frequency: installmentFrequency,
+                lateFeePercent: Number(lateFeePercent) || 0,
+                lateFeeFixed: lateFeeFixed || "0",
               }
             : undefined,
         deviceId,
-        idempotencyKey: uuid(),
-        operationId: uuid(),
+        idempotencyKey,
+        operationId: idempotencyKey,
       });
 
       if (delivery) {
@@ -674,6 +755,7 @@ export function PosPage() {
         }
       }
 
+      setPaymentConfirmation("success");
       setLastInvoice(result.invoiceNumber);
       clearSale();
       void posHardware.openDrawer({ reason: `sale ${result.invoiceNumber}` });
@@ -687,14 +769,19 @@ export function PosPage() {
         documentType: "sales_invoice",
       });
       toast.push({
-        title: "Sale posted",
-        description: `${result.invoiceNumber} · paid ${result.paidTotal} · due ${result.remainingTotal}`,
+        title: "Payment accepted",
+        description: `${result.invoiceNumber} · paid ${result.paidTotal} · due ${result.remainingTotal}${
+          prep.change > 0 ? ` · change ${prep.change}` : ""
+        }`,
         tone: "success",
       });
     } catch (err) {
+      const message = err instanceof Error ? err.message : "Error";
+      setPaymentConfirmation("failure");
+      setPaymentConfirmationError(message);
       toast.push({
-        title: "Sale failed",
-        description: err instanceof Error ? err.message : "Error",
+        title: "Payment failed",
+        description: message,
         tone: "danger",
       });
     } finally {
@@ -1140,6 +1227,11 @@ export function PosPage() {
                 onHold={() => void holdBill()}
                 onPay={() => void checkout()}
                 onCancel={clearSale}
+                onRetry={() => {
+                  setPaymentConfirmation("retry");
+                  setPaymentConfirmationError(null);
+                  setCheckoutIdempotencyKey(uuid());
+                }}
                 advanced={advanced}
                 useInstallment={useInstallment}
                 onUseInstallment={setUseInstallment}
@@ -1147,6 +1239,18 @@ export function PosPage() {
                 onInstallmentCount={setInstallmentCount}
                 downPayment={downPayment}
                 onDownPayment={setDownPayment}
+                installmentFrequency={installmentFrequency}
+                onInstallmentFrequency={setInstallmentFrequency}
+                lateFeePercent={lateFeePercent}
+                onLateFeePercent={setLateFeePercent}
+                lateFeeFixed={lateFeeFixed}
+                onLateFeeFixed={setLateFeeFixed}
+                isAdvance={isAdvance}
+                onIsAdvance={setIsAdvance}
+                cashReceived={cashReceived}
+                onCashReceived={setCashReceived}
+                confirmation={paymentConfirmation}
+                confirmationError={paymentConfirmationError}
               />
 
               {advanced ? (

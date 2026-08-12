@@ -1,11 +1,19 @@
 import { addDecimal, compareDecimal, subtractDecimal } from "@electronic-erp/contracts";
 import { ValidationDomainError } from "./errors.js";
+import { roundMoney, finiteMoney } from "./money.js";
+
+export type InstallmentFrequency = "weekly" | "biweekly" | "monthly" | "quarterly";
 
 export interface InstallmentPlanInput {
   totalAmount: string;
   downPayment: string;
   installmentCount: number;
   startDate: string; // YYYY-MM-DD
+  frequency?: InstallmentFrequency;
+  /** Percent of installment amount charged when overdue. */
+  lateFeePercent?: number;
+  /** Fixed late fee per overdue installment. */
+  lateFeeFixed?: string;
 }
 
 export interface GeneratedInstallment {
@@ -13,11 +21,50 @@ export interface GeneratedInstallment {
   dueDate: string;
   amount: string;
   status: "pending" | "overdue";
+  lateFee?: string;
+}
+
+export function periodMonths(frequency: InstallmentFrequency): number {
+  if (frequency === "weekly") return 7 / 30.4375; // approximated via days helper
+  if (frequency === "biweekly") return 14 / 30.4375;
+  if (frequency === "quarterly") return 3;
+  return 1;
+}
+
+export function addInstallmentPeriod(isoDate: string, frequency: InstallmentFrequency, periods: number): string {
+  const d = new Date(`${isoDate}T00:00:00.000Z`);
+  if (frequency === "weekly") {
+    d.setUTCDate(d.getUTCDate() + 7 * periods);
+  } else if (frequency === "biweekly") {
+    d.setUTCDate(d.getUTCDate() + 14 * periods);
+  } else if (frequency === "quarterly") {
+    d.setUTCMonth(d.getUTCMonth() + 3 * periods);
+  } else {
+    d.setUTCMonth(d.getUTCMonth() + periods);
+  }
+  return d.toISOString().slice(0, 10);
+}
+
+/** Late fee for one installment line. */
+export function computeInstallmentLateFee(input: {
+  installmentAmount: string;
+  lateFeePercent?: number;
+  lateFeeFixed?: string;
+  isOverdue: boolean;
+}): string {
+  if (!input.isOverdue) return "0";
+  const base = finiteMoney(input.installmentAmount);
+  const pct = Math.max(0, finiteMoney(input.lateFeePercent, 0));
+  const fixed = Math.max(0, finiteMoney(input.lateFeeFixed, 0));
+  return String(roundMoney((base * pct) / 100 + fixed));
 }
 
 export function buildInstallmentPlan(input: InstallmentPlanInput): {
   remainingAmount: string;
   monthlyAmount: string;
+  frequency: InstallmentFrequency;
+  lateFeePercent: number;
+  lateFeeFixed: string;
   schedule: GeneratedInstallment[];
 } {
   if (input.installmentCount <= 0) {
@@ -31,13 +78,16 @@ export function buildInstallmentPlan(input: InstallmentPlanInput): {
     throw new ValidationDomainError("Remaining amount must be positive for installments");
   }
 
+  const frequency: InstallmentFrequency = input.frequency ?? "monthly";
+  const lateFeePercent = Math.max(0, finiteMoney(input.lateFeePercent, 0));
+  const lateFeeFixed = String(roundMoney(Math.max(0, finiteMoney(input.lateFeeFixed, 0))));
   const count = input.installmentCount;
   const base = (Number(remaining) / count).toFixed(2);
   const schedule: GeneratedInstallment[] = [];
   let allocated = "0";
 
   for (let i = 1; i <= count; i += 1) {
-    const dueDate = addMonths(input.startDate, i - 1);
+    const dueDate = addInstallmentPeriod(input.startDate, frequency, i - 1);
     let amount = base;
     if (i === count) {
       amount = subtractDecimal(remaining, allocated);
@@ -49,12 +99,16 @@ export function buildInstallmentPlan(input: InstallmentPlanInput): {
       dueDate,
       amount,
       status: "pending",
+      lateFee: "0",
     });
   }
 
   return {
     remainingAmount: remaining,
     monthlyAmount: schedule[0]?.amount ?? "0",
+    frequency,
+    lateFeePercent,
+    lateFeeFixed,
     schedule,
   };
 }
@@ -62,17 +116,18 @@ export function buildInstallmentPlan(input: InstallmentPlanInput): {
 export function markOverdueSchedule(
   schedule: GeneratedInstallment[],
   asOfDate: string,
+  opts?: { lateFeePercent?: number; lateFeeFixed?: string },
 ): GeneratedInstallment[] {
   return schedule.map((item) => {
-    if (item.status === "pending" && item.dueDate < asOfDate) {
-      return { ...item, status: "overdue" as const };
+    if ((item.status === "pending" || item.status === "overdue") && item.dueDate < asOfDate) {
+      const lateFee = computeInstallmentLateFee({
+        installmentAmount: item.amount,
+        lateFeePercent: opts?.lateFeePercent,
+        lateFeeFixed: opts?.lateFeeFixed,
+        isOverdue: true,
+      });
+      return { ...item, status: "overdue" as const, lateFee };
     }
     return item;
   });
-}
-
-function addMonths(isoDate: string, months: number): string {
-  const d = new Date(`${isoDate}T00:00:00.000Z`);
-  d.setUTCMonth(d.getUTCMonth() + months);
-  return d.toISOString().slice(0, 10);
 }

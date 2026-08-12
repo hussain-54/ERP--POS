@@ -3,6 +3,7 @@ import { buildSaleJournalLines } from "./accounting-posting.js";
 import { calculateSaleTotals } from "./sale-totals.js";
 import { assertDiscountAllowed, effectiveDiscountPercent } from "./discount-policy.js";
 import { ValidationDomainError } from "./errors.js";
+import { assertPosPaymentPrepared, preparePosPayments } from "./pos-payment.js";
 
 export interface SaleTransactionPorts {
   findSaleByIdempotency(organizationId: string, key: string): Promise<unknown | null>;
@@ -30,6 +31,11 @@ export interface SaleTransactionPorts {
     saleId: string;
   }): Promise<void>;
   postSplitPayment(input: Record<string, unknown>): Promise<void>;
+  /** Set paid totals only after payment is accepted by business logic. */
+  updateSalePaymentState?(
+    saleId: string,
+    input: { paidTotal: number; remainingTotal: number; paymentStatus: string },
+  ): Promise<void>;
   postJournal(input: Record<string, unknown>): Promise<void>;
   postCommission(input: Record<string, unknown>): Promise<void>;
   postWarranties(input: Array<Record<string, unknown>>): Promise<void>;
@@ -132,16 +138,27 @@ export class SaleTransactionService {
       }
     }
 
-    const paidTotal = (input.payments ?? []).reduce((s, p) => s + moneyNumber(p.amount), 0);
-    if (paidTotal - totals.grandTotal > 0.009) {
-      throw new ValidationDomainError("Payment total exceeds grand total");
-    }
-    const remainingTotal = Math.round((totals.grandTotal - paidTotal) * 100) / 100;
-    if (!input.customerId && remainingTotal > 0.009) {
-      throw new ValidationDomainError("Walk-in sales must be paid in full");
-    }
-    const paymentStatus =
-      paidTotal <= 0 ? "unpaid" : remainingTotal <= 0.009 ? "paid" : "partial";
+    const prep = preparePosPayments({
+      grandTotal: totals.grandTotal,
+      lines: (input.payments ?? []).map((p) => ({
+        paymentMethodId: p.paymentMethodId,
+        amount: moneyNumber(p.amount),
+        amountReceived: p.amountReceived != null ? moneyNumber(p.amountReceived) : null,
+        reference: p.reference,
+        kind: p.methodKind,
+      })),
+      walkIn: !input.customerId,
+      hasCustomer: Boolean(input.customerId),
+      allowCreditDue: Boolean(input.customerId),
+      useInstallment: Boolean(input.createInstallment),
+      isAdvance: Boolean(input.isAdvancePayment),
+      allowRemaining: Boolean(input.customerId),
+    });
+    assertPosPaymentPrepared(prep);
+    const paidTotal = prep.paidTowardBill;
+    const remainingTotal = prep.remaining;
+    // Do not mark paid until payment rows are accepted — start unpaid.
+    const initialPaymentStatus = "unpaid";
 
     const operationId = input.operationId ?? input.idempotencyKey;
     const sale = await this.ports.postSaleRecord({
@@ -158,9 +175,9 @@ export class SaleTransactionService {
       discount_total: totals.discountTotal,
       tax_total: totals.taxTotal,
       grand_total: totals.grandTotal,
-      paid_total: paidTotal,
-      remaining_total: remainingTotal,
-      payment_status: paymentStatus,
+      paid_total: 0,
+      remaining_total: totals.grandTotal,
+      payment_status: initialPaymentStatus,
       due_date: input.dueDate ?? null,
       notes: input.notes ?? null,
       warranty_notes: input.warrantyNotes ?? null,
@@ -233,16 +250,16 @@ export class SaleTransactionService {
       });
     }
 
-    if ((input.payments ?? []).length) {
+    if (prep.splits.length) {
       await this.ports.postSplitPayment({
         organizationId: input.organizationId,
         branchId: input.branchId,
         direction: "receive",
         partyType: "customer",
         customerId: input.customerId,
-        splits: (input.payments ?? []).map((p) => ({
+        splits: prep.splits.map((p) => ({
           paymentMethodId: p.paymentMethodId,
-          amount: String(moneyNumber(p.amount)),
+          amount: p.amount,
           reference: p.reference,
         })),
         billTotal: String(paidTotal || totals.grandTotal),
@@ -254,6 +271,17 @@ export class SaleTransactionService {
         deviceId: input.deviceId,
         offlineTransactionId: input.offlineTransactionId,
       });
+    }
+
+    // Mark paid only after payment accepted (or unpaid/partial when no/partial tender).
+    if (this.ports.updateSalePaymentState) {
+      await this.ports.updateSalePaymentState(sale.id, {
+        paidTotal,
+        remainingTotal,
+        paymentStatus: prep.paymentStatus,
+      });
+    } else if (prep.splits.length === 0 && paidTotal <= 0) {
+      // Ports without updater leave sale unpaid — correct for credit-only.
     }
 
     // Automatic double-entry: sales, AR/cash/bank, tax, discount, inventory, COGS
@@ -317,6 +345,9 @@ export class SaleTransactionService {
         downPayment: input.createInstallment.downPayment,
         installmentCount: input.createInstallment.installmentCount,
         startDate: input.createInstallment.startDate,
+        frequency: input.createInstallment.frequency ?? "monthly",
+        lateFeePercent: input.createInstallment.lateFeePercent ?? 0,
+        lateFeeFixed: input.createInstallment.lateFeeFixed ?? "0",
       });
     }
 

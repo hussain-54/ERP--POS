@@ -50,6 +50,9 @@ describe("SaleTransactionService", () => {
       postSplitPayment: vi.fn(async () => {
         calls.push("payment");
       }),
+      updateSalePaymentState: vi.fn(async () => {
+        calls.push("payment_state");
+      }),
       postJournal: vi.fn(async () => {
         calls.push("accounting");
       }),
@@ -109,6 +112,7 @@ describe("SaleTransactionService", () => {
       "stock",
       "ledger",
       "payment",
+      "payment_state",
       "accounting",
       "commission",
       "warranty",

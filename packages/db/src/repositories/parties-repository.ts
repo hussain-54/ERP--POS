@@ -26,13 +26,13 @@ type Row = Record<string, unknown>;
 
 const SYSTEM_METHODS: Array<{ code: string; name: string; kind: string; sort: number }> = [
   { code: "CASH", name: "Cash", kind: "cash", sort: 1 },
-  { code: "BANK", name: "Bank", kind: "bank", sort: 2 },
-  { code: "CARD", name: "Card", kind: "card", sort: 3 },
+  { code: "BANK", name: "Bank Transfer", kind: "bank", sort: 2 },
+  { code: "CARD", name: "Debit/Credit Card", kind: "card", sort: 3 },
   { code: "JAZZCASH", name: "JazzCash", kind: "jazzcash", sort: 4 },
   { code: "EASYPAISA", name: "Easypaisa", kind: "easypaisa", sort: 5 },
   { code: "SADAPAY", name: "SadaPay", kind: "sadapay", sort: 6 },
   { code: "ONLINE", name: "Online payment", kind: "online", sort: 7 },
-  { code: "CREDIT", name: "Credit", kind: "credit", sort: 8 },
+  { code: "CREDIT", name: "Credit / Udhar", kind: "credit", sort: 8 },
   { code: "INSTALLMENT", name: "Installment", kind: "installment", sort: 9 },
 ];
 
@@ -537,6 +537,9 @@ export class PartiesRepository {
       downPayment: input.downPayment ?? "0",
       installmentCount: input.installmentCount,
       startDate: input.startDate,
+      frequency: input.frequency ?? "monthly",
+      lateFeePercent: input.lateFeePercent ?? 0,
+      lateFeeFixed: input.lateFeeFixed ?? "0",
     });
 
     const { data: plan, error } = await this.db
@@ -553,6 +556,9 @@ export class PartiesRepository {
         installment_count: input.installmentCount,
         monthly_amount: built.monthlyAmount,
         start_date: input.startDate,
+        frequency: built.frequency,
+        late_fee_percent: built.lateFeePercent,
+        late_fee_fixed: built.lateFeeFixed,
         status: "active",
         created_by: userId ?? null,
       })

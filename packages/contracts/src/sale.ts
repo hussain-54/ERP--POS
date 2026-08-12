@@ -63,6 +63,10 @@ export type SaleItemInput = z.input<typeof SaleItemInputSchema>;
 export const SalePaymentInputSchema = z.object({
   paymentMethodId: UuidSchema,
   amount: z.union([MoneySchema, PositiveDecimalStringSchema]),
+  /** Cash tendered (amount received); change = received - applied when greater. */
+  amountReceived: z.union([MoneySchema, PositiveDecimalStringSchema]).optional(),
+  /** Optional method kind hint for domain classification (cash/bank/card/…). */
+  methodKind: z.string().max(32).optional(),
   paymentAccountId: UuidSchema.optional(),
   reference: z.string().max(120).optional(),
 });
@@ -98,11 +102,16 @@ export const CreateSaleBaseSchema = z.object({
   warrantyNotes: z.string().max(1000).optional(),
   dueDate: z.string().optional(),
   creditApprovalId: UuidSchema.optional(),
+  /** Marks an advance/deposit settlement against a future balance. */
+  isAdvancePayment: z.boolean().optional(),
   createInstallment: z
     .object({
       downPayment: DecimalStringSchema,
       installmentCount: z.number().int().positive(),
       startDate: z.string(),
+      frequency: z.enum(["weekly", "biweekly", "monthly", "quarterly"]).default("monthly"),
+      lateFeePercent: z.number().min(0).max(100).default(0),
+      lateFeeFixed: DecimalStringSchema.default("0"),
     })
     .optional(),
   deviceId: z.string().max(128).optional(),

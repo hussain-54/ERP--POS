@@ -583,6 +583,21 @@ export class PosRepository {
       async postSplitPayment(input: Record<string, unknown>) {
         await parties.postSplitPayment(input as never, userId);
       },
+      async updateSalePaymentState(
+        saleId: string,
+        input: { paidTotal: number; remainingTotal: number; paymentStatus: string },
+      ) {
+        const { error } = await db
+          .from("sales")
+          .update({
+            paid_total: input.paidTotal,
+            remaining_total: input.remainingTotal,
+            payment_status: input.paymentStatus,
+            updated_at: new Date().toISOString(),
+          })
+          .eq("id", saleId);
+        if (error) throw error;
+      },
       async postJournal(input: Record<string, unknown>) {
         await self.ensureAndPostJournal(input as never);
       },

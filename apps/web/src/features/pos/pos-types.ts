@@ -12,7 +12,14 @@ import {
 export type PriceLevel = PosPriceLevel;
 export type CartLine = PosCartLine;
 export type { PosTaxRate };
-export type PaySplit = { id: string; paymentMethodId: string; amount: string };
+export type PaySplit = {
+  id: string;
+  paymentMethodId: string;
+  amount: string;
+  /** Cash tendered when method is cash. */
+  amountReceived?: string;
+  methodKind?: string;
+};
 export type LocaleMode = "en" | "ur" | "en_ur";
 export type PosMode = "easy" | "advanced";
 export type ProductTab = "recent" | "favorites" | "categories" | "results";
