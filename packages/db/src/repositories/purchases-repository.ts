@@ -1,18 +1,28 @@
 import type {
+  AdvanceDeliveryInput,
+  AssignDeliveryBoyInput,
   CreateDeliveryInput,
   CreatePurchaseInput,
   CreatePurchaseReturnInput,
   CreateStockTransferInput,
+  DeliveryListFilterInput,
   DeliveryStatus,
   TransferStatus,
 } from "@electronic-erp/contracts";
 import {
   assertDeliveryTransition,
   assertTransferTransition,
+  buildAuditRow,
+  buildDeliveryStatusAudit,
   buildPurchaseReturnJournalLines,
+  deliveryStatusTimestampField,
   nextTransferAfterDispatch,
+  NullDeliveryTrackingAdapter,
   PurchaseTransactionService,
+  resolveTrackingSnapshot,
+  summarizeDeliveryReports,
   ValidationDomainError,
+  type DeliveryReportRow,
 } from "@electronic-erp/domain";
 import type { DatabaseClient } from "../client.js";
 import { InventoryRepository } from "./inventory-repository.js";
@@ -402,6 +412,8 @@ export class PurchasesRepository {
   }
 
   // --- Deliveries ---
+  private readonly trackingPort = new NullDeliveryTrackingAdapter();
+
   async createDelivery(input: CreateDeliveryInput, userId?: string | null) {
     const { data: existing } = await this.db
       .from("deliveries")
@@ -425,6 +437,7 @@ export class PurchasesRepository {
         mobile: input.mobile ?? null,
         delivery_boy_user_id: input.deliveryBoyUserId ?? null,
         expected_date: input.expectedDate ?? null,
+        instructions: input.instructions ?? null,
         status: "pending",
         notes: input.notes ?? null,
         idempotency_key: input.idempotencyKey,
@@ -449,21 +462,116 @@ export class PurchasesRepository {
         qty: String(item.qty),
       });
     }
+
+    await this.recordDeliveryHistory({
+      organizationId: input.organizationId,
+      deliveryId: String(delivery.id),
+      fromStatus: null,
+      toStatus: "pending",
+      changedBy: userId,
+      reason: "Delivery created",
+    });
+    await this.db.from("audit_logs").insert(
+      buildAuditRow({
+        organizationId: input.organizationId,
+        branchId: input.branchId,
+        actorUserId: userId,
+        actorKind: "creator",
+        action: "delivery.create",
+        entityType: "delivery",
+        entityId: String(delivery.id),
+        after: { status: "pending", deliveryNumber },
+      }),
+    );
+
     return delivery;
   }
 
-  async advanceDelivery(deliveryId: string, to: DeliveryStatus) {
+  private async recordDeliveryHistory(input: {
+    organizationId: string;
+    deliveryId: string;
+    fromStatus: string | null;
+    toStatus: DeliveryStatus;
+    changedBy?: string | null;
+    reason?: string | null;
+    metadata?: Record<string, unknown>;
+  }) {
+    const { error } = await this.db.from("delivery_status_history").insert({
+      organization_id: input.organizationId,
+      delivery_id: input.deliveryId,
+      from_status: input.fromStatus,
+      to_status: input.toStatus,
+      changed_by: input.changedBy ?? null,
+      reason: input.reason ?? null,
+      metadata: input.metadata ?? {},
+    });
+    if (error) throw error;
+  }
+
+  async getDelivery(organizationId: string, deliveryId: string) {
+    const { data, error } = await this.db
+      .from("deliveries")
+      .select("*, delivery_items(*), customers(name,mobile)")
+      .eq("id", deliveryId)
+      .eq("organization_id", organizationId)
+      .maybeSingle();
+    if (error) throw error;
+    if (!data) throw new ValidationDomainError("Delivery not found");
+    return data;
+  }
+
+  async assignDeliveryBoy(
+    organizationId: string,
+    deliveryId: string,
+    input: AssignDeliveryBoyInput,
+    userId?: string | null,
+  ) {
+    const delivery = await this.getDelivery(organizationId, deliveryId);
+    if (delivery.status === "cancelled" || delivery.status === "delivered") {
+      throw new ValidationDomainError("Cannot assign delivery boy to a closed delivery");
+    }
+    const { data, error } = await this.db
+      .from("deliveries")
+      .update({
+        delivery_boy_user_id: input.deliveryBoyUserId,
+        updated_at: new Date().toISOString(),
+      })
+      .eq("id", deliveryId)
+      .eq("organization_id", organizationId)
+      .select("*")
+      .single();
+    if (error) throw error;
+    await this.db.from("audit_logs").insert(
+      buildAuditRowForDeliveryAssign({
+        organizationId,
+        branchId: String(delivery.branch_id),
+        deliveryId,
+        actorUserId: userId,
+        deliveryBoyUserId: input.deliveryBoyUserId,
+      }),
+    );
+    return data;
+  }
+
+  async advanceDelivery(
+    organizationId: string,
+    deliveryId: string,
+    input: AdvanceDeliveryInput,
+    userId?: string | null,
+  ) {
     const { data: delivery, error } = await this.db
       .from("deliveries")
       .select("*")
       .eq("id", deliveryId)
+      .eq("organization_id", organizationId)
       .single();
     if (error) throw error;
-    assertDeliveryTransition(delivery.status as DeliveryStatus, to);
+    const from = delivery.status as DeliveryStatus;
+    const to = input.status;
+    assertDeliveryTransition(from, to);
     const patch: Row = { status: to, updated_at: new Date().toISOString() };
-    if (to === "packed") patch.packed_at = new Date().toISOString();
-    if (to === "dispatched") patch.dispatched_at = new Date().toISOString();
-    if (to === "delivered") patch.delivered_at = new Date().toISOString();
+    const tsField = deliveryStatusTimestampField(to);
+    if (tsField) patch[tsField] = new Date().toISOString();
     const { data: updated, error: updErr } = await this.db
       .from("deliveries")
       .update(patch)
@@ -471,13 +579,33 @@ export class PurchasesRepository {
       .select("*")
       .single();
     if (updErr) throw updErr;
+
+    await this.recordDeliveryHistory({
+      organizationId,
+      deliveryId,
+      fromStatus: from,
+      toStatus: to,
+      changedBy: userId,
+      reason: input.reason ?? null,
+    });
+    await this.db.from("audit_logs").insert(
+      buildDeliveryStatusAudit({
+        organizationId,
+        branchId: String(delivery.branch_id),
+        deliveryId,
+        actorUserId: userId,
+        fromStatus: from,
+        toStatus: to,
+        reason: input.reason,
+      }),
+    );
     return updated;
   }
 
   async listDeliveries(organizationId: string, branchId?: string) {
     let q = this.db
       .from("deliveries")
-      .select("*")
+      .select("*, customers(name,mobile)")
       .eq("organization_id", organizationId)
       .order("created_at", { ascending: false })
       .limit(100);
@@ -485,6 +613,92 @@ export class PurchasesRepository {
     const { data, error } = await q;
     if (error) throw error;
     return data ?? [];
+  }
+
+  async searchDeliveries(input: DeliveryListFilterInput) {
+    let q = this.db
+      .from("deliveries")
+      .select("*, customers(name,mobile)", { count: "exact" })
+      .eq("organization_id", input.organizationId)
+      .order("created_at", { ascending: false });
+    if (input.branchId) q = q.eq("branch_id", input.branchId);
+    if (input.status) q = q.eq("status", input.status);
+    if (input.deliveryBoyUserId) q = q.eq("delivery_boy_user_id", input.deliveryBoyUserId);
+    if (input.dateFrom) q = q.gte("created_at", input.dateFrom);
+    if (input.dateTo) q = q.lte("created_at", `${input.dateTo}T23:59:59.999Z`);
+    const limit = input.limit ?? 50;
+    const offset = input.offset ?? 0;
+    const { data, error, count } = await q.range(offset, offset + limit - 1);
+    if (error) throw error;
+    return { items: data ?? [], total: count ?? 0, limit, offset };
+  }
+
+  async getDeliveryHistory(organizationId: string, deliveryId: string) {
+    const { data, error } = await this.db
+      .from("delivery_status_history")
+      .select("*")
+      .eq("organization_id", organizationId)
+      .eq("delivery_id", deliveryId)
+      .order("created_at", { ascending: true });
+    if (error) throw error;
+    return data ?? [];
+  }
+
+  async getDeliveryTracking(organizationId: string, deliveryId: string) {
+    const delivery = await this.getDelivery(organizationId, deliveryId);
+    const snapshot = await resolveTrackingSnapshot({
+      trackingConfigured: Boolean(delivery.tracking_configured),
+      trackingProvider: delivery.tracking_provider as string | null,
+      trackingReference: delivery.tracking_reference as string | null,
+      port: this.trackingPort,
+      deliveryId,
+    });
+    const history = await this.trackingPort.getLocationHistory(deliveryId);
+    return { snapshot, locationHistory: history, statusHistory: await this.getDeliveryHistory(organizationId, deliveryId) };
+  }
+
+  async deliveryReports(organizationId: string, branchId?: string) {
+    let q = this.db
+      .from("deliveries")
+      .select(
+        "id,delivery_number,status,delivery_boy_user_id,created_at,dispatched_at,delivered_at,packed_at,in_transit_at",
+      )
+      .eq("organization_id", organizationId)
+      .order("created_at", { ascending: false })
+      .limit(2000);
+    if (branchId) q = q.eq("branch_id", branchId);
+    const { data, error } = await q;
+    if (error) throw error;
+
+    const boyIds = [
+      ...new Set((data ?? []).map((d) => d.delivery_boy_user_id).filter(Boolean).map(String)),
+    ];
+    const names = new Map<string, string>();
+    if (boyIds.length) {
+      const { data: profiles } = await this.db
+        .from("user_profiles")
+        .select("id,full_name,email")
+        .in("id", boyIds);
+      for (const p of profiles ?? []) {
+        names.set(String(p.id), String(p.full_name ?? p.email ?? p.id));
+      }
+    }
+
+    const rows: DeliveryReportRow[] = (data ?? []).map((d) => ({
+      id: String(d.id),
+      deliveryNumber: String(d.delivery_number),
+      status: d.status as DeliveryStatus,
+      deliveryBoyUserId: d.delivery_boy_user_id ? String(d.delivery_boy_user_id) : null,
+      deliveryBoyName: d.delivery_boy_user_id
+        ? names.get(String(d.delivery_boy_user_id))
+        : null,
+      createdAt: String(d.created_at),
+      dispatchedAt: d.dispatched_at ? String(d.dispatched_at) : null,
+      deliveredAt: d.delivered_at ? String(d.delivered_at) : null,
+      packedAt: d.packed_at ? String(d.packed_at) : null,
+      inTransitAt: d.in_transit_at ? String(d.in_transit_at) : null,
+    }));
+    return summarizeDeliveryReports(rows);
   }
 
   private buildPurchasePorts(userId?: string | null) {
@@ -713,4 +927,23 @@ export class PurchasesRepository {
     if (lineErr) throw lineErr;
     return entry;
   }
+}
+
+function buildAuditRowForDeliveryAssign(input: {
+  organizationId: string;
+  branchId: string;
+  deliveryId: string;
+  actorUserId?: string | null;
+  deliveryBoyUserId: string;
+}) {
+  return buildAuditRow({
+    organizationId: input.organizationId,
+    branchId: input.branchId,
+    actorUserId: input.actorUserId,
+    actorKind: "editor",
+    action: "delivery.assign",
+    entityType: "delivery",
+    entityId: input.deliveryId,
+    after: { deliveryBoyUserId: input.deliveryBoyUserId },
+  });
 }

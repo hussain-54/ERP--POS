@@ -102,11 +102,57 @@ export const purchasesApi = {
       token: token(),
     });
   },
-  advanceDelivery(id: string, status: string) {
+  searchDeliveries(params: Record<string, string | number | undefined> = {}) {
+    const qs = new URLSearchParams();
+    for (const [k, v] of Object.entries(params)) {
+      if (v !== undefined && v !== "") qs.set(k, String(v));
+    }
+    return apiFetch<{ items: Array<Record<string, unknown>>; total: number }>(
+      `/api/v1/purchases/deliveries?${qs}`,
+      { token: token() },
+    );
+  },
+  getDelivery(id: string) {
+    return apiFetch<{ item: Record<string, unknown> }>(`/api/v1/purchases/deliveries/${id}`, {
+      token: token(),
+    });
+  },
+  getDeliveryTracking(id: string) {
+    return apiFetch<Record<string, unknown>>(`/api/v1/purchases/deliveries/${id}/tracking`, {
+      token: token(),
+    });
+  },
+  getDeliveryHistory(id: string) {
+    return apiFetch<{ items: Array<Record<string, unknown>> }>(
+      `/api/v1/purchases/deliveries/${id}/history`,
+      { token: token() },
+    );
+  },
+  assignDeliveryBoy(id: string, deliveryBoyUserId: string) {
+    return apiFetch(`/api/v1/purchases/deliveries/${id}/assign`, {
+      method: "PATCH",
+      token: token(),
+      body: JSON.stringify({ deliveryBoyUserId }),
+    });
+  },
+  advanceDelivery(id: string, status: string, reason?: string) {
     return apiFetch(`/api/v1/purchases/deliveries/${id}/advance`, {
       method: "POST",
       token: token(),
-      body: JSON.stringify({ status }),
+      body: JSON.stringify({ status, reason }),
+    });
+  },
+  cancelDelivery(id: string, reason?: string) {
+    return apiFetch(`/api/v1/purchases/deliveries/${id}/cancel`, {
+      method: "POST",
+      token: token(),
+      body: JSON.stringify({ reason }),
+    });
+  },
+  deliveryReports(branchId?: string) {
+    const qs = branchId ? `?branchId=${branchId}` : "";
+    return apiFetch<Record<string, unknown>>(`/api/v1/purchases/deliveries/reports${qs}`, {
+      token: token(),
     });
   },
 };

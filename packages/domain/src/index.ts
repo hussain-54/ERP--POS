@@ -31,6 +31,7 @@ export * from "./purchase-transaction.js";
 export * from "./supplier-pricing.js";
 export * from "./transfer-lifecycle.js";
 export * from "./delivery-lifecycle.js";
+export * from "./delivery-tracking.js";
 export * from "./quotation-lifecycle.js";
 export * from "./service-lifecycle.js";
 export * from "./warranty-service.js";

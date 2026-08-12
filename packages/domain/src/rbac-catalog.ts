@@ -153,6 +153,7 @@ const LEGACY_ALL = [
   "transfers.dispatch",
   "transfers.receive",
   "deliveries.manage",
+  "deliveries.view",
   "quotations.read",
   "quotations.write",
   "orders.read",

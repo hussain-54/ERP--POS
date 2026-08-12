@@ -34,10 +34,11 @@ describe("transfer + delivery lifecycle", () => {
     expect(() => assertTransferTransition("requested", "received")).toThrow(/transition/i);
   });
 
-  it("enforces delivery Pending → Packed → Dispatched → Delivered", () => {
+  it("enforces delivery Pending → Packed → Dispatched → In Transit → Delivered", () => {
     expect(() => assertDeliveryTransition("pending", "packed")).not.toThrow();
     expect(() => assertDeliveryTransition("packed", "dispatched")).not.toThrow();
-    expect(() => assertDeliveryTransition("dispatched", "delivered")).not.toThrow();
+    expect(() => assertDeliveryTransition("dispatched", "in_transit")).not.toThrow();
+    expect(() => assertDeliveryTransition("in_transit", "delivered")).not.toThrow();
     expect(() => assertDeliveryTransition("pending", "delivered")).toThrow(/transition/i);
   });
 });

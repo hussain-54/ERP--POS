@@ -35,7 +35,7 @@
     "test:phase11": "npm run test --prefix packages/hardware && npm run test --prefix packages/domain && npm run test --prefix apps/api",
     "test:phase12": "npm run test --prefix packages/domain && npm run test --prefix apps/api",
     "test:phase13": "npm run test --prefix packages/domain && npm run test --prefix apps/api",
-    "test:phase14": "npm run test --prefix packages/ai && npm run test --prefix apps/api",
+    "test:phase14": "npm run test --prefix packages/domain && npm run test --prefix packages/ai && npm run test --prefix apps/api",
     "test:phase15": "npm run test --prefix packages/domain && npm run test --prefix apps/api",
     "test:phase16": "npm run test --prefix packages/domain && npm run test --prefix apps/api",
     "test:phase17": "npm run test --prefix packages/domain && npm run test --prefix packages/offline && npm run test --prefix packages/sync && npm run test --prefix apps/api",

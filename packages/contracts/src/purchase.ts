@@ -138,6 +138,7 @@ export const DeliveryStatusSchema = z.enum([
   "pending",
   "packed",
   "dispatched",
+  "in_transit",
   "delivered",
   "cancelled",
   "returned",
@@ -154,6 +155,7 @@ export const CreateDeliverySchema = z.object({
   mobile: z.string().max(32).optional(),
   deliveryBoyUserId: UuidSchema.optional(),
   expectedDate: z.string().optional(),
+  instructions: z.string().max(2000).optional(),
   items: z
     .array(
       z.object({
@@ -171,6 +173,31 @@ export const CreateDeliverySchema = z.object({
   operationId: UuidSchema.optional(),
 });
 export type CreateDeliveryInput = z.input<typeof CreateDeliverySchema>;
+
+export const AssignDeliveryBoySchema = z.object({
+  organizationId: UuidSchema,
+  deliveryBoyUserId: UuidSchema,
+});
+export type AssignDeliveryBoyInput = z.input<typeof AssignDeliveryBoySchema>;
+
+export const AdvanceDeliverySchema = z.object({
+  organizationId: UuidSchema,
+  status: DeliveryStatusSchema,
+  reason: z.string().max(500).optional(),
+});
+export type AdvanceDeliveryInput = z.input<typeof AdvanceDeliverySchema>;
+
+export const DeliveryListFilterSchema = z.object({
+  organizationId: UuidSchema,
+  branchId: UuidSchema.optional(),
+  status: DeliveryStatusSchema.optional(),
+  deliveryBoyUserId: UuidSchema.optional(),
+  dateFrom: z.string().optional(),
+  dateTo: z.string().optional(),
+  limit: z.coerce.number().int().min(1).max(100).default(50),
+  offset: z.coerce.number().int().min(0).default(0),
+});
+export type DeliveryListFilterInput = z.input<typeof DeliveryListFilterSchema>;
 
 export const CreateRackSchema = z.object({
   organizationId: UuidSchema,

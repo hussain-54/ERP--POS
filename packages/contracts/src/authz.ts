@@ -67,6 +67,7 @@ export const FOUNDATION_PERMISSIONS = [
   "transfers.dispatch",
   "transfers.receive",
   "deliveries.manage",
+  "deliveries.view",
   "quotations.read",
   "quotations.write",
   "orders.read",

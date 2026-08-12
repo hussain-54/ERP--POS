@@ -1,5 +1,7 @@
 import { Router } from "express";
 import {
+  AdvanceDeliverySchema,
+  AssignDeliveryBoySchema,
   CreateBinSchema,
   CreateDeliverySchema,
   CreatePurchaseReturnSchema,
@@ -7,7 +9,7 @@ import {
   CreateRackSchema,
   CreateShelfSchema,
   CreateStockTransferSchema,
-  DeliveryStatusSchema,
+  DeliveryListFilterSchema,
   TransferStatusSchema,
 } from "@electronic-erp/contracts";
 import { PurchasesRepository } from "@electronic-erp/db";
@@ -30,6 +32,10 @@ function orgId(req: AuthedRequest): string {
 }
 function userId(req: AuthedRequest): string | null {
   return req.authz?.userId ?? null;
+}
+function assertAny(req: AuthedRequest, keys: string[]) {
+  const a = authz(req);
+  if (!keys.some((k) => a.can(k))) a.assert(keys[0]!);
 }
 
 purchasesRouter.post("/invoices", async (req: AuthedRequest, res, next) => {
@@ -167,9 +173,77 @@ purchasesRouter.post("/deliveries", async (req: AuthedRequest, res, next) => {
 
 purchasesRouter.get("/deliveries", async (req: AuthedRequest, res, next) => {
   try {
-    authz(req).assert("deliveries.manage");
+    assertAny(req, ["deliveries.manage", "deliveries.view"]);
+    const filter = DeliveryListFilterSchema.safeParse({
+      organizationId: orgId(req),
+      branchId: req.query.branchId || undefined,
+      status: req.query.status || undefined,
+      deliveryBoyUserId: req.query.deliveryBoyUserId || undefined,
+      dateFrom: req.query.dateFrom || undefined,
+      dateTo: req.query.dateTo || undefined,
+      limit: req.query.limit,
+      offset: req.query.offset,
+    });
+    if (filter.success && (req.query.status || req.query.limit || req.query.offset)) {
+      res.json(await repo(req).searchDeliveries(filter.data));
+      return;
+    }
     const branchId = typeof req.query.branchId === "string" ? req.query.branchId : undefined;
     res.json({ items: await repo(req).listDeliveries(orgId(req), branchId) });
+  } catch (err) {
+    next(err);
+  }
+});
+
+purchasesRouter.get("/deliveries/reports", async (req: AuthedRequest, res, next) => {
+  try {
+    authz(req).assert("deliveries.manage");
+    const branchId = typeof req.query.branchId === "string" ? req.query.branchId : undefined;
+    res.json(await repo(req).deliveryReports(orgId(req), branchId));
+  } catch (err) {
+    next(err);
+  }
+});
+
+purchasesRouter.get("/deliveries/:id", async (req: AuthedRequest, res, next) => {
+  try {
+    authz(req).assert("deliveries.manage");
+    res.json({ item: await repo(req).getDelivery(orgId(req), req.params.id!) });
+  } catch (err) {
+    next(err);
+  }
+});
+
+purchasesRouter.get("/deliveries/:id/tracking", async (req: AuthedRequest, res, next) => {
+  try {
+    authz(req).assert("deliveries.manage");
+    res.json(await repo(req).getDeliveryTracking(orgId(req), req.params.id!));
+  } catch (err) {
+    next(err);
+  }
+});
+
+purchasesRouter.get("/deliveries/:id/history", async (req: AuthedRequest, res, next) => {
+  try {
+    authz(req).assert("deliveries.manage");
+    res.json({
+      items: await repo(req).getDeliveryHistory(orgId(req), req.params.id!),
+    });
+  } catch (err) {
+    next(err);
+  }
+});
+
+purchasesRouter.patch("/deliveries/:id/assign", async (req: AuthedRequest, res, next) => {
+  try {
+    authz(req).assert("deliveries.manage");
+    const input = AssignDeliveryBoySchema.parse({
+      ...req.body,
+      organizationId: orgId(req),
+    });
+    res.json({
+      item: await repo(req).assignDeliveryBoy(orgId(req), req.params.id!, input, userId(req)),
+    });
   } catch (err) {
     next(err);
   }
@@ -178,8 +252,29 @@ purchasesRouter.get("/deliveries", async (req: AuthedRequest, res, next) => {
 purchasesRouter.post("/deliveries/:id/advance", async (req: AuthedRequest, res, next) => {
   try {
     authz(req).assert("deliveries.manage");
-    const to = DeliveryStatusSchema.parse(req.body.status);
-    res.json(await repo(req).advanceDelivery(req.params.id!, to));
+    const input = AdvanceDeliverySchema.parse({
+      ...req.body,
+      organizationId: orgId(req),
+    });
+    res.json(
+      await repo(req).advanceDelivery(orgId(req), req.params.id!, input, userId(req)),
+    );
+  } catch (err) {
+    next(err);
+  }
+});
+
+purchasesRouter.post("/deliveries/:id/cancel", async (req: AuthedRequest, res, next) => {
+  try {
+    authz(req).assert("deliveries.manage");
+    const input = AdvanceDeliverySchema.parse({
+      organizationId: orgId(req),
+      status: "cancelled",
+      reason: req.body.reason,
+    });
+    res.json(
+      await repo(req).advanceDelivery(orgId(req), req.params.id!, input, userId(req)),
+    );
   } catch (err) {
     next(err);
   }

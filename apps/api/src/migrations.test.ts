@@ -432,6 +432,20 @@ describe("supabase foundation migration", () => {
     expect(sql).toContain("salesman.manage");
     expect(sql).toContain("commissions.manage");
   });
+
+  it("delivery management phase-14 migration adds in_transit, history, tracking", () => {
+    const migration = path.join(
+      root,
+      "supabase/migrations/20260812000008_delivery_management.sql",
+    );
+    expect(existsSync(migration)).toBe(true);
+    const sql = readFileSync(migration, "utf8");
+    expect(sql).toContain("in_transit");
+    expect(sql).toContain("instructions");
+    expect(sql).toContain("delivery_status_history");
+    expect(sql).toContain("tracking_configured");
+    expect(sql).toContain("deliveries.view");
+  });
 });
 
 describe("Phase 17 security — web must not ship service role", () => {
