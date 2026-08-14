@@ -296,13 +296,15 @@ No secrets, service-role keys, or `.env` in the commit. No accidental migrations
 ## 24. Commit
 
 Message: `chore(pos): finalize phase 4a preflight fixes`  
-(hash filled after commit)
+Hash: `872f310`
 
 ---
 
 ## 25. Push Result
 
-(filled after push)
+Pushed `main` to `https://github.com/hussain-54/ERP--POS.git` (`b591f7b..872f310`).  
+Branch is up to date with `origin/main`.  
+Vercel/GitHub Actions deployment: **NOT TESTED** (not queried).
 
 ---
 
