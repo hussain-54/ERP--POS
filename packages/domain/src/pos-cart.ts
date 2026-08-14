@@ -9,6 +9,7 @@ import { ValidationDomainError } from "./errors.js";
 import { finiteMoney, roundMoney } from "./money.js";
 import { buildTaxInvoiceSummary, computeLineTax, type TaxInvoiceSummary } from "./pos-tax.js";
 import { applyDiscount, capLineDiscount } from "./pos-discount.js";
+import { resolvePosUnitPrice } from "./pos-pricing.js";
 
 /** Price tier used at the POS terminal (maps to product_prices levels). */
 export type PosPriceLevel = "retail" | "wholesale" | "dealer";
@@ -57,6 +58,17 @@ export interface PosCartLine {
   unitOptions?: PosUnitOption[];
   minQty?: string;
   maxQty?: string;
+  /** Catalog quote used to re-resolve when qty or price level changes. */
+  retailPrice?: number;
+  wholesalePrice?: number;
+  dealerPrice?: number;
+  customerPrice?: number | null;
+  quantityBreaks?: { minQty: number; unitPrice: number }[];
+  promotionPrice?: number | null;
+  discountPercent?: number;
+  priceLevel?: PosPriceLevel;
+  /** When true, qty/level changes must not overwrite a cashier override. */
+  manualPrice?: boolean;
 }
 
 export interface PosPriceSource {
@@ -92,9 +104,13 @@ function moneyNumber(v: unknown, fallback = 0): number {
 }
 
 export function pickPriceLevel(p: PosPriceSource, priceLevel: PosPriceLevel): number {
-  if (priceLevel === "wholesale") return roundMoney(moneyNumber(p.wholesalePrice));
-  if (priceLevel === "dealer") return roundMoney(moneyNumber(p.dealerPrice));
-  return roundMoney(moneyNumber(p.retailPrice));
+  return resolvePosUnitPrice({
+    retailPrice: p.retailPrice,
+    wholesalePrice: p.wholesalePrice,
+    dealerPrice: p.dealerPrice,
+    priceLevel,
+    qty: 1,
+  }).unitPrice;
 }
 
 export function taxForLineNet(
@@ -133,6 +149,7 @@ export function toSaleItems(cart: PosCartLine[]) {
     qty: c.qty,
     unitPrice: roundMoney(moneyNumber(c.unitPrice)),
     discount: roundMoney(moneyNumber(c.discount)),
+    discountPercent: c.discountPercent,
     tax: roundMoney(moneyNumber(c.tax)),
     warrantyDays: c.warrantyDays,
     isManual: Boolean(c.isManual),
@@ -308,18 +325,43 @@ export function assertStockAvailable(
   }
 }
 
+function resolveCatalogUnitPrice(line: PosCartLine, qty: string): number {
+  if (line.isManual || line.manualPrice) {
+    return roundMoney(moneyNumber(line.unitPrice));
+  }
+  if (line.retailPrice == null && line.wholesalePrice == null && line.dealerPrice == null) {
+    return roundMoney(moneyNumber(line.unitPrice));
+  }
+  return resolvePosUnitPrice({
+    retailPrice: moneyNumber(line.retailPrice, moneyNumber(line.unitPrice)),
+    wholesalePrice: moneyNumber(line.wholesalePrice, moneyNumber(line.unitPrice)),
+    dealerPrice: moneyNumber(line.dealerPrice, moneyNumber(line.unitPrice)),
+    customerPrice: line.customerPrice,
+    promotionPrice: line.promotionPrice,
+    quantityBreaks: line.quantityBreaks,
+    priceLevel: line.priceLevel ?? "retail",
+    qty,
+    unitId: line.unitId,
+  }).unitPrice;
+}
+
 function withRecalc(
   line: PosCartLine,
   patch: Partial<PosCartLine>,
   taxRate?: PosTaxRate | null,
 ): PosCartLine {
   const next = { ...line, ...patch };
-  next.unitPrice = roundMoney(moneyNumber(next.unitPrice));
-  next.discount = capLineDiscount(
-    moneyNumber(next.qty),
-    next.unitPrice,
-    moneyNumber(next.discount),
-  );
+  next.unitPrice = resolveCatalogUnitPrice(next, next.qty);
+  const gross = roundMoney(moneyNumber(next.qty) * next.unitPrice);
+  if (moneyNumber(next.discountPercent) > 0) {
+    next.discount = applyDiscount({
+      base: gross,
+      mode: "percentage",
+      value: moneyNumber(next.discountPercent),
+    }).amount;
+  } else {
+    next.discount = capLineDiscount(moneyNumber(next.qty), next.unitPrice, moneyNumber(next.discount));
+  }
   next.tax = lineTaxAmount(next.qty, next.unitPrice, next.discount, taxRate);
   return next;
 }
@@ -342,6 +384,13 @@ export function createCartLineFromProduct(input: {
   minQty?: string;
   maxQty?: string;
   qty?: string;
+  retailPrice?: number;
+  wholesalePrice?: number;
+  dealerPrice?: number;
+  customerPrice?: number | null;
+  quantityBreaks?: { minQty: number; unitPrice: number }[];
+  promotionPrice?: number | null;
+  priceLevel?: PosPriceLevel;
 }): PosCartLine {
   const places = Math.max(0, Math.min(4, input.unitSymbolPlaces ?? 0));
   const qty = input.qty ?? (places > 0 ? "1" : "1");
@@ -376,6 +425,13 @@ export function createCartLineFromProduct(input: {
         : undefined),
     minQty: input.minQty,
     maxQty: input.maxQty,
+    retailPrice: input.retailPrice,
+    wholesalePrice: input.wholesalePrice,
+    dealerPrice: input.dealerPrice,
+    customerPrice: input.customerPrice,
+    quantityBreaks: input.quantityBreaks,
+    promotionPrice: input.promotionPrice,
+    priceLevel: input.priceLevel,
   };
   return line;
 }
@@ -551,7 +607,9 @@ export function updateCartLinePrice(
   }
   return ok(
     cart.map((x) =>
-      x.key === key ? withRecalc(x, { unitPrice: roundMoney(unitPrice) }, taxRate) : x,
+      x.key === key
+        ? withRecalc(x, { unitPrice: roundMoney(unitPrice), manualPrice: true }, taxRate)
+        : x,
     ),
   );
 }
@@ -568,8 +626,13 @@ export function updateCartLineDiscount(
   return ok(
     cart.map((x) => {
       if (x.key !== key) return x;
-      const capped = capLineDiscount(moneyNumber(x.qty), x.unitPrice, discount);
-      return withRecalc(x, { discount: capped }, taxRate);
+      const gross = roundMoney(moneyNumber(x.qty) * roundMoney(moneyNumber(x.unitPrice)));
+      const applied = applyDiscount({ base: gross, mode: "fixed", value: discount });
+      return withRecalc(
+        x,
+        { discount: applied.amount, discountPercent: 0 },
+        taxRate,
+      );
     }),
   );
 }
@@ -586,7 +649,20 @@ export function applyCartLineDiscountInput(
   const gross = roundMoney(moneyNumber(line.qty) * roundMoney(moneyNumber(line.unitPrice)));
   try {
     const applied = applyDiscount({ base: gross, mode: input.mode, value: input.value });
-    return updateCartLineDiscount(cart, key, applied.amount, taxRate);
+    return ok(
+      cart.map((x) =>
+        x.key === key
+          ? withRecalc(
+              x,
+              {
+                discount: applied.amount,
+                discountPercent: input.mode === "percentage" ? applied.percent : 0,
+              },
+              taxRate,
+            )
+          : x,
+      ),
+    );
   } catch (err) {
     return fail(cart, err instanceof Error ? err.message : "Invalid discount");
   }
@@ -664,6 +740,14 @@ export function recalculateCart(
   taxRate?: PosTaxRate | null,
 ): PosCartLine[] {
   return cart.map((line) => withRecalc(line, {}, taxRate));
+}
+
+export function repriceCartForPriceLevel(
+  cart: PosCartLine[],
+  priceLevel: PosPriceLevel,
+  taxRate?: PosTaxRate | null,
+): PosCartLine[] {
+  return cart.map((line) => withRecalc(line, { priceLevel, manualPrice: false }, taxRate));
 }
 
 /** Exact barcode / SKU match for scanner enter-to-add. */

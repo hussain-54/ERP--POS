@@ -41,28 +41,39 @@ export class PartiesRepository {
 
   // --- customers ---
   async createCustomer(input: CreateCustomerInput): Promise<Customer> {
-    const { data, error } = await this.db
-      .from("customers")
-      .insert({
-        organization_id: input.organizationId,
-        code: input.code,
-        name: input.name,
-        name_ur: input.nameUr ?? null,
-        mobile: input.mobile ?? null,
-        alternate_mobile: input.alternateMobile ?? null,
-        email: input.email?.trim() ? input.email.trim() : null,
-        address: input.address ?? null,
-        cnic: input.cnic ?? null,
-        reference_name: input.referenceName ?? null,
-        customer_type: input.customerType ?? "retail",
-        credit_limit: input.creditLimit ?? "0",
-        credit_days: input.creditDays ?? 0,
-        is_active: input.isActive ?? true,
-      })
-      .select("*")
-      .single();
-    if (error) throw error;
-    return mapCustomer(data);
+    const row: Record<string, unknown> = {
+      organization_id: input.organizationId,
+      code: input.code,
+      name: input.name,
+      name_ur: input.nameUr ?? null,
+      mobile: input.mobile ?? null,
+      alternate_mobile: input.alternateMobile ?? null,
+      address: input.address ?? null,
+      cnic: input.cnic ?? null,
+      reference_name: input.referenceName ?? null,
+      customer_type: input.customerType ?? "retail",
+      credit_limit: input.creditLimit ?? "0",
+      credit_days: input.creditDays ?? 0,
+      is_active: input.isActive ?? true,
+    };
+    const email = input.email?.trim();
+    if (email) row.email = email;
+
+    const first = await this.db.from("customers").insert(row).select("*").single();
+    if (!first.error && first.data) return mapCustomer(first.data);
+
+    const emailColumnMissing =
+      Boolean(row.email) &&
+      first.error != null &&
+      (/email/i.test(first.error.message ?? "") || first.error.code === "42703");
+    if (emailColumnMissing) {
+      const { email: _omit, ...withoutEmail } = row;
+      const retry = await this.db.from("customers").insert(withoutEmail).select("*").single();
+      if (retry.error) throw retry.error;
+      return mapCustomer(retry.data);
+    }
+    if (first.error) throw first.error;
+    throw new Error("Customer create returned no row");
   }
 
   async listCustomers(organizationId: string, q?: string) {
@@ -73,9 +84,7 @@ export class PartiesRepository {
       .is("deleted_at", null)
       .order("name");
     if (q) {
-      query = query.or(
-        `name.ilike.%${q}%,mobile.ilike.%${q}%,code.ilike.%${q}%,email.ilike.%${q}%`,
-      );
+      query = query.or(`name.ilike.%${q}%,mobile.ilike.%${q}%,code.ilike.%${q}%`);
     }
     const { data, error } = await query;
     if (error) throw error;

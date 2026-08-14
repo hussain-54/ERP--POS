@@ -591,4 +591,103 @@ describe("SaleTransactionService", () => {
       }),
     ).rejects.toThrow(/Walk-in sales must be paid in full/i);
   });
+
+  it("overwrites malicious client unit price when catalog pricing is provided", async () => {
+    const ports = basePorts({
+      getProductPricing: vi.fn(async () => ({
+        retailPrice: 1000,
+        wholesalePrice: 900,
+        dealerPrice: 800,
+      })),
+    });
+    const service = new SaleTransactionService(ports);
+    await service.postSale({
+      organizationId: org,
+      branchId: branch,
+      warehouseId: warehouse,
+      priceLevel: "retail",
+      items: [
+        {
+          productId: product,
+          unitId: unit,
+          qty: 1,
+          unitPrice: 1,
+          discount: 0,
+          tax: 0,
+        },
+      ],
+      payments: [{ paymentMethodId: method, amount: 1000 }],
+      discounts: [],
+      idempotencyKey: "c1c1c1c1-c1c1-41c1-81c1-c1c1c1c1c1c1",
+    });
+    const rows = (ports.postSaleItems as ReturnType<typeof vi.fn>).mock.calls[0]![1] as Array<{
+      unit_price: number;
+    }>;
+    expect(rows[0]!.unit_price).toBe(1000);
+  });
+
+  it("applies line percentage discount after catalog price", async () => {
+    const ports = basePorts({
+      getProductPricing: vi.fn(async () => ({
+        retailPrice: 1000,
+        wholesalePrice: 900,
+        dealerPrice: 800,
+      })),
+    });
+    const service = new SaleTransactionService(ports);
+    const result = await service.postSale({
+      organizationId: org,
+      branchId: branch,
+      warehouseId: warehouse,
+      priceLevel: "retail",
+      items: [
+        {
+          productId: product,
+          unitId: unit,
+          qty: 1,
+          unitPrice: 1,
+          discount: 0,
+          discountPercent: 10,
+          tax: 0,
+        },
+      ],
+      payments: [{ paymentMethodId: method, amount: 900 }],
+      discounts: [
+        {
+          scope: "item",
+          kind: "percentage",
+          percent: 10,
+          amount: 100,
+          approverRole: "supervisor",
+        },
+      ],
+      idempotencyKey: "c2c2c2c2-c2c2-42c2-82c2-c2c2c2c2c2c2",
+    });
+    expect(result.totals.itemDiscount).toBe(100);
+    expect(result.totals.grandTotal).toBe(900);
+  });
+
+  it("rejects unauthorized line discount", async () => {
+    const service = new SaleTransactionService(basePorts());
+    await expect(
+      service.postSale({
+        organizationId: org,
+        branchId: branch,
+        warehouseId: warehouse,
+        items: [
+          {
+            productId: product,
+            unitId: unit,
+            qty: 1,
+            unitPrice: 1000,
+            discount: 200,
+            tax: 0,
+          },
+        ],
+        payments: [{ paymentMethodId: method, amount: 800 }],
+        discounts: [],
+        idempotencyKey: "c3c3c3c3-c3c3-43c3-83c3-c3c3c3c3c3c3",
+      }),
+    ).rejects.toThrow(/limit/i);
+  });
 });

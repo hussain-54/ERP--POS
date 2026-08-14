@@ -260,7 +260,8 @@ export function PosPaymentPanel({
           <POSInput
             ref={discountRef as React.RefObject<HTMLInputElement>}
             label="Invoice discount (F5)"
-            type="number"
+            type="text"
+            placeholder="amount or 10%"
             value={invoiceDiscount}
             onChange={(e) => onInvoiceDiscount(e.target.value)}
           />

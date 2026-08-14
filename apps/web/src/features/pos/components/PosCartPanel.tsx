@@ -22,7 +22,7 @@ interface Props {
   onIncrease: (key: string) => void;
   onDecrease: (key: string) => void;
   onPrice: (key: string, price: number) => void;
-  onDiscount: (key: string, discount: number) => void;
+  onDiscount: (key: string, raw: string) => void;
   onUnitChange: (key: string, unitId: string) => void;
   onRemove: (key: string) => void;
   onClear: () => void;
@@ -170,11 +170,16 @@ export function PosCartPanel({
                       <POSTd>
                         {canDiscount ? (
                           <POSInput
-                            className="w-14"
-                            type="number"
-                            value={String(line.discount)}
-                            onChange={(e) => onDiscount(line.key, Number(e.target.value) || 0)}
-                            aria-label="Line discount"
+                            className="w-16"
+                            type="text"
+                            value={
+                              line.discountPercent
+                                ? `${line.discountPercent}%`
+                                : String(line.discount)
+                            }
+                            onChange={(e) => onDiscount(line.key, e.target.value)}
+                            aria-label="Line discount amount or percent"
+                            title="Amount or 10%"
                           />
                         ) : (
                           <span className="tabular-nums text-xs">{line.discount.toFixed(2)}</span>

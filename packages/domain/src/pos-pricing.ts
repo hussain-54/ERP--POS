@@ -1,5 +1,7 @@
 import { ValidationDomainError } from "./errors.js";
 import { roundMoney } from "./money.js";
+import { applyDiscount, type DiscountMode } from "./pos-discount.js";
+import { computeLineTax, type PosTaxRateInput } from "./pos-tax.js";
 
 export type PosPriceSourceKind =
   | "retail"
@@ -28,6 +30,7 @@ export type ResolvePosUnitPriceInput = {
   /** Selected POS tier when no higher-priority source applies. */
   priceLevel: "retail" | "wholesale" | "dealer";
   qty: number | string;
+  unitId?: string;
   /** Cashier/manager manual override (requires authorization outside). */
   manualOverride?: number | null;
   allowManualOverride?: boolean;
@@ -37,6 +40,11 @@ export type ResolvePosUnitPriceInput = {
 export type ResolvePosUnitPriceResult = {
   unitPrice: number;
   source: PosPriceSourceKind;
+  /** Price-level (retail/wholesale/dealer) before promo/qty/customer/manual. */
+  basePrice: number;
+  unitId?: string;
+  discountEligible: boolean;
+  reason: string;
 };
 
 function finiteMoney(v: unknown, fallback = 0): number {
@@ -70,6 +78,7 @@ function quantityBreakPrice(
  */
 export function resolvePosUnitPrice(input: ResolvePosUnitPriceInput): ResolvePosUnitPriceResult {
   const qty = finiteMoney(input.qty);
+  const basePrice = roundMoney(Math.max(0, pickTierPrice(input)));
   if (input.manualOverride != null && input.manualOverride !== undefined) {
     if (!input.allowManualOverride) {
       throw new ValidationDomainError("Manual price override is not authorized");
@@ -80,26 +89,110 @@ export function resolvePosUnitPrice(input: ResolvePosUnitPriceInput): ResolvePos
     if (unitPrice + 1e-9 < min) {
       throw new ValidationDomainError("Price below minimum sale price");
     }
-    return { unitPrice, source: "manual" };
+    return {
+      unitPrice,
+      source: "manual",
+      basePrice,
+      unitId: input.unitId,
+      discountEligible: true,
+      reason: "Manual unit price override",
+    };
   }
 
   if (input.promotionPrice != null && Number.isFinite(Number(input.promotionPrice))) {
     const unitPrice = roundMoney(Math.max(0, finiteMoney(input.promotionPrice)));
-    return { unitPrice, source: "promotion" };
+    return {
+      unitPrice,
+      source: "promotion",
+      basePrice,
+      unitId: input.unitId,
+      discountEligible: true,
+      reason: "Active promotion unit price",
+    };
   }
 
   const qtyPrice = quantityBreakPrice(input.quantityBreaks, qty);
   if (qtyPrice != null) {
-    return { unitPrice: roundMoney(Math.max(0, qtyPrice)), source: "quantity" };
+    return {
+      unitPrice: roundMoney(Math.max(0, qtyPrice)),
+      source: "quantity",
+      basePrice,
+      unitId: input.unitId,
+      discountEligible: true,
+      reason: "Quantity-break unit price",
+    };
   }
 
   if (input.customerPrice != null && Number.isFinite(Number(input.customerPrice))) {
     return {
       unitPrice: roundMoney(Math.max(0, finiteMoney(input.customerPrice))),
       source: "customer",
+      basePrice,
+      unitId: input.unitId,
+      discountEligible: true,
+      reason: "Customer-specific product price",
     };
   }
 
-  const tier = roundMoney(Math.max(0, pickTierPrice(input)));
-  return { unitPrice: tier, source: input.priceLevel };
+  const tier = roundMoney(Math.max(0, basePrice));
+  return {
+    unitPrice: tier,
+    source: input.priceLevel,
+    basePrice,
+    unitId: input.unitId,
+    discountEligible: true,
+    reason: `Price level ${input.priceLevel}`,
+  };
+}
+
+export type PreparePosSaleLineInput = {
+  qty: number;
+  pricing: ResolvePosUnitPriceInput;
+  discountMode?: DiscountMode;
+  discountValue?: number;
+  taxRate?: PosTaxRateInput | null;
+};
+
+export type PreparePosSaleLineResult = {
+  unitPrice: number;
+  source: PosPriceSourceKind;
+  basePrice: number;
+  discount: number;
+  discountPercent: number;
+  tax: number;
+  lineTotal: number;
+  reason: string;
+};
+
+/**
+ * Authoritative line economics: resolved unit price → line discount → tax.
+ */
+export function preparePosSaleLine(input: PreparePosSaleLineInput): PreparePosSaleLineResult {
+  const qty = finiteMoney(input.qty);
+  if (!(qty > 0)) throw new ValidationDomainError("Invalid quantity");
+  const resolved = resolvePosUnitPrice({ ...input.pricing, qty });
+  const gross = roundMoney(qty * resolved.unitPrice);
+  let discount = 0;
+  let discountPercent = 0;
+  if (input.discountValue != null && input.discountValue > 0) {
+    const applied = applyDiscount({
+      base: gross,
+      mode: input.discountMode ?? "fixed",
+      value: input.discountValue,
+    });
+    discount = applied.amount;
+    discountPercent = applied.percent;
+  }
+  const net = roundMoney(Math.max(0, gross - discount));
+  const tax = computeLineTax({ amount: net, rate: input.taxRate ?? null }).tax;
+  return {
+    unitPrice: resolved.unitPrice,
+    source: resolved.source,
+    basePrice: resolved.basePrice,
+    discount,
+    discountPercent,
+    tax,
+    lineTotal: roundMoney(net + tax),
+    reason: resolved.reason,
+  };
 }

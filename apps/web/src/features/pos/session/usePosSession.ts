@@ -7,6 +7,7 @@ import { useCallback, useMemo, useState } from "react";
 import type { ProductSearchResult } from "@electronic-erp/contracts";
 import {
   addOrIncrementProduct,
+  applyCartLineDiscountInput,
   calculatePosCartTotals,
   changeCartLineUnit,
   clearCartLines,
@@ -16,6 +17,7 @@ import {
   increaseCartLineQty,
   resolvePosUnitPrice,
   recalculateCart,
+  repriceCartForPriceLevel,
   removeCartLine,
   toSaleItems,
   updateCartLineDiscount,
@@ -40,6 +42,8 @@ export function usePosSession() {
   const [taxRate, setTaxRateState] = useState<PosTaxRate | null>(null);
   const [priceLevel, setPriceLevel] = useState<PosPriceLevel>("retail");
   const [invoiceDiscount, setInvoiceDiscount] = useState("0");
+  const [invoiceDiscountKind, setInvoiceDiscountKind] = useState<"fixed" | "percentage">("fixed");
+  const [invoiceDiscountPercent, setInvoiceDiscountPercent] = useState(0);
   const [walkIn, setWalkIn] = useState(true);
   const [customerId, setCustomerId] = useState("");
   const [customer, setCustomer] = useState<PosSessionCustomer | null>(null);
@@ -104,6 +108,16 @@ export function usePosSession() {
             },
           ],
         taxRate,
+        retailPrice: Number(p.retailPrice),
+        wholesalePrice: Number(p.wholesalePrice),
+        dealerPrice: Number(p.dealerPrice),
+        customerPrice: p.customerPrice != null ? Number(p.customerPrice) : null,
+        quantityBreaks: p.quantityBreaks?.map((b) => ({
+          minQty: Number(b.minQty),
+          unitPrice: Number(b.unitPrice),
+        })),
+        promotionPrice: p.promotionPrice != null ? Number(p.promotionPrice) : null,
+        priceLevel,
       });
       let outcome: { ok: boolean; error?: string } = { ok: true };
       setCartState((prev) => {
@@ -206,10 +220,41 @@ export function usePosSession() {
     [taxRate, allowManualOverride],
   );
 
+  const setPriceLevelAndReprice = useCallback(
+    (level: PosPriceLevel) => {
+      setPriceLevel(level);
+      setCartState((prev) => repriceCartForPriceLevel(prev, level, taxRate));
+    },
+    [taxRate],
+  );
+
   const setLineDiscount = useCallback(
     (key: string, discount: number) => {
       setCartState((prev) => {
         const result = updateCartLineDiscount(prev, key, discount, taxRate);
+        if (result.ok) {
+          setLastCartError(null);
+          return result.cart;
+        }
+        setLastCartError(result.error ?? "Invalid discount");
+        return prev;
+      });
+    },
+    [taxRate],
+  );
+
+  const setLineDiscountInput = useCallback(
+    (key: string, raw: string) => {
+      const trimmed = raw.trim();
+      const percent = trimmed.endsWith("%");
+      const value = Number(percent ? trimmed.slice(0, -1) : trimmed);
+      setCartState((prev) => {
+        const result = applyCartLineDiscountInput(
+          prev,
+          key,
+          { mode: percent ? "percentage" : "fixed", value },
+          taxRate,
+        );
         if (result.ok) {
           setLastCartError(null);
           return result.cart;
@@ -255,14 +300,18 @@ export function usePosSession() {
     setWalkIn(true);
     setCustomerId("");
     setCustomer(null);
-  }, []);
+    setPriceLevel("retail");
+    setCartState((prev) => repriceCartForPriceLevel(prev, "retail", taxRate));
+  }, [taxRate]);
 
   const applyCustomer = useCallback((c: PosSessionCustomer) => {
     setWalkIn(false);
     setCustomerId(c.id);
     setCustomer(c);
-    setPriceLevel(c.priceLevel as PosPriceLevel);
-  }, []);
+    const level = c.priceLevel as PosPriceLevel;
+    setPriceLevel(level);
+    setCartState((prev) => repriceCartForPriceLevel(prev, level, taxRate));
+  }, [taxRate]);
 
   const saleItems = useMemo(() => toSaleItems(cart), [cart]);
 
@@ -274,9 +323,13 @@ export function usePosSession() {
     taxRate,
     setTaxRate,
     priceLevel,
-    setPriceLevel,
+    setPriceLevel: setPriceLevelAndReprice,
     invoiceDiscount,
     setInvoiceDiscount,
+    invoiceDiscountKind,
+    setInvoiceDiscountKind,
+    invoiceDiscountPercent,
+    setInvoiceDiscountPercent,
     walkIn,
     customerId,
     customer,
@@ -291,6 +344,7 @@ export function usePosSession() {
     decreaseQty,
     setPrice,
     setLineDiscount,
+    setLineDiscountInput,
     changeUnit,
     removeLine,
     clearCart,

@@ -91,6 +91,8 @@ export const CreateSaleBaseSchema = z.object({
   referenceName: z.string().max(200).optional(),
   referenceId: UuidSchema.optional(),
   priceLevelId: UuidSchema.optional(),
+  /** POS sell tier used by server price resolution (not a price_levels UUID). */
+  priceLevel: z.enum(["retail", "wholesale", "dealer"]).optional(),
   posMode: PosModeSchema.default("advanced"),
   localeMode: PosLocaleModeSchema.default("en"),
   items: z.array(SaleItemInputSchema).min(1, "At least one line item required"),

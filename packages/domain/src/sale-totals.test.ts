@@ -54,4 +54,23 @@ describe("calculateSaleTotals", () => {
       ),
     ).toThrow(/tax/i);
   });
+
+  it("applies line percentage before invoice discount; tax is added after discounts", () => {
+    const totals = calculateSaleTotals(
+      [
+        {
+          productId: uuid,
+          unitId: uuid,
+          qty: 1,
+          unitPrice: 1000,
+          discount: 0,
+          discountPercent: 10,
+          tax: 0,
+        },
+      ],
+      0,
+    );
+    expect(totals.itemDiscount).toBe(100);
+    expect(totals.grandTotal).toBe(900);
+  });
 });

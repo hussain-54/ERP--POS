@@ -117,4 +117,26 @@ describe("pos-cart architecture", () => {
     });
     expect(credit.ok).toBe(true);
   });
+
+  it("re-resolves quantity-break price when qty crosses threshold", () => {
+    const line = createCartLineFromProduct({
+      key: "q",
+      productId: product,
+      name: "Bulk",
+      unitId: unit,
+      unitPrice: 100,
+      stock: "100",
+      retailPrice: 100,
+      wholesalePrice: 90,
+      dealerPrice: 80,
+      priceLevel: "retail",
+      quantityBreaks: [{ minQty: 10, unitPrice: 85 }],
+    });
+    let cart = addOrIncrementProductOrThrow([], line);
+    expect(cart[0]!.unitPrice).toBe(100);
+    const qty = updateCartLineQty(cart, cart[0]!.key, "10");
+    expect(qty.ok).toBe(true);
+    cart = qty.cart;
+    expect(cart[0]!.unitPrice).toBe(85);
+  });
 });

@@ -63,9 +63,15 @@ export function errorHandler(
     err,
     meta: { path: req.path, method: req.method },
   });
-  const message =
-    err instanceof Error && err.message
-      ? err.message
-      : "Internal server error";
+  const message = extractErrorMessage(err);
   res.status(500).json({ error: message });
+}
+
+function extractErrorMessage(err: unknown): string {
+  if (err instanceof Error && err.message) return err.message;
+  if (typeof err === "object" && err !== null && "message" in err) {
+    const message = (err as { message?: unknown }).message;
+    if (typeof message === "string" && message.trim()) return message;
+  }
+  return "Internal server error";
 }

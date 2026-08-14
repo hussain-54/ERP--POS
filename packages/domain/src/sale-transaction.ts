@@ -3,7 +3,11 @@ import { buildSaleJournalLines } from "./accounting-posting.js";
 import { calculateSaleTotals } from "./sale-totals.js";
 import { assertDiscountAllowed, effectiveDiscountPercent } from "./discount-policy.js";
 import { ValidationDomainError } from "./errors.js";
+import { roundMoney } from "./money.js";
+import { applyDiscount } from "./pos-discount.js";
 import { assertPosPaymentPrepared, preparePosPayments } from "./pos-payment.js";
+import { preparePosSaleLine, type QuantityPriceBreak } from "./pos-pricing.js";
+import type { PosTaxRateInput } from "./pos-tax.js";
 import { buildSaleFinalizationAuditRow } from "./sale-finalization.js";
 import { buildCommissionAccrual } from "./pos-commission.js";
 import { sha256Utf8 } from "./sha256.js";
@@ -120,7 +124,30 @@ export interface SaleTransactionPorts {
   createInstallment?(input: Record<string, unknown>): Promise<void>;
   postAnalytics(input: Record<string, unknown>): Promise<void>;
   postAudit?(row: Record<string, unknown>): Promise<void>;
+  /**
+   * Optional catalog snapshot. When present, posted unit prices/discounts/tax
+   * are re-resolved here — client money is not trusted.
+   */
+  getProductPricing?(
+    productId: string,
+    context: {
+      organizationId: string;
+      customerId?: string | null;
+      unitId: string;
+    },
+  ): Promise<ProductPricingSnapshot | null>;
 }
+
+export type ProductPricingSnapshot = {
+  retailPrice: number;
+  wholesalePrice: number;
+  dealerPrice: number;
+  customerPrice?: number | null;
+  promotionPrice?: number | null;
+  quantityBreaks?: QuantityPriceBreak[];
+  unitId?: string;
+  taxRate?: PosTaxRateInput | null;
+};
 
 function qtyNumber(qty: SaleItemInput["qty"]): number {
   return typeof qty === "number" ? qty : Number(qty);
@@ -215,8 +242,29 @@ export class SaleTransactionService {
       );
     }
 
-    const items = normalizeItems(input.items);
-    const totals = calculateSaleTotals(items, input.discountTotal ?? 0);
+    const pricedItems = await resolvePostedSaleItems(this.ports, input);
+    const normalized = normalizeItems(pricedItems);
+    const preInvoice = calculateSaleTotals(normalized, 0);
+    const invoiceDiscountAmount = resolveInvoiceDiscountAmount(input, preInvoice);
+    const items = normalized.map((item) => ({
+      ...item,
+      discount: roundMoney(item.discount ?? 0),
+      tax: roundMoney(item.tax ?? 0),
+      unitPrice: roundMoney(item.unitPrice),
+    }));
+    const totals = calculateSaleTotals(items, invoiceDiscountAmount);
+
+    for (const item of items) {
+      const lineGross = roundMoney(qtyNumber(item.qty) * item.unitPrice);
+      const pct =
+        (item.discountPercent ?? 0) > 0
+          ? Number(item.discountPercent)
+          : effectiveDiscountPercent(item.discount ?? 0, lineGross);
+      if (pct > 0) {
+        const audit = (input.discounts ?? []).find((d) => d.scope === "item");
+        assertDiscountAllowed(audit?.approverRole ?? "cashier", pct);
+      }
+    }
 
     const audits: Array<Record<string, unknown>> = [];
     for (const d of input.discounts ?? []) {
@@ -234,14 +282,14 @@ export class SaleTransactionService {
         approved_by: userId ?? null,
       });
     }
-    if ((input.discountTotal ?? 0) > 0 && !(input.discounts ?? []).some((d) => d.scope === "invoice")) {
-      const percent = effectiveDiscountPercent(input.discountTotal ?? 0, totals.subtotal);
+    if (invoiceDiscountAmount > 0 && !(input.discounts ?? []).some((d) => d.scope === "invoice")) {
+      const percent = effectiveDiscountPercent(invoiceDiscountAmount, totals.subtotal);
       assertDiscountAllowed("cashier", percent);
       audits.push({
         discount_scope: "invoice",
         discount_kind: input.invoiceDiscountKind ?? "fixed",
         percent,
-        amount: input.discountTotal,
+        amount: invoiceDiscountAmount,
         approver_role: "cashier",
         reason: "invoice discount",
         approved_by: userId ?? null,
@@ -315,8 +363,8 @@ export class SaleTransactionService {
     try {
       const lineRows = items.map((item, index) => {
         const qty = qtyNumber(item.qty);
-        const lineGross = qty * item.unitPrice;
-        const lineTotal = Math.round((lineGross - (item.discount ?? 0) + (item.tax ?? 0)) * 100) / 100;
+        const lineGross = roundMoney(qty * item.unitPrice);
+        const lineTotal = roundMoney(lineGross - (item.discount ?? 0) + (item.tax ?? 0));
         return {
           organization_id: input.organizationId,
           sale_id: sale.id,
@@ -522,7 +570,7 @@ export class SaleTransactionService {
             saleId: sale.id,
             invoiceNumber: sale.invoiceNumber,
             actorUserId: userId,
-            deviceId: input.deviceId,
+            deviceId: null,
             grandTotal: totals.grandTotal,
             paidTotal,
             status: "posted",
@@ -583,4 +631,69 @@ function normalizeItems(items: CreateSaleInput["items"]): Array<SaleItemInput & 
     warrantyDays: item.warrantyDays ?? 0,
     costPrice: item.costPrice ?? 0,
   }));
+}
+
+async function resolvePostedSaleItems(
+  ports: SaleTransactionPorts,
+  input: CreateSaleInput,
+): Promise<CreateSaleInput["items"]> {
+  if (!ports.getProductPricing) return input.items;
+  const priceLevel = input.priceLevel ?? "retail";
+  const next: CreateSaleInput["items"] = [];
+  for (const item of input.items) {
+    if (item.isManual || !item.productId) {
+      next.push(item);
+      continue;
+    }
+    const catalog = await ports.getProductPricing(item.productId, {
+      organizationId: input.organizationId,
+      customerId: input.customerId ?? null,
+      unitId: item.unitId,
+    });
+    if (!catalog) {
+      throw new ValidationDomainError(`Product pricing not found for ${item.productId}`);
+    }
+    const qty = qtyNumber(item.qty);
+    const usePercent = (item.discountPercent ?? 0) > 0;
+    const prepared = preparePosSaleLine({
+      qty,
+      pricing: {
+        retailPrice: catalog.retailPrice,
+        wholesalePrice: catalog.wholesalePrice,
+        dealerPrice: catalog.dealerPrice,
+        customerPrice: catalog.customerPrice,
+        promotionPrice: catalog.promotionPrice,
+        quantityBreaks: catalog.quantityBreaks,
+        priceLevel,
+        qty,
+        unitId: item.unitId,
+      },
+      discountMode: usePercent ? "percentage" : "fixed",
+      discountValue: usePercent ? Number(item.discountPercent) : Number(item.discount ?? 0),
+      taxRate: catalog.taxRate ?? null,
+    });
+    next.push({
+      ...item,
+      unitPrice: prepared.unitPrice,
+      discount: prepared.discount,
+      discountPercent: prepared.discountPercent,
+      tax: prepared.tax,
+    });
+  }
+  return next;
+}
+
+function resolveInvoiceDiscountAmount(
+  input: CreateSaleInput,
+  preInvoice: ReturnType<typeof calculateSaleTotals>,
+): number {
+  const base = Math.max(0, roundMoney(preInvoice.subtotal - preInvoice.itemDiscount));
+  const invoiceAudit = (input.discounts ?? []).find((d) => d.scope === "invoice");
+  if (invoiceAudit?.kind === "percentage" && invoiceAudit.percent != null) {
+    return applyDiscount({ base, mode: "percentage", value: invoiceAudit.percent }).amount;
+  }
+  if (input.invoiceDiscountKind === "percentage") {
+    return applyDiscount({ base, mode: "percentage", value: input.discountTotal ?? 0 }).amount;
+  }
+  return roundMoney(Math.max(0, input.discountTotal ?? 0));
 }

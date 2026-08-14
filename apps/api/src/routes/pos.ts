@@ -45,11 +45,11 @@ function discountRoleFromAuthz(z: AuthorizationService): ApproverRole | null {
 function saleHasDiscount(input: {
   discountTotal?: number;
   discounts?: Array<{ amount?: number; percent?: number }>;
-  items: Array<{ discount?: number }>;
+  items: Array<{ discount?: number; discountPercent?: number }>;
 }): boolean {
   if ((input.discountTotal ?? 0) > 0) return true;
   if ((input.discounts ?? []).some((d) => (d.amount ?? 0) > 0 || (d.percent ?? 0) > 0)) return true;
-  return input.items.some((i) => (i.discount ?? 0) > 0);
+  return input.items.some((i) => (i.discount ?? 0) > 0 || (i.discountPercent ?? 0) > 0);
 }
 
 posRouter.get("/products/search", async (req: AuthedRequest, res, next) => {

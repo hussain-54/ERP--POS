@@ -220,6 +220,22 @@ export class PosRepository {
         warrantyDays: Number(row.warranty_days ?? 0),
       });
     }
+    if (query.customerId && results.length) {
+      const ids = results.map((r) => r.productId);
+      const { data: customerPrices } = await this.db
+        .from("product_prices")
+        .select("product_id,unit_id,amount")
+        .eq("organization_id", organizationId)
+        .eq("customer_id", query.customerId)
+        .in("product_id", ids)
+        .is("deleted_at", null);
+      for (const result of results) {
+        const rows = (customerPrices ?? []).filter((row) => String(row.product_id) === result.productId);
+        const match =
+          rows.find((row) => String(row.unit_id) === result.unitId) ?? rows[0];
+        if (match) result.customerPrice = Number(match.amount);
+      }
+    }
     // Prefer exact barcode/SKU matches first for enter-to-add / scanner UX
     const qLower = q.toLowerCase();
     results.sort((a, b) => {
@@ -1637,6 +1653,41 @@ export class PosRepository {
           .maybeSingle();
         if (!data) return "0";
         return String(Number(data.qty_on_hand ?? 0) - Number(data.qty_reserved ?? 0));
+      },
+      async getProductPricing(
+        productId: string,
+        context: { organizationId: string; customerId?: string | null; unitId: string },
+      ) {
+        const { data: product, error } = await db
+          .from("products")
+          .select("retail_price,wholesale_price,dealer_price")
+          .eq("id", productId)
+          .eq("organization_id", context.organizationId)
+          .is("deleted_at", null)
+          .maybeSingle();
+        if (error) throw error;
+        if (!product) return null;
+        let customerPrice: number | null = null;
+        if (context.customerId) {
+          const { data: prices } = await db
+            .from("product_prices")
+            .select("amount,unit_id")
+            .eq("organization_id", context.organizationId)
+            .eq("product_id", productId)
+            .eq("customer_id", context.customerId)
+            .is("deleted_at", null);
+          const match =
+            (prices ?? []).find((row) => String(row.unit_id) === context.unitId) ??
+            (prices ?? [])[0];
+          if (match) customerPrice = Number(match.amount);
+        }
+        return {
+          retailPrice: Number(product.retail_price ?? 0),
+          wholesalePrice: Number(product.wholesale_price ?? 0),
+          dealerPrice: Number(product.dealer_price ?? 0),
+          customerPrice,
+          unitId: context.unitId,
+        };
       },
       async postSaleRecord(payload: Record<string, unknown>) {
         const key = String(payload.idempotency_key ?? crypto.randomUUID());

@@ -122,6 +122,10 @@ export function PosPage() {
     setPriceLevel,
     invoiceDiscount,
     setInvoiceDiscount,
+    invoiceDiscountKind,
+    setInvoiceDiscountKind,
+    invoiceDiscountPercent,
+    setInvoiceDiscountPercent,
     walkIn,
     customerId,
     customer,
@@ -131,7 +135,7 @@ export function PosPage() {
     increaseQty,
     decreaseQty,
     setPrice,
-    setLineDiscount,
+    setLineDiscountInput,
     changeUnit,
     removeLine,
     clearCart,
@@ -198,14 +202,6 @@ export function PosPage() {
   const [clock, setClock] = useState(() => new Date());
   const [showHolds, setShowHolds] = useState(false);
   const [creatingCustomer, setCreatingCustomer] = useState(false);
-  const [deviceId] = useState(() => {
-    const key = "erp-pos-device-id";
-    const existing = localStorage.getItem(key);
-    if (existing) return existing;
-    const id = crypto.randomUUID();
-    localStorage.setItem(key, id);
-    return id;
-  });
 
   const searchRef = useRef<HTMLInputElement>(null);
   const customerRef = useRef<HTMLInputElement>(null);
@@ -331,7 +327,11 @@ export function PosPage() {
       setQ(event.code);
       setTab("results");
       void posApi
-        .searchProducts({ q: event.code, warehouseId: warehouseId || undefined })
+        .searchProducts({
+          q: event.code,
+          warehouseId: warehouseId || undefined,
+          customerId: walkIn ? undefined : customerId || undefined,
+        })
         .then((res) => {
           setResults(res.items);
           if (res.items[0]) addProduct(res.items[0]);
@@ -375,6 +375,7 @@ export function PosPage() {
             const hit = await posApi.searchProducts({
               q: name,
               warehouseId: warehouseId || undefined,
+              customerId: walkIn ? undefined : customerId || undefined,
               limit: 5,
             });
             for (const item of hit.items) {
@@ -410,7 +411,7 @@ export function PosPage() {
           const res = await posApi.searchProducts({
             q,
             warehouseId: warehouseId || undefined,
-            customerId: customerId || undefined,
+            customerId: walkIn ? undefined : customerId || undefined,
           });
           setResults(res.items);
           setTab("results");
@@ -507,6 +508,8 @@ export function PosPage() {
   function clearSale() {
     clearCart();
     setInvoiceDiscount("0");
+    setInvoiceDiscountKind("fixed");
+    setInvoiceDiscountPercent(0);
     setNotes("");
     setDelivery(false);
     setUseInstallment(false);
@@ -540,12 +543,17 @@ export function PosPage() {
 
   function requestInvoiceDiscount(value: string) {
     const base = Math.max(0, totals.subtotal - totals.itemDiscount);
+    const trimmed = value.trim();
+    const percent = trimmed.endsWith("%");
+    const numeric = Number(percent ? trimmed.slice(0, -1) : trimmed);
     const applied = applyDiscount({
       base,
-      mode: "fixed",
-      value: Number(value || 0),
-      kind: "fixed",
+      mode: percent ? "percentage" : "fixed",
+      value: numeric || 0,
+      kind: percent ? "percentage" : "fixed",
     });
+    setInvoiceDiscountKind(percent ? "percentage" : "fixed");
+    setInvoiceDiscountPercent(percent ? numeric || 0 : 0);
     const decision = evaluateDiscountApproval({
       discountAmount: applied.amount,
       baseAmount: base,
@@ -759,13 +767,17 @@ export function PosPage() {
         items: saleItems,
         payments: paymentLines,
         isAdvancePayment: isAdvance || undefined,
+        priceLevel,
         discountTotal: Number(invoiceDiscount || 0),
+        invoiceDiscountKind,
         discounts:
           Number(invoiceDiscount || 0) > 0
             ? [
                 {
                   scope: "invoice",
-                  kind: priceLevel === "wholesale" ? "wholesale" : "fixed",
+                  kind: invoiceDiscountKind,
+                  percent:
+                    invoiceDiscountKind === "percentage" ? invoiceDiscountPercent : undefined,
                   amount: Number(invoiceDiscount),
                   approverRole: actingDiscountRole,
                   reason: approvalReason || "POS invoice discount",
@@ -783,7 +795,6 @@ export function PosPage() {
                 lateFeeFixed: lateFeeFixed || "0",
               }
             : undefined,
-        deviceId,
         idempotencyKey,
         operationId: idempotencyKey,
       });
@@ -887,7 +898,6 @@ export function PosPage() {
         notes: holdNotes || notes || undefined,
         customerId: walkIn ? undefined : customerId || undefined,
         cartSnapshot,
-        deviceId,
       });
       clearSale();
       setHoldReason("");
@@ -997,7 +1007,7 @@ export function PosPage() {
   async function duplicateHold(id: string) {
     if (!warehouseId) return;
     try {
-      await posApi.duplicateHold(id, { warehouseId, deviceId });
+      await posApi.duplicateHold(id, { warehouseId });
       toast.push({ title: "Hold duplicated", tone: "success" });
       await refreshHolds();
     } catch (err) {
@@ -1438,7 +1448,7 @@ export function PosPage() {
                   }
                   setPrice(key, unitPrice, true);
                 }}
-                onDiscount={(key, discount) => setLineDiscount(key, discount)}
+                onDiscount={(key, raw) => setLineDiscountInput(key, raw)}
                 onUnitChange={(key, unitId) => changeUnit(key, unitId)}
                 onRemove={(key) => removeLine(key)}
                 onClear={() => clearCart()}

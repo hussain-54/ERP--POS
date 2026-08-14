@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { resolvePosUnitPrice } from "./pos-pricing.js";
+import { preparePosSaleLine, resolvePosUnitPrice } from "./pos-pricing.js";
 
 describe("resolvePosUnitPrice", () => {
   const base = {
@@ -19,7 +19,9 @@ describe("resolvePosUnitPrice", () => {
 
   it("prefers customer price over tier", () => {
     const r = resolvePosUnitPrice({ ...base, customerPrice: 95 });
-    expect(r).toEqual({ unitPrice: 95, source: "customer" });
+    expect(r.unitPrice).toBe(95);
+    expect(r.source).toBe("customer");
+    expect(r.basePrice).toBe(100);
   });
 
   it("prefers quantity break over customer", () => {
@@ -32,7 +34,8 @@ describe("resolvePosUnitPrice", () => {
         { minQty: 20, unitPrice: 70 },
       ],
     });
-    expect(r).toEqual({ unitPrice: 85, source: "quantity" });
+    expect(r.unitPrice).toBe(85);
+    expect(r.source).toBe("quantity");
   });
 
   it("prefers promotion over quantity", () => {
@@ -42,7 +45,8 @@ describe("resolvePosUnitPrice", () => {
       promotionPrice: 75,
       quantityBreaks: [{ minQty: 5, unitPrice: 85 }],
     });
-    expect(r).toEqual({ unitPrice: 75, source: "promotion" });
+    expect(r.unitPrice).toBe(75);
+    expect(r.source).toBe("promotion");
   });
 
   it("manual override requires authorization", () => {
@@ -54,7 +58,8 @@ describe("resolvePosUnitPrice", () => {
       manualOverride: 50,
       allowManualOverride: true,
     });
-    expect(r).toEqual({ unitPrice: 50, source: "manual" });
+    expect(r.unitPrice).toBe(50);
+    expect(r.source).toBe("manual");
   });
 
   it("rejects negative / below minimum manual price", () => {
@@ -85,5 +90,28 @@ describe("resolvePosUnitPrice", () => {
     });
     expect(Number.isFinite(r.unitPrice)).toBe(true);
     expect(r.unitPrice).toBe(0);
+  });
+
+  it("preparePosSaleLine applies 10% then exclusive tax", () => {
+    const line = preparePosSaleLine({
+      qty: 1,
+      pricing: { ...base, retailPrice: 1000 },
+      discountMode: "percentage",
+      discountValue: 10,
+      taxRate: { ratePercent: 0, pricingMode: "exclusive" },
+    });
+    expect(line.unitPrice).toBe(1000);
+    expect(line.discount).toBe(100);
+    expect(line.lineTotal).toBe(900);
+  });
+
+  it("ignores malicious client price when catalog pricing is used", () => {
+    const line = preparePosSaleLine({
+      qty: 1,
+      pricing: { ...base, retailPrice: 1000 },
+      discountMode: "fixed",
+      discountValue: 0,
+    });
+    expect(line.unitPrice).toBe(1000);
   });
 });

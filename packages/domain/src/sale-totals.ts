@@ -1,6 +1,7 @@
 import type { SaleItemInput } from "@electronic-erp/contracts";
 import { ValidationDomainError } from "./errors.js";
 import { finiteMoney, roundMoney } from "./money.js";
+import { applyDiscount } from "./pos-discount.js";
 
 export interface SaleTotals {
   subtotal: number;
@@ -42,7 +43,13 @@ export function calculateSaleTotals(
     if (unitPrice < 0) throw new ValidationDomainError("Invalid price");
     if (tax < 0) throw new ValidationDomainError("Invalid tax");
     const lineGross = roundMoney(qty * unitPrice);
-    const discount = rawDiscount > lineGross ? lineGross : rawDiscount;
+    const pct = asNum(item.discountPercent);
+    const discount =
+      pct > 0
+        ? applyDiscount({ base: lineGross, mode: "percentage", value: pct }).amount
+        : rawDiscount > lineGross
+          ? lineGross
+          : rawDiscount;
     subtotal += lineGross;
     lineDiscount += discount;
     taxTotal += tax;
