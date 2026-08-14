@@ -5,25 +5,23 @@ import { APP_NAME } from "./constants.js";
 
 export interface DesktopPaths {
   userData: string;
+  /** @deprecated No SQLite — kept as alias of configDir for older IPC callers */
   databaseDir: string;
-  databaseFile: string;
   logsDir: string;
   configDir: string;
   cacheDir: string;
   installRoot: string;
 }
 
-/** All mutable business data lives under userData — never under the install dir. */
+/** Mutable shell data (config/logs) under userData — business data is in Supabase. */
 export function resolveDesktopPaths(): DesktopPaths {
   const userData = app.getPath("userData");
-  const databaseDir = path.join(userData, "database");
   const logsDir = path.join(userData, "logs");
   const configDir = path.join(userData, "config");
   const cacheDir = path.join(userData, "cache");
   return {
     userData,
-    databaseDir,
-    databaseFile: path.join(databaseDir, "offline.db"),
+    databaseDir: configDir,
     logsDir,
     configDir,
     cacheDir,
@@ -32,13 +30,7 @@ export function resolveDesktopPaths(): DesktopPaths {
 }
 
 export function ensureDesktopDirectories(paths: DesktopPaths): void {
-  for (const dir of [
-    paths.userData,
-    paths.databaseDir,
-    paths.logsDir,
-    paths.configDir,
-    paths.cacheDir,
-  ]) {
+  for (const dir of [paths.userData, paths.configDir, paths.logsDir, paths.cacheDir]) {
     fs.mkdirSync(dir, { recursive: true });
   }
   const readme = path.join(paths.userData, "README.txt");
@@ -48,9 +40,9 @@ export function ensureDesktopDirectories(paths: DesktopPaths): void {
       [
         `${APP_NAME} application data`,
         "",
-        "This folder stores SQLite, logs, and local configuration.",
+        "This folder stores terminal config, logs, and cache.",
+        "POS business data is stored in Supabase (online). There is no local SQLite database.",
         "Uninstalling the application does NOT delete this folder by default.",
-        "Back up this directory before wiping a POS terminal.",
         "",
       ].join("\n"),
       "utf8",

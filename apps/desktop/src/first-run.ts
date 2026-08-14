@@ -1,5 +1,6 @@
-import type { LocalDatabase, LocalDevice } from "@electronic-erp/offline";
-import type { OfflineRuntime } from "./db/bootstrap.js";
+import type { DesktopConfigStore, DesktopDeviceRecord } from "./config-store.js";
+
+export type { DesktopDeviceRecord };
 
 export interface FirstRunState {
   provisioned: boolean;
@@ -7,15 +8,12 @@ export interface FirstRunState {
   online: boolean;
   deviceId: string;
   deviceKey: string;
-  device: LocalDevice | null;
+  device: DesktopDeviceRecord | null;
   message: string;
 }
 
-export function getFirstRunState(
-  runtime: OfflineRuntime,
-  online: boolean,
-): FirstRunState {
-  const device = runtime.localDb.getDevice();
+export function getFirstRunState(store: DesktopConfigStore, online: boolean): FirstRunState {
+  const device = store.getDevice();
   const provisioned = Boolean(
     device &&
       device.organizationId &&
@@ -29,10 +27,11 @@ export function getFirstRunState(
       provisioned: true,
       requiresOnlineProvisioning: false,
       online,
-      deviceId: runtime.deviceId,
-      deviceKey: runtime.deviceKey,
+      deviceId: store.deviceId,
+      deviceKey: store.deviceKey,
       device,
-      message: "Device is provisioned. Offline POS is available.",
+      message:
+        "Device is provisioned. POS data is stored in Supabase via the cloud API.",
     };
   }
 
@@ -40,32 +39,30 @@ export function getFirstRunState(
     provisioned: false,
     requiresOnlineProvisioning: true,
     online,
-    deviceId: runtime.deviceId,
-    deviceKey: runtime.deviceKey,
+    deviceId: store.deviceId,
+    deviceKey: store.deviceKey,
     device,
     message: online
-      ? "This device has never been provisioned. Sign in online to register and download master data."
-      : "Internet is required for the first cloud registration and master-data download. After provisioning, POS works offline. Cloud initialization is not faked while offline.",
+      ? "Register this terminal (organization + branch). Sales run through the online API / Supabase only."
+      : "Internet is required. This application is online-only (Supabase).",
   };
 }
 
+/** Persist terminal identity locally (config JSON). */
 export async function provisionDeviceLocally(
-  localDb: LocalDatabase,
+  store: DesktopConfigStore,
   input: {
     organizationId: string;
     branchId: string;
     name: string;
-    registeredDeviceId?: string;
   },
-): Promise<LocalDevice> {
+): Promise<DesktopDeviceRecord> {
   const now = new Date().toISOString();
-  const deviceId = await localDb.ensureDeviceId();
-  const deviceKey = await localDb.ensureDeviceKey();
-  const device: LocalDevice = {
-    id: input.registeredDeviceId ?? deviceId,
+  const device: DesktopDeviceRecord = {
+    id: store.deviceId,
     organizationId: input.organizationId,
     branchId: input.branchId,
-    deviceKey,
+    deviceKey: store.deviceKey,
     name: input.name || "Windows POS",
     platform: "electron",
     status: "active",
@@ -74,40 +71,6 @@ export async function provisionDeviceLocally(
     createdAt: now,
     updatedAt: now,
   };
-  await localDb.saveDevice(device);
+  store.saveDevice(device);
   return device;
-}
-
-/** Register with cloud when online — never invent a fake cloud registration offline. */
-export async function registerDeviceWithApi(input: {
-  apiUrl: string;
-  accessToken: string;
-  organizationId: string;
-  branchId: string;
-  deviceKey: string;
-  name: string;
-}): Promise<{ deviceId: string }> {
-  const base = input.apiUrl.replace(/\/$/, "");
-  const res = await fetch(`${base}/api/v1/sync/devices/register`, {
-    method: "POST",
-    headers: {
-      "content-type": "application/json",
-      authorization: `Bearer ${input.accessToken}`,
-    },
-    body: JSON.stringify({
-      organizationId: input.organizationId,
-      branchId: input.branchId,
-      deviceKey: input.deviceKey,
-      name: input.name,
-      platform: "electron",
-    }),
-  });
-  if (!res.ok) {
-    const text = await res.text();
-    throw new Error(`Device registration failed (${res.status}): ${text}`);
-  }
-  const body = (await res.json()) as { id?: string; deviceId?: string };
-  const deviceId = body.id ?? body.deviceId;
-  if (!deviceId) throw new Error("Device registration response missing id");
-  return { deviceId };
 }

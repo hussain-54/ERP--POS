@@ -11,7 +11,6 @@ export interface POSTopbarProps {
   onBranchChange: (id: string) => void;
   cashierName: string;
   online: boolean;
-  syncing?: boolean;
   holdCount: number;
   mode: PosMode;
   locale: LocaleMode;
@@ -34,7 +33,6 @@ export function POSTopbar({
   onBranchChange,
   cashierName,
   online,
-  syncing,
   holdCount,
   mode,
   locale,
@@ -92,8 +90,8 @@ export function POSTopbar({
       </div>
 
       <div className="ml-auto flex flex-wrap items-center gap-1.5 sm:gap-2">
-        <POSBadge tone={online ? "success" : "warning"}>
-          {syncing ? "Syncing" : online ? "Online" : "Offline"}
+        <POSBadge tone={online ? "success" : "danger"}>
+          {online ? "🟢 Connected" : "🔴 Connection Required"}
         </POSBadge>
 
         <POSButtonishHeld

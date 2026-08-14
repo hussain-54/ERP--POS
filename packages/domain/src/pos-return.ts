@@ -84,6 +84,59 @@ export type PreparedSaleReturn = {
   lines: PreparedReturnLine[];
 };
 
+export function assertRefundAmount(amount: number): void {
+  if (!Number.isFinite(amount) || amount < 0) {
+    throw new ValidationDomainError("Refund amount must be a non-negative finite number");
+  }
+}
+
+/** How money should settle for a prepared (or stored) return. */
+export type RefundSettlementKind = "cash_out" | "customer_credit" | "none";
+
+export type RefundSettlementPlan = {
+  kind: RefundSettlementKind;
+  method: RefundMethod | null;
+  amount: number;
+  /** Recorded tender on payments (cash/bank only). Not a PSP claim. */
+  paymentKind: "cash" | "bank" | null;
+};
+
+export function refundSettlementPlan(input: {
+  disposition: ReturnDisposition;
+  refundMethod: RefundMethod | null;
+  refundAmount: number;
+}): RefundSettlementPlan {
+  assertRefundAmount(input.refundAmount);
+  if (input.disposition === "exchange" || input.refundAmount < 1e-9) {
+    return { kind: "none", method: input.refundMethod, amount: 0, paymentKind: null };
+  }
+  if (input.disposition === "credit" || input.refundMethod === "customer_credit") {
+    return {
+      kind: "customer_credit",
+      method: "customer_credit",
+      amount: input.refundAmount,
+      paymentKind: null,
+    };
+  }
+  if (input.disposition === "refund" && (input.refundMethod === "cash" || input.refundMethod === "bank")) {
+    return {
+      kind: "cash_out",
+      method: input.refundMethod,
+      amount: input.refundAmount,
+      paymentKind: input.refundMethod,
+    };
+  }
+  if (input.disposition === "refund") {
+    return {
+      kind: "cash_out",
+      method: "cash",
+      amount: input.refundAmount,
+      paymentKind: "cash",
+    };
+  }
+  return { kind: "none", method: input.refundMethod, amount: 0, paymentKind: null };
+}
+
 export function reasonLabel(code: ReturnReasonCode): string {
   switch (code) {
     case "damaged":
@@ -161,6 +214,9 @@ export function prepareSaleReturn(input: PrepareSaleReturnInput): PreparedSaleRe
     if (!(qty > 0) || Number.isNaN(qty)) {
       throw new ValidationDomainError("Return quantity must be positive");
     }
+    if (!Number.isFinite(line.unitPrice) || line.unitPrice < 0) {
+      throw new ValidationDomainError("Invalid refund amount");
+    }
     const max = maxReturnableQty(src.soldQty, src.previouslyReturnedQty);
     if (qty - max > 1e-9) {
       throw new ValidationDomainError(
@@ -232,6 +288,7 @@ export function prepareSaleReturn(input: PrepareSaleReturnInput): PreparedSaleRe
 
   const refundAmount =
     Math.round(prepared.reduce((s, l) => s + l.lineTotal, 0) * 100) / 100;
+  assertRefundAmount(refundAmount);
 
   return {
     scope,

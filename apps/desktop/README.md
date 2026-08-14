@@ -2,10 +2,12 @@
 
 Production Electron shell with:
 
-- Main process (SQLite, sync/device, hardware, updater, safeStorage)
+- Main process (device config, hardware, updater, safeStorage)
 - Secure preload IPC (`contextIsolation`, no Node in renderer)
-- Local renderer for first-run + offline POS smoke
+- Local renderer for first-run provisioning, hardware checks, and updates
 - NSIS installer via electron-builder
+
+Sales are **online-only** via the cloud API / Supabase (no local SQLite outbox).
 
 ## Quick commands (from monorepo root)
 
@@ -23,7 +25,7 @@ npm run desktop:dist           # NSIS installer under apps/desktop/release/
 | Kind | Location |
 |------|----------|
 | Install files | Program Files / chosen install dir |
-| SQLite + logs + config | `%APPDATA%\electronic-erp-pos\` (Electron `userData`) |
+| Config + logs | `%APPDATA%\electronic-erp-pos\` (Electron `userData`) |
 
 Uninstall does **not** delete AppData (`deleteAppDataOnUninstall: false`).
 

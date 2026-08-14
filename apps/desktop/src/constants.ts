@@ -8,9 +8,6 @@ export const IpcChannels = {
   getPaths: "desktop:getPaths",
   getFirstRunState: "desktop:getFirstRunState",
   provisionDevice: "desktop:provisionDevice",
-  setConnectivity: "desktop:setConnectivity",
-  postOfflineSale: "desktop:postOfflineSale",
-  listPendingSales: "desktop:listPendingSales",
   hardwareStatus: "desktop:hardwareStatus",
   printReceipt: "desktop:printReceipt",
   openCashDrawer: "desktop:openCashDrawer",
@@ -21,8 +18,6 @@ export const IpcChannels = {
   downloadUpdate: "desktop:downloadUpdate",
   quitAndInstall: "desktop:quitAndInstall",
   openExternal: "desktop:openExternal",
-  syncNow: "desktop:syncNow",
-  syncStatus: "desktop:syncStatus",
 } as const;
 
 export type IpcChannel = (typeof IpcChannels)[keyof typeof IpcChannels];

@@ -3,7 +3,7 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { app, BrowserWindow, net, session } from "electron";
 import { APP_NAME, APP_VERSION } from "./constants.js";
-import { bootstrapOfflineDatabase, type OfflineRuntime } from "./db/bootstrap.js";
+import { DesktopConfigStore } from "./config-store.js";
 import { createDesktopHardware } from "./hardware-bridge.js";
 import { registerIpcHandlers } from "./ipc.js";
 import {
@@ -13,24 +13,20 @@ import {
 } from "./paths.js";
 import { desktopReadiness } from "./readiness.js";
 import { SecureTokenStore } from "./secure-store.js";
-import { createDesktopSync, type DesktopSyncRuntime } from "./sync-runtime.js";
 import { DesktopUpdater } from "./updater.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
 let mainWindow: BrowserWindow | null = null;
-let runtime: OfflineRuntime | null = null;
 let paths: DesktopPaths | null = null;
 let online = true;
-let syncRuntime: DesktopSyncRuntime | null = null;
 
 function resolvePreloadPath(): string {
   const cjs = path.join(__dirname, "preload.cjs");
   const js = path.join(__dirname, "preload.js");
   if (fs.existsSync(cjs)) return cjs;
   if (fs.existsSync(js)) return js;
-  const rootCjs = path.join(__dirname, "..", "preload.cjs");
-  return rootCjs;
+  return path.join(__dirname, "..", "preload.cjs");
 }
 
 async function createWindow(): Promise<void> {
@@ -66,31 +62,20 @@ async function boot(): Promise<void> {
 
   paths = resolveDesktopPaths();
   ensureDesktopDirectories(paths);
-  runtime = await bootstrapOfflineDatabase(paths);
+  const config = new DesktopConfigStore(paths);
 
   online = net.isOnline();
   const hardware = createDesktopHardware();
   const secure = new SecureTokenStore();
   const updater = new DesktopUpdater();
 
-  syncRuntime = createDesktopSync(runtime, secure, () => online);
-  syncRuntime?.start();
-
   registerIpcHandlers({
-    runtime,
+    config,
     paths,
     hardware,
     secure,
     updater,
     getOnline: () => online,
-    setOnline: (value) => {
-      online = value;
-      syncRuntime?.setOnline(value);
-    },
-    getSync: () => syncRuntime,
-    setSync: (sync) => {
-      syncRuntime = sync;
-    },
   });
 
   session.defaultSession.setPermissionRequestHandler((_wc, _perm, callback) => {
@@ -119,8 +104,6 @@ if (!gotLock) {
   });
 
   app.on("window-all-closed", () => {
-    syncRuntime?.stop();
-    runtime?.sqlite.close();
     if (process.platform !== "darwin") app.quit();
   });
 

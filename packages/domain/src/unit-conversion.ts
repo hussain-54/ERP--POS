@@ -1,5 +1,6 @@
 import {
   compareDecimal,
+  divideDecimal,
   multiplyDecimal,
   subtractDecimal,
   type CreateUnitConversionInput,
@@ -13,6 +14,17 @@ export interface UnitConversionRule {
   factor: string;
 }
 
+export function assertStockQtyString(qty: string, label = "Quantity"): string {
+  const trimmed = String(qty ?? "").trim();
+  if (!trimmed || !/^-?\d+(\.\d{1,6})?$/.test(trimmed)) {
+    throw new ValidationDomainError(`${label} is invalid`);
+  }
+  if (!Number.isFinite(Number(trimmed))) {
+    throw new ValidationDomainError(`${label} is invalid`);
+  }
+  return trimmed;
+}
+
 /** Convert quantity from one unit to another using product-specific then org rules. */
 export function convertQuantity(
   qty: string,
@@ -21,7 +33,11 @@ export function convertQuantity(
   rules: UnitConversionRule[],
   productId?: string,
 ): string {
-  if (fromUnitId === toUnitId) return qty;
+  const amount = assertStockQtyString(qty);
+  if (!fromUnitId || !toUnitId) {
+    throw new ValidationDomainError("Missing unit");
+  }
+  if (fromUnitId === toUnitId) return amount;
 
   const productRules = productId
     ? rules.filter((r) => r.productId === productId)
@@ -30,21 +46,55 @@ export function convertQuantity(
   const pool = [...productRules, ...orgRules];
 
   const direct = pool.find((r) => r.fromUnitId === fromUnitId && r.toUnitId === toUnitId);
-  if (direct) return multiplyDecimal(qty, direct.factor);
+  if (direct) {
+    if (Number(direct.factor) <= 0 || !Number.isFinite(Number(direct.factor))) {
+      throw new ValidationDomainError("Invalid conversion factor");
+    }
+    return multiplyDecimal(amount, direct.factor, 6);
+  }
 
   const inverse = pool.find((r) => r.fromUnitId === toUnitId && r.toUnitId === fromUnitId);
   if (inverse) {
-    // qty_to = qty_from / factor
-    const scaled = multiplyDecimal(qty, "1", 6);
-    // divide via multiply with reciprocal approximated by integer math in multiplyDecimal only —
-    // use 1/factor as decimal string
-    const factorNum = Number(inverse.factor);
-    if (factorNum <= 0) throw new ValidationDomainError("Invalid conversion factor");
-    const reciprocal = (1 / factorNum).toFixed(6).replace(/\.?0+$/, "");
-    return multiplyDecimal(scaled, reciprocal);
+    if (Number(inverse.factor) <= 0 || !Number.isFinite(Number(inverse.factor))) {
+      throw new ValidationDomainError("Invalid conversion factor");
+    }
+    return divideDecimal(amount, inverse.factor, 6);
   }
 
   throw new ValidationDomainError("No unit conversion rule found");
+}
+
+/**
+ * Convert a posted movement quantity into product base units.
+ * Preserves sign (adjustments may be negative). Same-unit posts are unchanged.
+ */
+export function qtyToBaseUnits(input: {
+  qty: string;
+  fromUnitId: string;
+  baseUnitId: string;
+  rules: UnitConversionRule[];
+  productId: string;
+}): string {
+  if (!input.fromUnitId) throw new ValidationDomainError("Missing unit");
+  if (!input.baseUnitId) throw new ValidationDomainError("Missing unit");
+  if (!input.productId) throw new ValidationDomainError("Invalid product");
+  const raw = assertStockQtyString(input.qty);
+  const negative = raw.startsWith("-");
+  const mag = negative ? raw.slice(1) : raw;
+  if (compareDecimal(mag, "0") === 0) {
+    throw new ValidationDomainError("Quantity cannot be zero");
+  }
+  const converted = convertQuantity(
+    mag,
+    input.fromUnitId,
+    input.baseUnitId,
+    input.rules,
+    input.productId,
+  );
+  if (compareDecimal(converted, "0") <= 0) {
+    throw new ValidationDomainError("Converted quantity must be positive");
+  }
+  return negative ? `-${converted}` : converted;
 }
 
 export function applySaleInBaseUnit(

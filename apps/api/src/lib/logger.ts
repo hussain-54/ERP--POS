@@ -6,8 +6,6 @@ export type LogCategory =
   | "auth"
   | "api"
   | "database"
-  | "sqlite"
-  | "sync"
   | "printing"
   | "hardware"
   | "application";

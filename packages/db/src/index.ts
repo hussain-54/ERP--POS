@@ -8,7 +8,6 @@ export * from "./repositories/purchases-repository.js";
 export * from "./repositories/after-sales-repository.js";
 export * from "./repositories/accounting-repository.js";
 export * from "./repositories/admin-repository.js";
-export * from "./repositories/sync-repository.js";
 export * from "./repositories/hardware-repository.js";
 export * from "./repositories/reporting-repository.js";
 export * from "./repositories/commerce-repository.js";

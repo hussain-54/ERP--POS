@@ -12,7 +12,6 @@
       "@electronic-erp/domain": ["../../packages/domain/src/index.ts"],
       "@electronic-erp/db": ["../../packages/db/src/index.ts"],
       "@electronic-erp/hardware": ["../../packages/hardware/src/index.ts"],
-      "@electronic-erp/offline": ["../../packages/offline/src/index.ts"],
       "@electronic-erp/ui": ["../../packages/ui/src/index.ts"]
     }
   },

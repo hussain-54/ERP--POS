@@ -342,7 +342,12 @@ export class PartiesRepository {
       kindById,
     );
 
-    if (input.partyType === "customer" && input.customerId && Number(creditAmt) > 0) {
+    if (
+      input.direction !== "pay" &&
+      input.partyType === "customer" &&
+      input.customerId &&
+      Number(creditAmt) > 0
+    ) {
       const customer = await this.getCustomer(input.customerId);
       if (!customer) throw new ValidationDomainError("Customer not found");
       const check = evaluateCredit({
@@ -417,7 +422,13 @@ export class PartiesRepository {
     });
     const paidNow = nonCredit.reduce((a, s) => a + Number(s.amount), 0);
 
-    if (input.partyType === "customer" && input.customerId && paidNow > 0) {
+    const skipCustomerLedger = input.sourceType === "sale_return";
+    if (
+      !skipCustomerLedger &&
+      input.partyType === "customer" &&
+      input.customerId &&
+      paidNow > 0
+    ) {
       await this.postCustomerLedger({
         organizationId: input.organizationId,
         branchId: input.branchId,

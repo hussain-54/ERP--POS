@@ -12,10 +12,13 @@ import type {
 } from "@electronic-erp/contracts";
 import {
   applyMovementToBalance,
+  assertStockMovementQty,
   computeStockMetrics,
   differenceQty,
+  qtyToBaseUnits,
   updateMovingAverageCost,
   ValidationDomainError,
+  type UnitConversionRule,
 } from "@electronic-erp/domain";
 import type { DatabaseClient } from "../client.js";
 
@@ -143,6 +146,28 @@ export class InventoryRepository {
       .single();
     if (!warehouse) throw new ValidationDomainError("Warehouse not found");
 
+    const { data: product } = await this.db
+      .from("products")
+      .select("id,base_unit_id,organization_id")
+      .eq("id", input.productId)
+      .maybeSingle();
+    if (!product) throw new ValidationDomainError("Invalid product");
+    if (String(product.organization_id) !== input.organizationId) {
+      throw new ValidationDomainError("Invalid product");
+    }
+    const baseUnitId = String(product.base_unit_id);
+    if (!input.unitId) throw new ValidationDomainError("Missing unit");
+
+    const rules = await this.listConversionRules(input.organizationId, input.productId);
+    const qtyBase = qtyToBaseUnits({
+      qty: String(input.qtyDelta),
+      fromUnitId: input.unitId,
+      baseUnitId,
+      rules,
+      productId: input.productId,
+    });
+    assertStockMovementQty(input.movementType, qtyBase);
+
     const balance = await this.getOrCreateBalance({
       organizationId: input.organizationId,
       branchId: input.branchId,
@@ -171,7 +196,7 @@ export class InventoryRepository {
     const { before, after } = applyMovementToBalance(
       current,
       input.movementType,
-      input.qtyDelta,
+      qtyBase,
       allowNegative,
     );
 
@@ -185,68 +210,54 @@ export class InventoryRepository {
       averageUnitCost = updateMovingAverageCost(
         before.qtyOnHand,
         averageUnitCost,
-        String(Math.abs(Number(input.qtyDelta))),
+        String(Math.abs(Number(qtyBase))),
         input.unitCost,
       );
     }
 
     const occurredAt = input.occurredAt ?? new Date().toISOString();
-    const { data: movement, error: movErr } = await this.db
-      .from("stock_movements")
-      .insert({
-        organization_id: input.organizationId,
-        branch_id: input.branchId,
-        warehouse_id: input.warehouseId,
-        product_id: input.productId,
-        variant_id: input.variantId ?? null,
-        batch_id: input.batchId ?? null,
-        serial_number_id: input.serialNumberId ?? null,
-        unit_id: input.unitId,
-        movement_type: input.movementType,
-        qty_delta: input.qtyDelta,
-        qty_before: before.qtyOnHand,
-        qty_after: after.qtyOnHand,
-        unit_cost: input.unitCost ?? null,
-        source_type: input.sourceType,
-        source_id: input.sourceId,
-        reason: input.reason ?? null,
-        occurred_at: occurredAt,
-        device_id: input.deviceId ?? null,
-        offline_transaction_id: input.offlineTransactionId ?? null,
-        operation_id: input.operationId,
-        sync_state: input.offlineTransactionId ? "pending" : "synced",
-        created_by: userId ?? null,
-      })
-      .select("*")
-      .single();
-    if (movErr) throw movErr;
+    const movementPayload = {
+      organization_id: input.organizationId,
+      branch_id: input.branchId,
+      warehouse_id: input.warehouseId,
+      product_id: input.productId,
+      variant_id: input.variantId ?? null,
+      batch_id: input.batchId ?? null,
+      serial_number_id: input.serialNumberId ?? null,
+      unit_id: baseUnitId,
+      movement_type: input.movementType,
+      qty_delta: qtyBase,
+      qty_before: before.qtyOnHand,
+      qty_after: after.qtyOnHand,
+      unit_cost: input.unitCost ?? null,
+      source_type: input.sourceType,
+      source_id: input.sourceId,
+      reason: input.reason ?? null,
+      occurred_at: occurredAt,
+      device_id: input.deviceId ?? null,
+      offline_transaction_id: input.offlineTransactionId ?? null,
+      operation_id: input.operationId,
+      sync_state: input.offlineTransactionId ? "pending" : "synced",
+      created_by: userId ?? null,
+    };
 
-    const { data: updated, error: balErr } = await this.db
-      .from("stock_balances")
-      .update({
-        qty_on_hand: after.qtyOnHand,
-        qty_reserved: after.qtyReserved,
-        qty_damaged: after.qtyDamaged,
-        qty_in_transit: after.qtyInTransit,
-        average_unit_cost: averageUnitCost,
-        last_movement_at: occurredAt,
-        updated_at: new Date().toISOString(),
-        version: Number(balance.version) + 1,
-      })
-      .eq("id", balance.id)
-      .eq("version", balance.version)
-      .select("*")
-      .maybeSingle();
-    if (balErr) throw balErr;
-    if (!updated) {
-      throw new ValidationDomainError("Concurrent stock update conflict");
-    }
+    const atomic = await this.applyMovementAtomic({
+      movement: movementPayload,
+      balanceId: String(balance.id),
+      expectedVersion: Number(balance.version),
+      qtyOnHand: after.qtyOnHand,
+      qtyReserved: after.qtyReserved,
+      qtyDamaged: after.qtyDamaged,
+      qtyInTransit: after.qtyInTransit,
+      averageUnitCost,
+      occurredAt,
+    });
 
     if (input.serialNumberId) {
       await this.db.from("stock_serial_movements").insert({
         organization_id: input.organizationId,
         serial_id: input.serialNumberId,
-        stock_movement_id: movement.id,
+        stock_movement_id: atomic.id,
         from_status: null,
         to_status: serialStatusForMovement(input.movementType),
         occurred_at: occurredAt,
@@ -262,6 +273,105 @@ export class InventoryRepository {
         .eq("id", input.serialNumberId);
     }
 
+    return atomic;
+  }
+
+  private async listConversionRules(
+    organizationId: string,
+    productId: string,
+  ): Promise<UnitConversionRule[]> {
+    const { data, error } = await this.db
+      .from("unit_conversions")
+      .select("product_id,from_unit_id,to_unit_id,factor")
+      .eq("organization_id", organizationId)
+      .is("deleted_at", null);
+    if (error) throw error;
+    return (data ?? [])
+      .filter((r) => !r.product_id || String(r.product_id) === productId)
+      .map((r) => ({
+        productId: r.product_id ? String(r.product_id) : null,
+        fromUnitId: String(r.from_unit_id),
+        toUnitId: String(r.to_unit_id),
+        factor: String(r.factor),
+      }));
+  }
+
+  /**
+   * Prefer Postgres RPC (one transaction). If the function is not deployed, fall back
+   * to two sequential writes — that fallback is NOT atomic.
+   */
+  private async applyMovementAtomic(input: {
+    movement: Row;
+    balanceId: string;
+    expectedVersion: number;
+    qtyOnHand: string;
+    qtyReserved: string;
+    qtyDamaged: string;
+    qtyInTransit: string;
+    averageUnitCost: string;
+    occurredAt: string;
+  }): Promise<StockMovement> {
+    const jsonMovement: Record<string, string> = {};
+    for (const [k, v] of Object.entries(input.movement)) {
+      jsonMovement[k] = v == null ? "" : String(v);
+    }
+
+    const rpc = await this.db.rpc("apply_stock_movement_atomic", {
+      p_movement: jsonMovement,
+      p_balance_id: input.balanceId,
+      p_expected_version: input.expectedVersion,
+      p_qty_on_hand: Number(input.qtyOnHand),
+      p_qty_reserved: Number(input.qtyReserved),
+      p_qty_damaged: Number(input.qtyDamaged),
+      p_qty_in_transit: Number(input.qtyInTransit),
+      p_average_unit_cost: Number(input.averageUnitCost),
+      p_occurred_at: input.occurredAt,
+    });
+
+    if (!rpc.error && rpc.data) {
+      return mapMovement(rpc.data as Row);
+    }
+
+    const missingFn =
+      rpc.error &&
+      (/apply_stock_movement_atomic/i.test(rpc.error.message) ||
+        rpc.error.code === "PGRST202" ||
+        rpc.error.code === "42883");
+    if (!missingFn) {
+      const msg = rpc.error?.message ?? "Stock movement failed";
+      if (/concurrent stock update conflict/i.test(msg)) {
+        throw new ValidationDomainError("Concurrent stock update conflict");
+      }
+      throw rpc.error;
+    }
+
+    const { data: movement, error: movErr } = await this.db
+      .from("stock_movements")
+      .insert(input.movement)
+      .select("*")
+      .single();
+    if (movErr) throw movErr;
+
+    const { data: updated, error: balErr } = await this.db
+      .from("stock_balances")
+      .update({
+        qty_on_hand: input.qtyOnHand,
+        qty_reserved: input.qtyReserved,
+        qty_damaged: input.qtyDamaged,
+        qty_in_transit: input.qtyInTransit,
+        average_unit_cost: input.averageUnitCost,
+        last_movement_at: input.occurredAt,
+        updated_at: new Date().toISOString(),
+        version: input.expectedVersion + 1,
+      })
+      .eq("id", input.balanceId)
+      .eq("version", input.expectedVersion)
+      .select("*")
+      .maybeSingle();
+    if (balErr) throw balErr;
+    if (!updated) {
+      throw new ValidationDomainError("Concurrent stock update conflict");
+    }
     return mapMovement(movement);
   }
 

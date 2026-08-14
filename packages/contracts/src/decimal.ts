@@ -34,7 +34,8 @@ function fromScaled(value: bigint, outScale = 4): string {
   const abs = neg ? -value : value;
   const raw = abs.toString().padStart(Number(SCALE) + 1, "0");
   const whole = raw.slice(0, -Number(SCALE)) || "0";
-  const frac = raw.slice(-Number(SCALE), -Number(SCALE) + outScale);
+  const fracStart = raw.length - Number(SCALE);
+  const frac = raw.slice(fracStart, fracStart + outScale);
   const joined = frac.replace(/0+$/, "") ? `${whole}.${frac.replace(/0+$/, "")}` : whole;
   return `${neg ? "-" : ""}${joined}`;
 }
@@ -50,6 +51,14 @@ export function subtractDecimal(a: string, b: string, scale = 4): string {
 
 export function addDecimal(a: string, b: string, scale = 4): string {
   return fromScaled(toScaled(a) + toScaled(b), scale);
+}
+
+export function divideDecimal(a: string, b: string, scale = 4): string {
+  const den = toScaled(b);
+  if (den === 0n) {
+    throw new Error("Division by zero");
+  }
+  return fromScaled((toScaled(a) * FACTOR) / den, scale);
 }
 
 export function compareDecimal(a: string, b: string): number {

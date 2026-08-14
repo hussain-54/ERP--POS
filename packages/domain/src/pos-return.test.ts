@@ -4,6 +4,7 @@ import {
   inferReturnScope,
   maxReturnableQty,
   prepareSaleReturn,
+  refundSettlementPlan,
   restockDecision,
   summarizeReturnHistory,
 } from "./pos-return.js";
@@ -252,5 +253,123 @@ describe("pos return / exchange", () => {
     expect(summary.count).toBe(2);
     expect(summary.totalRefundAmount).toBe(70);
     expect(summary.byDisposition.refund).toBe(1);
+  });
+
+  it("plans full cash refund, partial cash refund, customer credit, and zero settlement", () => {
+    const cashFull = refundSettlementPlan({
+      disposition: "refund",
+      refundMethod: "cash",
+      refundAmount: 200,
+    });
+    expect(cashFull).toEqual({
+      kind: "cash_out",
+      method: "cash",
+      amount: 200,
+      paymentKind: "cash",
+    });
+    const cashPartial = refundSettlementPlan({
+      disposition: "refund",
+      refundMethod: "cash",
+      refundAmount: 100,
+    });
+    expect(cashPartial.amount).toBe(100);
+    expect(cashPartial.kind).toBe("cash_out");
+    const credit = refundSettlementPlan({
+      disposition: "credit",
+      refundMethod: "customer_credit",
+      refundAmount: 80,
+    });
+    expect(credit.kind).toBe("customer_credit");
+    expect(credit.paymentKind).toBeNull();
+    const zero = refundSettlementPlan({
+      disposition: "refund",
+      refundMethod: "cash",
+      refundAmount: 0,
+    });
+    expect(zero.kind).toBe("none");
+    const exchange = refundSettlementPlan({
+      disposition: "exchange",
+      refundMethod: null,
+      refundAmount: 50,
+    });
+    expect(exchange.kind).toBe("none");
+    expect(exchange.amount).toBe(0);
+  });
+
+  it("rejects invalid refund amounts", () => {
+    expect(() =>
+      refundSettlementPlan({ disposition: "refund", refundMethod: "cash", refundAmount: -1 }),
+    ).toThrow(/non-negative/i);
+    expect(() =>
+      refundSettlementPlan({
+        disposition: "refund",
+        refundMethod: "cash",
+        refundAmount: Number.NaN,
+      }),
+    ).toThrow(/finite/i);
+    expect(() =>
+      prepareSaleReturn({
+        disposition: "refund",
+        reasonCode: "other",
+        reasonDetail: "bad price",
+        hasCustomer: false,
+        returnable: [
+          {
+            saleItemId: saleItem,
+            productId: product,
+            unitId: unit,
+            soldQty: 1,
+            previouslyReturnedQty: 0,
+            unitPrice: 10,
+          },
+        ],
+        lines: [
+          {
+            originalSaleItemId: saleItem,
+            unitId: unit,
+            qty: 1,
+            unitPrice: -5,
+            condition: "good",
+            originalPackaging: true,
+            accessoriesComplete: true,
+          },
+        ],
+      }),
+    ).toThrow(/invalid refund amount/i);
+  });
+
+  it("keeps cash refund amount equal to returned line totals (payment consistency)", () => {
+    const prepared = prepareSaleReturn({
+      disposition: "refund",
+      reasonCode: "not_satisfied",
+      refundMethod: "cash",
+      hasCustomer: false,
+      returnable: [
+        {
+          saleItemId: saleItem,
+          productId: product,
+          unitId: unit,
+          soldQty: 2,
+          previouslyReturnedQty: 0,
+          unitPrice: 150,
+        },
+      ],
+      lines: [
+        {
+          originalSaleItemId: saleItem,
+          unitId: unit,
+          qty: 1,
+          unitPrice: 150,
+          condition: "good",
+          originalPackaging: true,
+          accessoriesComplete: true,
+        },
+      ],
+    });
+    const plan = refundSettlementPlan(prepared);
+    expect(prepared.scope).toBe("partial");
+    expect(plan.kind).toBe("cash_out");
+    expect(plan.amount).toBe(prepared.refundAmount);
+    expect(plan.amount).toBe(150);
   });
 });

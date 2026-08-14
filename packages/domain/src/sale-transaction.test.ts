@@ -1,7 +1,16 @@
 import { describe, expect, it, vi } from "vitest";
-import { SaleTransactionService, type SaleTransactionPorts } from "./sale-transaction.js";
+import { PostStockMovementSchema, UuidSchema } from "@electronic-erp/contracts";
+import {
+  SaleTransactionService,
+  saleStockMovementOperationId,
+  saleReturnStockMovementOperationId,
+  uuidFromStableSeed,
+  type SaleTransactionPorts,
+} from "./sale-transaction.js";
 import { assertDiscountAllowed } from "./discount-policy.js";
 
+const UUID_RE =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 const org = "11111111-1111-4111-8111-111111111111";
 const branch = "22222222-2222-4222-8222-222222222222";
 const warehouse = "33333333-3333-4333-8333-333333333333";
@@ -10,6 +19,20 @@ const unit = "55555555-5555-4555-8555-555555555555";
 const customer = "66666666-6666-4666-8666-666666666666";
 const method = "77777777-7777-4777-8777-777777777777";
 const key = "88888888-8888-4888-8888-888888888888";
+
+/** Phase 1B / 1C regression: the broken concat form that caused Postgres 22P02. */
+function legacyInvalidStockOperationId(parentOperationId: string, productId: string): string {
+  return `${parentOperationId}-${productId}`;
+}
+
+function assertValidStockOperationId(operationId: string): void {
+  expect(() => UuidSchema.parse(operationId)).not.toThrow();
+  expect(operationId).toMatch(UUID_RE);
+  // Must never be the historical UUID-UUID concat (two UUIDs joined by "-")
+  expect(operationId).not.toBe(legacyInvalidStockOperationId(key, product));
+  expect(operationId.split("-")).toHaveLength(5);
+  expect(legacyInvalidStockOperationId(key, product).split("-").length).toBeGreaterThan(5);
+}
 
 function basePorts(overrides: Partial<SaleTransactionPorts> = {}): SaleTransactionPorts {
   return {
@@ -37,6 +60,78 @@ function basePorts(overrides: Partial<SaleTransactionPorts> = {}): SaleTransacti
     ...overrides,
   };
 }
+
+describe("sale stock movement operation ids", () => {
+  it("REGRESSION (22P02): legacy UUID-UUID concat is rejected by UuidSchema / PostStockMovementSchema", () => {
+    const invalid = legacyInvalidStockOperationId(key, product);
+    expect(invalid).toBe(`${key}-${product}`);
+    expect(invalid.split("-").length).toBeGreaterThan(5);
+    expect(() => UuidSchema.parse(invalid)).toThrow(/uuid/i);
+    expect(() =>
+      PostStockMovementSchema.shape.operationId.parse(invalid),
+    ).toThrow(/uuid/i);
+  });
+
+  it("REGRESSION (22P02): sale line stock operationId is a valid UUID (contracts UuidSchema)", () => {
+    const parent = key;
+    const op = saleStockMovementOperationId(parent, product, 0, "sale");
+    assertValidStockOperationId(op);
+    expect(UuidSchema.parse(op)).toBe(op);
+    // Same inputs → same id (idempotent retries at movement layer)
+    expect(saleStockMovementOperationId(parent, product, 0, "sale")).toBe(op);
+    expect(saleStockMovementOperationId(parent, product, 1, "sale")).not.toBe(op);
+    const reverse = uuidFromStableSeed(`electronic-erp:stock-movement:reverse-of:${op}`);
+    assertValidStockOperationId(reverse);
+    expect(reverse).not.toBe(op);
+  });
+
+  it("return/exchange stock operation ids are deterministic UUIDs (not random)", () => {
+    const ex = saleReturnStockMovementOperationId(key, product, "ex", unit);
+    assertValidStockOperationId(ex);
+    expect(saleReturnStockMovementOperationId(key, product, "ex", unit)).toBe(ex);
+    expect(saleReturnStockMovementOperationId(key, product, "in")).not.toBe(ex);
+    expect(saleReturnStockMovementOperationId(key, product, "dmg")).not.toBe(ex);
+  });
+
+  it("REGRESSION (22P02): postSale passes only schema-valid stock operationIds (never UUID-UUID)", async () => {
+    const ports = basePorts();
+    const service = new SaleTransactionService(ports);
+    await service.postSale({
+      organizationId: org,
+      branchId: branch,
+      warehouseId: warehouse,
+      items: [
+        { productId: product, unitId: unit, qty: 1, unitPrice: 100, discount: 0, tax: 0 },
+        {
+          productId: "44444444-4444-4444-8444-444444444445",
+          unitId: unit,
+          qty: 2,
+          unitPrice: 50,
+          discount: 0,
+          tax: 0,
+        },
+      ],
+      payments: [{ paymentMethodId: method, amount: 200 }],
+      discounts: [],
+      idempotencyKey: key,
+    });
+
+    expect(ports.postStockSale).toHaveBeenCalledTimes(2);
+    const ops = (ports.postStockSale as ReturnType<typeof vi.fn>).mock.calls.map(
+      (c) => (c[0] as { operationId: string }).operationId,
+    );
+    for (const op of ops) {
+      assertValidStockOperationId(op);
+      expect(PostStockMovementSchema.shape.operationId.parse(op)).toBe(op);
+      expect(op).not.toMatch(
+        new RegExp(
+          `^${key}-${product}|^${key}-44444444-4444-4444-8444-444444444445$`,
+        ),
+      );
+    }
+    expect(ops[0]).not.toBe(ops[1]);
+  });
+});
 
 describe("discount approval", () => {
   it("enforces ladder: cashier 5%, supervisor 10%, manager 20%, owner 50%, special unlimited", () => {
@@ -156,8 +251,39 @@ describe("SaleTransactionService", () => {
       expect.objectContaining({ status: "draft", posted_at: null }),
     );
     expect(ports.postStockSale).toHaveBeenCalledWith(
-      expect.objectContaining({ qty: "2.5", productId: product }),
+      expect.objectContaining({
+        qty: "2.5",
+        productId: product,
+        operationId: expect.stringMatching(
+          /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i,
+        ),
+      }),
     );
+  });
+
+  it("still returns a posted sale if post-commit audit fails (invalid device_id)", async () => {
+    const ports = basePorts({
+      postAudit: vi.fn(async () => {
+        throw new Error("insert or update on table audit_logs violates foreign key constraint");
+      }),
+    });
+    const service = new SaleTransactionService(ports);
+    const result = await service.postSale({
+      organizationId: org,
+      branchId: branch,
+      warehouseId: warehouse,
+      items: [{ productId: product, unitId: unit, qty: 1, unitPrice: 10, discount: 0, tax: 0 }],
+      payments: [{ paymentMethodId: method, amount: 10 }],
+      discountTotal: 0,
+      discounts: [],
+      idempotencyKey: key,
+      deviceId: "99999999-9999-4999-8999-999999999999",
+    });
+    expect(result.id).toBe("aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa");
+    expect(result.invoiceNumber).toBe("INV-1");
+    expect(ports.finalizeSaleStatus).toHaveBeenCalled();
+    expect(ports.postAudit).toHaveBeenCalled();
+    expect(ports.voidIncompleteSale).not.toHaveBeenCalled();
   });
 
   it("prevents duplicate sync via idempotency for posted sales", async () => {
@@ -187,6 +313,56 @@ describe("SaleTransactionService", () => {
     expect(result.paidTotal).toBe(10);
     expect(ports.postSaleRecord).not.toHaveBeenCalled();
     expect(ports.postStockSale).not.toHaveBeenCalled();
+  });
+
+  it("same idempotency request twice: first posts, second returns existing without second stock deduction", async () => {
+    let posted: Record<string, unknown> | null = null;
+    let stockCalls = 0;
+    const ports = basePorts({
+      findSaleByIdempotency: vi.fn(async () => posted),
+      postSaleRecord: vi.fn(async (payload) => {
+        posted = {
+          id: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+          invoice_number: "INV-IDEMP",
+          status: "draft",
+          paid_total: 0,
+          remaining_total: Number(payload.grand_total ?? 100),
+          grand_total: Number(payload.grand_total ?? 100),
+          idempotency_key: payload.idempotency_key,
+        };
+        return { id: String(posted.id), invoiceNumber: "INV-IDEMP" };
+      }),
+      postStockSale: vi.fn(async () => {
+        stockCalls += 1;
+      }),
+      finalizeSaleStatus: vi.fn(async () => {
+        if (posted) posted = { ...posted, status: "posted", paid_total: 100, remaining_total: 0 };
+      }),
+    });
+    const service = new SaleTransactionService(ports);
+    const input = {
+      organizationId: org,
+      branchId: branch,
+      warehouseId: warehouse,
+      items: [{ productId: product, unitId: unit, qty: 1, unitPrice: 100, discount: 0, tax: 0 }],
+      payments: [{ paymentMethodId: method, amount: 100 }],
+      discounts: [],
+      idempotencyKey: key,
+    };
+
+    const first = await service.postSale(input);
+    expect(first.invoiceNumber).toBe("INV-IDEMP");
+    expect(stockCalls).toBe(1);
+    expect(ports.finalizeSaleStatus).toHaveBeenCalledTimes(1);
+
+    const second = await service.postSale(input);
+    expect(second.invoiceNumber).toBe("INV-IDEMP");
+    expect(second.id).toBe(first.id);
+    expect(stockCalls).toBe(1);
+    expect(ports.postStockSale).toHaveBeenCalledTimes(1);
+    expect(ports.postSaleRecord).toHaveBeenCalledTimes(1);
+    expect(ports.postSplitPayment).toHaveBeenCalledTimes(1);
+    expect(ports.finalizeSaleStatus).toHaveBeenCalledTimes(1);
   });
 
   it("rejects duplicate submission while draft finalization is in progress", async () => {
@@ -269,8 +445,16 @@ describe("SaleTransactionService", () => {
 
     expect(ports.reverseStockSale).toHaveBeenCalledTimes(1);
     expect(ports.reverseStockSale).toHaveBeenCalledWith(
-      expect.objectContaining({ productId: product, operationId: expect.stringContaining("reverse") }),
+      expect.objectContaining({ productId: product, operationId: expect.stringMatching(UUID_RE) }),
     );
+    const forwardOp = (ports.postStockSale as ReturnType<typeof vi.fn>).mock.calls[0]?.[0]
+      ?.operationId as string;
+    const reverseOp = (ports.reverseStockSale as ReturnType<typeof vi.fn>).mock.calls[0]?.[0]
+      ?.operationId as string;
+    expect(forwardOp).toMatch(UUID_RE);
+    expect(reverseOp).toMatch(UUID_RE);
+    expect(reverseOp).not.toBe(forwardOp);
+    expect(forwardOp.includes("-" + product)).toBe(false);
     expect(ports.finalizeSaleStatus).not.toHaveBeenCalled();
     expect(ports.voidIncompleteSale).toHaveBeenCalled();
   });
@@ -297,6 +481,11 @@ describe("SaleTransactionService", () => {
 
     expect(ports.postStockSale).toHaveBeenCalled();
     expect(ports.reverseStockSale).toHaveBeenCalled();
+    const fwd = (ports.postStockSale as ReturnType<typeof vi.fn>).mock.calls[0]?.[0]?.operationId as string;
+    const rev = (ports.reverseStockSale as ReturnType<typeof vi.fn>).mock.calls[0]?.[0]?.operationId as string;
+    expect(fwd).toMatch(UUID_RE);
+    expect(rev).toMatch(UUID_RE);
+    expect(rev).not.toBe(fwd);
     expect(ports.finalizeSaleStatus).not.toHaveBeenCalled();
     expect(ports.voidIncompleteSale).toHaveBeenCalled();
   });

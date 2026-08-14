@@ -99,12 +99,13 @@ describe("pos hold lifecycle", () => {
   });
 
   it("enforces hold actions and ownership", () => {
-    expect(() => assertHoldActionAllowed(base, "resume", { actorUserId: base.heldBy })).not.toThrow();
+    const now = new Date("2026-08-12T09:00:00.000Z");
+    expect(() => assertHoldActionAllowed(base, "resume", { actorUserId: base.heldBy, now })).not.toThrow();
     expect(() =>
-      assertHoldActionAllowed(base, "resume", { actorUserId: "other" }),
+      assertHoldActionAllowed(base, "resume", { actorUserId: "other", now }),
     ).toThrow(/another cashier/i);
     expect(() =>
-      assertHoldActionAllowed(base, "resume", { actorUserId: "other", resumeAny: true }),
+      assertHoldActionAllowed(base, "resume", { actorUserId: "other", resumeAny: true, now }),
     ).not.toThrow();
     expect(() =>
       assertHoldActionAllowed(
@@ -135,13 +136,14 @@ describe("pos hold lifecycle", () => {
   });
 
   it("supports edit, duplicate, transfer, cancel action gates", () => {
-    expect(() => assertHoldActionAllowed(base, "edit", { actorUserId: base.heldBy })).not.toThrow();
-    expect(() => assertHoldActionAllowed(base, "duplicate")).not.toThrow();
+    const now = new Date("2026-08-12T09:00:00.000Z");
+    expect(() => assertHoldActionAllowed(base, "edit", { actorUserId: base.heldBy, now })).not.toThrow();
+    expect(() => assertHoldActionAllowed(base, "duplicate", { now })).not.toThrow();
     expect(() =>
-      assertHoldActionAllowed(base, "transfer", { actorUserId: base.heldBy }),
+      assertHoldActionAllowed(base, "transfer", { actorUserId: base.heldBy, now }),
     ).not.toThrow();
     expect(() =>
-      assertHoldActionAllowed(base, "cancel", { actorUserId: base.heldBy }),
+      assertHoldActionAllowed(base, "cancel", { actorUserId: base.heldBy, now }),
     ).not.toThrow();
   });
 });

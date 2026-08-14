@@ -80,6 +80,14 @@ Desktop.ini
 supabase/.branches/
 supabase/.temp/
 
+# Local verification dumps (not source of truth)
+apps/api/.health-out.txt
+apps/api/.health-err.txt
+PHASE-*-LIVE-RESULT.json
+PHASE-1C-STEP*.json
+PHASE-1B-live-results.json
+PHASE-1B-typecheck.txt
+
 # Electron installers / packaged apps
 *.exe
 *.dmg

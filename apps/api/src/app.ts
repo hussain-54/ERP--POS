@@ -12,7 +12,6 @@ import { purchasesRouter } from "./routes/purchases.js";
 import { afterSalesRouter } from "./routes/after-sales.js";
 import { accountingRouter } from "./routes/accounting.js";
 import { adminRouter } from "./routes/admin.js";
-import { syncRouter } from "./routes/sync.js";
 import { hardwareRouter } from "./routes/hardware.js";
 import { reportsRouter } from "./routes/reports.js";
 import { commerceRouter } from "./routes/commerce.js";
@@ -104,7 +103,6 @@ export function createApp() {
   app.use("/api/v1/after-sales", afterSalesRouter);
   app.use("/api/v1/accounting", accountingRouter);
   app.use("/api/v1/admin", adminRouter);
-  app.use("/api/v1/sync", syncRouter);
   app.use("/api/v1/hardware", hardwareRouter);
   app.use("/api/v1/reports", reportsRouter);
   app.use("/api/v1", commerceRouter);

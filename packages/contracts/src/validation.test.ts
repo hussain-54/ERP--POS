@@ -1,8 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { CreateJournalEntrySchema } from "./accounting.js";
-import { LoginSchema } from "./user.js";
-import { CreateSaleSchema } from "./sale.js";
-import { MoneySchema, QuantitySchema, UuidSchema } from "./common.js";
+import { CreateJournalEntrySchema, LoginSchema, CreateSaleSchema, PostSplitPaymentSchema, MoneySchema, QuantitySchema, UuidSchema } from "@electronic-erp/contracts";
 
 const uuid = "11111111-1111-4111-8111-111111111111";
 const uuid2 = "22222222-2222-4222-8222-222222222222";
@@ -50,6 +47,22 @@ describe("shared validation", () => {
       idempotencyKey: uuid,
     });
     expect(sale.items).toHaveLength(1);
+  });
+
+  it("allows walk-in refund payment without customerId", () => {
+    const parsed = PostSplitPaymentSchema.parse({
+      organizationId: uuid,
+      branchId: uuid2,
+      direction: "pay",
+      partyType: "customer",
+      splits: [{ paymentMethodId: uuid3, amount: "150.00" }],
+      billTotal: "150.00",
+      sourceType: "sale_return",
+      sourceId: uuid4,
+      idempotencyKey: uuid5,
+    });
+    expect(parsed.customerId).toBeUndefined();
+    expect(parsed.direction).toBe("pay");
   });
 
   it("rejects unbalanced journal", () => {

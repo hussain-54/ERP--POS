@@ -18,14 +18,13 @@ async function refresh() {
   ]);
 
   setText("device-id", state.deviceId);
-  setText("db-path", paths.databaseFile);
-  setText("integrity", status.integrity?.ok ? `ok (${status.integrity.detail})` : status.integrity?.detail);
+  setText("config-path", paths.configDir || paths.userData || "—");
   setText("provisioned", state.provisioned ? "yes" : "no");
   setText("first-run-message", state.message);
   setText("version", `v${status.version ?? "0.1.0"}`);
 
   const pill = $("online-pill");
-  pill.textContent = state.online ? "Online" : "Offline";
+  pill.textContent = state.online ? "🟢 Connected" : "🔴 Connection Required";
   pill.className = `pill ${state.online ? "online" : "offline"}`;
 
   $("provision-form").hidden = state.provisioned;
@@ -45,51 +44,6 @@ $("provision-form").addEventListener("submit", async (event) => {
     err.textContent = e?.message || String(e);
   }
 });
-
-$("btn-toggle-online").addEventListener("click", async () => {
-  const state = await api.getFirstRunState();
-  await api.setConnectivity(!state.online);
-  await refresh();
-});
-
-$("btn-smoke-sale").addEventListener("click", async () => {
-  const state = await api.getFirstRunState();
-  if (!state.provisioned || !state.device) {
-    alert("Provision the device first.");
-    return;
-  }
-  const sale = {
-    organizationId: state.device.organizationId,
-    branchId: state.device.branchId,
-    warehouseId: state.device.branchId,
-    idempotencyKey: crypto.randomUUID(),
-    discountTotal: 0,
-    items: [
-      {
-        productId: crypto.randomUUID(),
-        unitId: crypto.randomUUID(),
-        qty: 1,
-        unitPrice: 100,
-        discount: 0,
-        tax: 0,
-      },
-    ],
-  };
-  try {
-    const row = await api.postOfflineSale({ sale });
-    alert(`Sale posted: ${row.invoiceNumber}`);
-    await refreshPending();
-  } catch (e) {
-    alert(e?.message || String(e));
-  }
-});
-
-async function refreshPending() {
-  const rows = await api.listPendingSales();
-  $("pending-sales").textContent = JSON.stringify(rows, null, 2);
-}
-
-$("btn-pending").addEventListener("click", () => refreshPending());
 
 $("btn-hw").addEventListener("click", async () => {
   const status = await api.hardwareStatus();

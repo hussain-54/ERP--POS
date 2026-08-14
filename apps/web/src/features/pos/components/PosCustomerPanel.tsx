@@ -417,7 +417,7 @@ export function PosCustomerPanel({
         {historyLoading ? (
           <p className="text-sm text-[var(--pos-muted)]">Loading…</p>
         ) : history.length === 0 ? (
-          <p className="text-sm text-[var(--pos-muted)]">No recent ledger entries (online only).</p>
+          <p className="text-sm text-[var(--pos-muted)]">No recent ledger entries.</p>
         ) : (
           <ul className="space-y-2 text-sm">
             {history.map((h) => (

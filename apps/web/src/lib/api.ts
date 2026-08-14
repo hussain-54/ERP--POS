@@ -1,4 +1,5 @@
 import { env } from "./env";
+import { INTERNET_REQUIRED_MESSAGE, isNetworkFailure } from "./online-required";
 
 export class ApiError extends Error {
   constructor(
@@ -18,10 +19,18 @@ export async function apiFetch<T>(
   headers.set("Content-Type", "application/json");
   if (options.token) headers.set("Authorization", `Bearer ${options.token}`);
 
-  const res = await fetch(`${env.apiUrl}${path}`, {
-    ...options,
-    headers,
-  });
+  let res: Response;
+  try {
+    res = await fetch(`${env.apiUrl}${path}`, {
+      ...options,
+      headers,
+    });
+  } catch (err) {
+    if (isNetworkFailure(err) || (typeof navigator !== "undefined" && !navigator.onLine)) {
+      throw new ApiError(INTERNET_REQUIRED_MESSAGE, 0);
+    }
+    throw err instanceof Error ? err : new Error(String(err));
+  }
 
   if (!res.ok) {
     let message = res.statusText || `HTTP ${res.status}`;

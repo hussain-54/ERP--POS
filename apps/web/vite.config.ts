@@ -14,7 +14,6 @@ export default defineConfig({
       "@electronic-erp/domain": path.resolve(packages, "domain/src/index.ts"),
       "@electronic-erp/db": path.resolve(packages, "db/src/index.ts"),
       "@electronic-erp/hardware": path.resolve(packages, "hardware/src/index.ts"),
-      "@electronic-erp/offline": path.resolve(packages, "offline/src/index.ts"),
       "@electronic-erp/ui": path.resolve(packages, "ui/src/index.ts"),
       "@electronic-erp/ui/styles.css": path.resolve(packages, "ui/src/styles.css"),
     },

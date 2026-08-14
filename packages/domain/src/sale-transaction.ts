@@ -6,6 +6,64 @@ import { ValidationDomainError } from "./errors.js";
 import { assertPosPaymentPrepared, preparePosPayments } from "./pos-payment.js";
 import { buildSaleFinalizationAuditRow } from "./sale-finalization.js";
 import { buildCommissionAccrual } from "./pos-commission.js";
+import { sha256Utf8 } from "./sha256.js";
+
+/**
+ * Derive a RFC4122-shaped UUID from a stable seed (SHA-256).
+ * Used so stock_movements.operation_id stays a real UUID while remaining
+ * deterministic for (parentOp, product, line, purpose) — preserves per-line
+ * idempotency under unique (organization_id, operation_id).
+ * Parent sale correlation remains sales.operation_id + movements.source_id.
+ *
+ * ID relationship (do not conflate):
+ * - idempotencyKey → sales.idempotency_key — **sale-level** duplicate gate (posted → return; draft → reject)
+ * - operationId (sale) = input.operationId ?? idempotencyKey → sales.operation_id / payment.operation_id
+ * - stock movement operation_id = saleStockMovementOperationId(...) — **per-line** UUID; NEVER parent+"-"+product
+ * - sale id → stock_movements.source_id / payment source_id — business correlation
+ * - payment id → payments row; payment duplicates also keyed by same sale idempotencyKey
+ *
+ * Double-submit of a posted sale must hit findSaleByIdempotency and skip all stock writes.
+ * Inventory unique (organization_id, operation_id) is a second line of defense for movement retries.
+ *
+ * Uses pure-JS SHA-256 (not node:crypto) so Vite web builds can import this module.
+ */
+export function uuidFromStableSeed(seed: string): string {
+  const hash = sha256Utf8(seed);
+  const bytes = hash.subarray(0, 16);
+  bytes[6] = (bytes[6]! & 0x0f) | 0x50; // UUID version 5
+  bytes[8] = (bytes[8]! & 0x3f) | 0x80; // RFC 4122 variant
+  let hex = "";
+  for (let i = 0; i < 16; i++) {
+    hex += bytes[i]!.toString(16).padStart(2, "0");
+  }
+  return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-${hex.slice(12, 16)}-${hex.slice(16, 20)}-${hex.slice(20, 32)}`;
+}
+
+/** Per-line stock write id — never concatenate UUID strings. */
+export function saleStockMovementOperationId(
+  parentOperationId: string,
+  productId: string,
+  lineIndex: number,
+  purpose: "sale" | "reverse",
+): string {
+  return uuidFromStableSeed(
+    `electronic-erp:stock-movement:${purpose}:${parentOperationId}:${productId}:${lineIndex}`,
+  );
+}
+
+/** Return/exchange stock ids — never concatenate UUID strings. Keep `in`/`dmg` seeds stable with Phase 1C/3A. */
+export function saleReturnStockMovementOperationId(
+  idempotencyKey: string,
+  originalSaleItemId: string,
+  purpose: "in" | "dmg" | "ex",
+  exchangeProductId?: string,
+): string {
+  const seed =
+    purpose === "ex" && exchangeProductId
+      ? `electronic-erp:stock-movement:sale_return:ex:${idempotencyKey}:${originalSaleItemId}:${exchangeProductId}`
+      : `electronic-erp:stock-movement:sale_return:${purpose}:${idempotencyKey}:${originalSaleItemId}`;
+  return uuidFromStableSeed(seed);
+}
 
 export type StockSaleLine = {
   organizationId: string;
@@ -95,7 +153,7 @@ function readExistingSale(existing: object): {
 /**
  * Central sale orchestration — UI must NOT duplicate stock/ledger/payment/accounting writes.
  * All side effects go through ports implemented by the POS repository (Supabase online).
- * Offline desktop posts via OfflinePosEngine → sync → PosRepository (same domain path).
+ * Local SQLite offline database has been removed; online API is the only write path.
  *
  * Finalization workflow (safe domain transaction):
  * 1. Idempotency — return posted sale; reject in-progress draft; block void reuse via port
@@ -285,7 +343,8 @@ export class SaleTransactionService {
       await this.ports.postSaleItems(sale.id, lineRows);
       if (audits.length) await this.ports.postDiscountAudits(sale.id, audits);
 
-      for (const item of items) {
+      for (let lineIndex = 0; lineIndex < items.length; lineIndex += 1) {
+        const item = items[lineIndex]!;
         if (item.isManual || !item.productId) continue;
         const stockLine: StockSaleLine = {
           organizationId: input.organizationId,
@@ -295,7 +354,13 @@ export class SaleTransactionService {
           unitId: item.unitId,
           qty: String(qtyNumber(item.qty)),
           saleId: sale.id,
-          operationId: `${operationId}-${item.productId}`,
+          // Valid UUID per line; parent correlation remains sales.operation_id + source_id=saleId
+          operationId: saleStockMovementOperationId(
+            operationId,
+            item.productId,
+            lineIndex,
+            "sale",
+          ),
           batchId: item.batchId,
           serialNumberId: item.serialNumberId,
         };
@@ -449,19 +514,23 @@ export class SaleTransactionService {
     });
 
     if (this.ports.postAudit) {
-      await this.ports.postAudit(
-        buildSaleFinalizationAuditRow({
-          organizationId: input.organizationId,
-          branchId: input.branchId,
-          saleId: sale.id,
-          invoiceNumber: sale.invoiceNumber,
-          actorUserId: userId,
-          deviceId: input.deviceId,
-          grandTotal: totals.grandTotal,
-          paidTotal,
-          status: "posted",
-        }),
-      );
+      try {
+        await this.ports.postAudit(
+          buildSaleFinalizationAuditRow({
+            organizationId: input.organizationId,
+            branchId: input.branchId,
+            saleId: sale.id,
+            invoiceNumber: sale.invoiceNumber,
+            actorUserId: userId,
+            deviceId: input.deviceId,
+            grandTotal: totals.grandTotal,
+            paidTotal,
+            status: "posted",
+          }),
+        );
+      } catch {
+        // Sale is already posted. Invalid audit_logs.device_id FK must not fail the API.
+      }
     }
 
     return {
@@ -484,7 +553,10 @@ export class SaleTransactionService {
         try {
           await this.ports.reverseStockSale({
             ...line,
-            operationId: `${line.operationId}-reverse`,
+            // Distinct valid UUID from the forward movement (never stringify-suffix UUIDs)
+            operationId: uuidFromStableSeed(
+              `electronic-erp:stock-movement:reverse-of:${line.operationId}`,
+            ),
           });
         } catch {
           // Best-effort reverse; void still runs so sale is not marked completed.

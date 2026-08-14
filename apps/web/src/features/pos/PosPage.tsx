@@ -58,6 +58,21 @@ import {
   type ProductTab,
 } from "./pos-types";
 import { cameraScanner } from "./hardware";
+import {
+  formatOnlineFailure,
+  INTERNET_REQUIRED_MESSAGE,
+  INTERNET_REQUIRED_TITLE,
+  requireInternetConnection,
+} from "@/lib/online-required";
+
+/** @deprecated use requireInternetConnection — kept name for call-site clarity in POS */
+function requireOnlineForPos(
+  online: boolean,
+  push: (t: { title: string; description?: string; tone: "danger" | "success" | "info" }) => void,
+): boolean {
+  if (online) return true;
+  return requireInternetConnection(push);
+}
 
 const FAVORITES_KEY = "erp-pos-favorites";
 const FAVORITES_DATA_KEY = "erp-pos-favorites-data";
@@ -384,6 +399,10 @@ export function PosPage() {
       setResults([]);
       return;
     }
+    if (!online) {
+      setResults([]);
+      return;
+    }
     const handle = window.setTimeout(() => {
       void (async () => {
         setSearching(true);
@@ -396,9 +415,10 @@ export function PosPage() {
           setResults(res.items);
           setTab("results");
         } catch (err) {
+          const failed = formatOnlineFailure(err, "generic");
           toast.push({
-            title: "Search failed",
-            description: err instanceof Error ? err.message : "Error",
+            title: failed.title,
+            description: failed.description,
             tone: "danger",
           });
         } finally {
@@ -407,7 +427,7 @@ export function PosPage() {
       })();
     }, 220);
     return () => window.clearTimeout(handle);
-  }, [q, warehouseId, customerId, toast]);
+  }, [q, warehouseId, customerId, toast, online]);
 
   useEffect(() => {
     if (walkIn || !customerQuery.trim() || !hasPermission("customers.read")) {
@@ -416,10 +436,13 @@ export function PosPage() {
     }
     const orgId = organizationId ?? "";
     const handle = window.setTimeout(() => {
+      if (!online) {
+        setCustomerHits([]);
+        return;
+      }
       void posCustomerRepository
         .search({
           q: customerQuery,
-          online,
           organizationId: orgId,
           canRead: hasPermission("customers.read"),
         })
@@ -543,7 +566,6 @@ export function PosPage() {
     try {
       const profile = await posCustomerRepository.get({
         id,
-        online,
         organizationId: organizationId ?? "",
         canRead: hasPermission("customers.read"),
         canViewLoyalty: hasPermission("loyalty.view") || hasPermission("loyalty.manage"),
@@ -570,13 +592,12 @@ export function PosPage() {
     setCreatingCustomer(true);
     try {
       const created = await posCustomerRepository.create({
-        online,
         organizationId: organizationId ?? "",
         canWrite: hasPermission("customers.write"),
         body: input,
       });
       toast.push({
-        title: online ? "Customer created" : "Customer saved offline",
+        title: "Customer created",
         tone: "success",
       });
       await selectCustomer(created.id);
@@ -616,7 +637,6 @@ export function PosPage() {
       if (input.cnic?.trim()) patch.cnic = input.cnic.trim();
       await posCustomerRepository.update({
         id,
-        online,
         organizationId: organizationId ?? "",
         canWrite: hasPermission("customers.write"),
         patch,
@@ -637,6 +657,7 @@ export function PosPage() {
 
   async function checkout() {
     if (busy || paymentConfirmation === "pending") return;
+    if (!requireOnlineForPos(online, toast.push)) return;
 
     const kindById = new Map(methods.map((m) => [m.id, m.kind ?? m.code ?? ""]));
     const prep = preparePosPayments({
@@ -824,14 +845,14 @@ export function PosPage() {
         tone: "success",
       });
     } catch (err) {
-      const message = err instanceof Error ? err.message : "Error";
-      paymentGateRef.current.fail(idempotencyKey, message);
+      const failed = formatOnlineFailure(err, "payment");
+      paymentGateRef.current.fail(idempotencyKey, failed.description);
       setPaymentConfirmation("failure");
-      setPaymentConfirmationError(message);
+      setPaymentConfirmationError(failed.description);
       setCheckoutIdempotencyKey(uuid());
       toast.push({
-        title: "Payment failed",
-        description: message,
+        title: failed.title,
+        description: failed.description,
         tone: "danger",
       });
     } finally {
@@ -841,6 +862,7 @@ export function PosPage() {
 
   async function holdBill() {
     if (!branchId || !warehouseId || !cart.length) return;
+    if (!requireOnlineForPos(online, toast.push)) return;
     setBusy(true);
     try {
       const cartSnapshot = buildHoldSnapshot({
@@ -874,9 +896,10 @@ export function PosPage() {
       await refreshHolds();
       setShowHolds(true);
     } catch (err) {
+      const failed = formatOnlineFailure(err, "hold");
       toast.push({
-        title: "Hold failed",
-        description: err instanceof Error ? err.message : "Error",
+        title: failed.title,
+        description: failed.description,
         tone: "danger",
       });
     } finally {
@@ -904,6 +927,7 @@ export function PosPage() {
   }
 
   async function resume(id: string, andCheckout = false) {
+    if (!requireOnlineForPos(online, toast.push)) return;
     try {
       const held = await posApi.resumeHold(id, andCheckout);
       const snap =
@@ -922,9 +946,10 @@ export function PosPage() {
         setTimeout(() => void checkout(), 0);
       }
     } catch (err) {
+      const failed = formatOnlineFailure(err, "hold");
       toast.push({
-        title: "Resume failed",
-        description: err instanceof Error ? err.message : "Error",
+        title: failed.title,
+        description: failed.description,
         tone: "danger",
       });
     }
@@ -1278,6 +1303,15 @@ export function PosPage() {
         }
       >
         <div className="flex min-h-0 flex-1 flex-col">
+          {!online ? (
+            <div
+              role="alert"
+              className="mx-3 mt-3 rounded-[var(--pos-radius)] border border-[var(--pos-danger)] bg-[var(--pos-danger-soft,rgba(220,38,38,0.08))] px-3 py-2 text-sm text-[var(--pos-danger)]"
+            >
+              <strong>{INTERNET_REQUIRED_TITLE}</strong>
+              <span className="mt-0.5 block opacity-90">{INTERNET_REQUIRED_MESSAGE}</span>
+            </div>
+          ) : null}
           <div className="grid min-h-0 flex-1 gap-3 p-3 xl:grid-cols-[minmax(0,1.4fr)_minmax(340px,0.95fr)]">
             <div className="flex min-h-0 flex-col gap-3">
               <div className="flex flex-wrap items-center gap-2">
@@ -1339,7 +1373,6 @@ export function PosPage() {
                     ? (id) =>
                         posCustomerRepository.history({
                           id,
-                          online,
                           canRead:
                             hasPermission("customers.read") || hasPermission("ledgers.view"),
                         })

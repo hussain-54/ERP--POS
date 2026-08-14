@@ -3,6 +3,7 @@ import {
   DecimalStringSchema,
   addDecimal,
   compareDecimal,
+  divideDecimal,
   multiplyDecimal,
   subtractDecimal,
 } from "./decimal.js";
@@ -30,5 +31,10 @@ describe("decimal precision", () => {
     expect(addDecimal("12.5", "-2.75")).toBe("9.75");
     expect(addDecimal("10", "-10")).toBe("0");
     expect(compareDecimal("-1", "0")).toBe(-1);
+  });
+
+  it("divides conversion factors without float drift", () => {
+    expect(divideDecimal("20", "10")).toBe("2");
+    expect(divideDecimal("1", "10", 6)).toBe("0.1");
   });
 });

@@ -9,9 +9,6 @@ const ALLOWED = new Set([
   "desktop:getPaths",
   "desktop:getFirstRunState",
   "desktop:provisionDevice",
-  "desktop:setConnectivity",
-  "desktop:postOfflineSale",
-  "desktop:listPendingSales",
   "desktop:hardwareStatus",
   "desktop:printReceipt",
   "desktop:openCashDrawer",
@@ -22,8 +19,6 @@ const ALLOWED = new Set([
   "desktop:downloadUpdate",
   "desktop:quitAndInstall",
   "desktop:openExternal",
-  "desktop:syncNow",
-  "desktop:syncStatus",
 ]);
 
 function invoke(channel, ...args) {
@@ -38,11 +33,6 @@ contextBridge.exposeInMainWorld("electronicErpDesktop", {
   getPaths: () => invoke("desktop:getPaths"),
   getFirstRunState: () => invoke("desktop:getFirstRunState"),
   provisionDevice: (input) => invoke("desktop:provisionDevice", input),
-  setConnectivity: (online) => invoke("desktop:setConnectivity", online),
-  postOfflineSale: (payload) => invoke("desktop:postOfflineSale", payload),
-  listPendingSales: () => invoke("desktop:listPendingSales"),
-  syncNow: () => invoke("desktop:syncNow"),
-  syncStatus: () => invoke("desktop:syncStatus"),
   hardwareStatus: () => invoke("desktop:hardwareStatus"),
   printReceipt: (job) => invoke("desktop:printReceipt", job),
   openCashDrawer: () => invoke("desktop:openCashDrawer"),

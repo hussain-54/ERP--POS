@@ -2,6 +2,10 @@ import { useState, type FormEvent } from "react";
 import { Button, Card, Form, FormActions, Input, Select, useToast } from "@electronic-erp/ui";
 import { inventoryApi } from "./inventory-api";
 import { useAuth } from "@/features/auth/AuthContext";
+import {
+  formatOnlineFailure,
+  requireInternetConnection,
+} from "@/lib/online-required";
 
 const MOVEMENT_TYPES = [
   "opening",
@@ -67,6 +71,7 @@ export function StockOpsPage() {
   async function postMovement(e: FormEvent) {
     e.preventDefault();
     if (!branchId) return;
+    if (!requireInternetConnection(toast.push)) return;
     try {
       await inventoryApi.postMovement({
         branchId,
@@ -82,9 +87,10 @@ export function StockOpsPage() {
       });
       toast.push({ title: "Movement posted", tone: "success" });
     } catch (err) {
+      const failed = formatOnlineFailure(err, "stock");
       toast.push({
-        title: "Movement failed",
-        description: err instanceof Error ? err.message : "Error",
+        title: failed.title,
+        description: failed.description,
         tone: "danger",
       });
     }

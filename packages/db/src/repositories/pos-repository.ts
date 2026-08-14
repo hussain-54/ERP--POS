@@ -20,7 +20,9 @@ import {
   holdMustNotReduceInventory,
   maxReturnableQty,
   prepareSaleReturn,
+  refundSettlementPlan,
   SaleTransactionService,
+  saleReturnStockMovementOperationId,
   statusAfterExpiry,
   summarizeReturnHistory,
   summarizeSaleManagement,
@@ -730,14 +732,6 @@ export class PosRepository {
   }
 
   async postReturn(input: CreateSaleReturnInput, userId?: string | null) {
-    const { data: existing } = await this.db
-      .from("sale_returns")
-      .select("*")
-      .eq("organization_id", input.organizationId)
-      .eq("idempotency_key", input.idempotencyKey)
-      .maybeSingle();
-    if (existing) return existing;
-
     const { data: original, error: saleErr } = await this.db
       .from("sales")
       .select("*")
@@ -746,6 +740,26 @@ export class PosRepository {
     if (saleErr) throw saleErr;
     if (!original || !["posted", "returned", "exchanged"].includes(String(original.status))) {
       throw new ValidationDomainError("Original sale is not eligible for return");
+    }
+
+    const { data: existing } = await this.db
+      .from("sale_returns")
+      .select("*")
+      .eq("organization_id", input.organizationId)
+      .eq("idempotency_key", input.idempotencyKey)
+      .maybeSingle();
+    if (existing) {
+      await this.completeReturnSettlement({
+        organizationId: input.organizationId,
+        branchId: input.branchId,
+        warehouseId: input.warehouseId,
+        returnRow: existing,
+        original,
+        idempotencyKey: input.idempotencyKey,
+        userId,
+        deviceId: input.deviceId,
+      });
+      return existing;
     }
 
     const returnableCtx = await this.getReturnableSale(input.originalSaleId);
@@ -821,7 +835,12 @@ export class PosRepository {
       });
 
       if (item.productId && item.restock) {
-        const opBase = `${input.idempotencyKey}-${item.originalSaleItemId}`;
+        // Same rule as sale stock lines: operation_id is uuid — never string-concat UUIDs.
+        const returnOpIn = saleReturnStockMovementOperationId(
+          input.idempotencyKey,
+          item.originalSaleItemId,
+          "in",
+        );
         await this.inventory.postMovement(
           {
             organizationId: input.organizationId,
@@ -833,13 +852,18 @@ export class PosRepository {
             qtyDelta: String(item.qty),
             sourceType: "sale_return",
             sourceId: String(ret.id),
-            operationId: `${opBase}-in`,
+            operationId: returnOpIn,
             batchId: item.batchId ?? undefined,
             reason: prepared.reason,
           },
           userId,
         );
         if (item.restockTarget === "damaged") {
+          const returnOpDmg = saleReturnStockMovementOperationId(
+            input.idempotencyKey,
+            item.originalSaleItemId,
+            "dmg",
+          );
           await this.inventory.postMovement(
             {
               organizationId: input.organizationId,
@@ -851,7 +875,7 @@ export class PosRepository {
               qtyDelta: String(item.qty),
               sourceType: "sale_return",
               sourceId: String(ret.id),
-              operationId: `${opBase}-dmg`,
+              operationId: returnOpDmg,
               batchId: item.batchId ?? undefined,
               reason: `Return inspection: ${item.condition}`,
             },
@@ -872,7 +896,12 @@ export class PosRepository {
             qtyDelta: String(item.qty),
             sourceType: "sale_return",
             sourceId: String(ret.id),
-            operationId: crypto.randomUUID(),
+            operationId: saleReturnStockMovementOperationId(
+              input.idempotencyKey,
+              item.originalSaleItemId,
+              "ex",
+              item.exchangeProductId,
+            ),
             reason: `Exchange for return ${ret.id}`,
           },
           userId,
@@ -880,40 +909,20 @@ export class PosRepository {
       }
     }
 
-    // Refund settlement
-    if (prepared.disposition === "credit" || prepared.refundMethod === "customer_credit") {
-      if (original.customer_id) {
-        await this.parties.postCustomerLedger({
-          organizationId: input.organizationId,
-          branchId: input.branchId,
-          customerId: String(original.customer_id),
-          entryType: "return",
-          amount: String(prepared.refundAmount),
-          sourceType: "sale_return",
-          sourceId: String(ret.id),
-          description: `Return ${prepared.disposition}: ${prepared.reason}`,
-          userId,
-        });
-      }
-    } else if (
-      prepared.disposition === "refund" &&
-      (prepared.refundMethod === "cash" || prepared.refundMethod === "bank") &&
-      original.customer_id
-    ) {
-      // Cash/bank refund still reduces AR if the sale was on credit; walk-in cash sales skip AR.
-      // Ledger credit documents the refund against customer when present.
-      await this.parties.postCustomerLedger({
-        organizationId: input.organizationId,
-        branchId: input.branchId,
-        customerId: String(original.customer_id),
-        entryType: "return",
-        amount: String(prepared.refundAmount),
-        sourceType: "sale_return",
-        sourceId: String(ret.id),
-        description: `Refund ${prepared.refundMethod}: ${prepared.reason}`,
-        userId,
-      });
-    }
+    // Refund settlement (payments + ledger). Journal is idempotent by return key.
+    await this.settleReturnRefund({
+      organizationId: input.organizationId,
+      branchId: input.branchId,
+      returnId: String(ret.id),
+      customerId: original.customer_id ? String(original.customer_id) : null,
+      disposition: prepared.disposition,
+      refundMethod: prepared.refundMethod,
+      refundAmount: prepared.refundAmount,
+      idempotencyKey: input.idempotencyKey,
+      userId,
+      deviceId: input.deviceId,
+      reason: prepared.reason,
+    });
 
     // Sale status: full return → returned/exchanged; partial keeps posted unless already returned
     if (prepared.scope === "full") {
@@ -986,7 +995,7 @@ export class PosRepository {
         .eq("id", current.id);
     }
 
-    await this.db.from("audit_logs").insert(
+    await this.insertAuditLog(
       buildSaleReturnAuditRow({
         organizationId: input.organizationId,
         branchId: input.branchId,
@@ -1002,6 +1011,222 @@ export class PosRepository {
     );
 
     return ret;
+  }
+
+  /**
+   * Idempotent completion for a return that already has a header (retry / repair).
+   * Stock movements use stable operation_ids; payments use the return idempotency key.
+   */
+  private async completeReturnSettlement(input: {
+    organizationId: string;
+    branchId: string;
+    warehouseId: string;
+    returnRow: Row;
+    original: Row;
+    idempotencyKey: string;
+    userId?: string | null;
+    deviceId?: string;
+  }) {
+    const returnId = String(input.returnRow.id);
+    const { data: items } = await this.db
+      .from("sale_return_items")
+      .select("*")
+      .eq("sale_return_id", returnId);
+    for (const item of items ?? []) {
+      const productId = item.product_id ? String(item.product_id) : null;
+      const restocked = Boolean(item.restocked);
+      const originalSaleItemId = String(item.original_sale_item_id);
+      if (productId && restocked) {
+        const returnOpIn = saleReturnStockMovementOperationId(
+          input.idempotencyKey,
+          originalSaleItemId,
+          "in",
+        );
+        await this.inventory.postMovement(
+          {
+            organizationId: input.organizationId,
+            branchId: input.branchId,
+            warehouseId: input.warehouseId,
+            productId,
+            unitId: String(item.unit_id),
+            movementType: "sale_return",
+            qtyDelta: String(item.qty),
+            sourceType: "sale_return",
+            sourceId: returnId,
+            operationId: returnOpIn,
+            batchId: item.batch_id ? String(item.batch_id) : undefined,
+            reason: String(input.returnRow.reason ?? "Return"),
+          },
+          input.userId,
+        );
+        if (String(item.restock_target) === "damaged") {
+          const returnOpDmg = saleReturnStockMovementOperationId(
+            input.idempotencyKey,
+            originalSaleItemId,
+            "dmg",
+          );
+          await this.inventory.postMovement(
+            {
+              organizationId: input.organizationId,
+              branchId: input.branchId,
+              warehouseId: input.warehouseId,
+              productId,
+              unitId: String(item.unit_id),
+              movementType: "damage",
+              qtyDelta: String(item.qty),
+              sourceType: "sale_return",
+              sourceId: returnId,
+              operationId: returnOpDmg,
+              batchId: item.batch_id ? String(item.batch_id) : undefined,
+              reason: `Return inspection: ${item.condition}`,
+            },
+            input.userId,
+          );
+        }
+      }
+      const exchangeProductId = item.exchange_product_id ? String(item.exchange_product_id) : "";
+      if (String(input.returnRow.return_type) === "exchange" && exchangeProductId) {
+        await this.inventory.postMovement(
+          {
+            organizationId: input.organizationId,
+            branchId: input.branchId,
+            warehouseId: input.warehouseId,
+            productId: exchangeProductId,
+            unitId: String(item.unit_id),
+            movementType: "sale",
+            qtyDelta: String(item.qty),
+            sourceType: "sale_return",
+            sourceId: returnId,
+            operationId: saleReturnStockMovementOperationId(
+              input.idempotencyKey,
+              originalSaleItemId,
+              "ex",
+              exchangeProductId,
+            ),
+            reason: `Exchange for return ${returnId}`,
+          },
+          input.userId,
+        );
+      }
+    }
+
+    const disposition = String(input.returnRow.return_type) as "refund" | "credit" | "exchange";
+    const refundMethodRaw = input.returnRow.refund_method
+      ? String(input.returnRow.refund_method)
+      : null;
+    await this.settleReturnRefund({
+      organizationId: input.organizationId,
+      branchId: input.branchId,
+      returnId,
+      customerId: input.original.customer_id ? String(input.original.customer_id) : null,
+      disposition,
+      refundMethod:
+        refundMethodRaw === "cash" ||
+        refundMethodRaw === "bank" ||
+        refundMethodRaw === "customer_credit"
+          ? refundMethodRaw
+          : null,
+      refundAmount: Number(input.returnRow.refund_amount ?? 0),
+      idempotencyKey: input.idempotencyKey,
+      userId: input.userId,
+      deviceId: input.deviceId,
+      reason: String(input.returnRow.reason ?? "Return"),
+    });
+
+    await this.ensureAndPostJournal({
+      organizationId: input.organizationId,
+      branchId: input.branchId,
+      sourceType: "sale_return",
+      sourceId: returnId,
+      idempotencyKey: input.idempotencyKey,
+      memo: `Return ${returnId}`,
+      lines: buildSaleReturnJournalLines({
+        refundAmount: Number(input.returnRow.refund_amount ?? 0),
+        cogs: 0,
+      }),
+    });
+  }
+
+  private async settleReturnRefund(input: {
+    organizationId: string;
+    branchId: string;
+    returnId: string;
+    customerId: string | null;
+    disposition: "refund" | "credit" | "exchange";
+    refundMethod: "cash" | "bank" | "customer_credit" | null;
+    refundAmount: number;
+    idempotencyKey: string;
+    userId?: string | null;
+    deviceId?: string;
+    reason: string;
+  }) {
+    const plan = refundSettlementPlan({
+      disposition: input.disposition,
+      refundMethod: input.refundMethod,
+      refundAmount: input.refundAmount,
+    });
+    if (plan.kind === "none" || plan.amount < 1e-9) return;
+
+    if (plan.kind === "customer_credit") {
+      if (!input.customerId) {
+        throw new ValidationDomainError("Customer credit return requires a customer on the sale");
+      }
+      const { data: existingLedger } = await this.db
+        .from("party_ledger_entries")
+        .select("id")
+        .eq("organization_id", input.organizationId)
+        .eq("source_type", "sale_return")
+        .eq("source_id", input.returnId)
+        .limit(1)
+        .maybeSingle();
+      if (existingLedger) return;
+      await this.parties.postCustomerLedger({
+        organizationId: input.organizationId,
+        branchId: input.branchId,
+        customerId: input.customerId,
+        entryType: "return",
+        amount: plan.amount.toFixed(2),
+        sourceType: "sale_return",
+        sourceId: input.returnId,
+        description: `Return ${input.disposition}: ${input.reason}`,
+        userId: input.userId,
+        operationId: input.idempotencyKey,
+      });
+      return;
+    }
+
+    const methodId = await this.paymentMethodIdForKind(input.organizationId, plan.paymentKind ?? "cash");
+    await this.parties.postSplitPayment(
+      {
+        organizationId: input.organizationId,
+        branchId: input.branchId,
+        direction: "pay",
+        partyType: "customer",
+        customerId: input.customerId ?? undefined,
+        splits: [{ paymentMethodId: methodId, amount: plan.amount.toFixed(2) }],
+        billTotal: plan.amount.toFixed(2),
+        sourceType: "sale_return",
+        sourceId: input.returnId,
+        idempotencyKey: input.idempotencyKey,
+        operationId: input.idempotencyKey,
+        notes: `POS ${plan.method} refund`,
+        reference: `REFUND-${input.returnId.slice(0, 8)}`,
+        deviceId: input.deviceId,
+      },
+      input.userId,
+    );
+  }
+
+  private async paymentMethodIdForKind(organizationId: string, kind: "cash" | "bank"): Promise<string> {
+    const methods = await this.parties.listPaymentMethods(organizationId);
+    const rows = methods as Array<{ id: string; kind?: string; is_active?: boolean }>;
+    const hit =
+      rows.find((m) => m.kind === kind && m.is_active !== false) ??
+      rows.find((m) => m.kind === kind);
+    if (!hit?.id) {
+      throw new ValidationDomainError(`No ${kind} payment method configured for refunds`);
+    }
+    return String(hit.id);
   }
 
   async getInvoice(saleId: string) {
@@ -1642,8 +1867,7 @@ export class PosRepository {
         if (error) throw error;
       },
       async postAudit(row: Record<string, unknown>) {
-        const { error } = await db.from("audit_logs").insert(row);
-        if (error) throw error;
+        await self.insertAuditLog(row);
       },
     };
   }
@@ -1831,6 +2055,21 @@ export class PosRepository {
       .single();
     if (error) throw error;
     return data;
+  }
+
+  /** audit_logs.device_id FKs to devices; unknown POS local UUIDs are omitted rather than failing the write. */
+  private async insertAuditLog(row: Record<string, unknown>) {
+    const { error } = await this.db.from("audit_logs").insert(row);
+    if (!error) return;
+    const deviceFk =
+      row.device_id != null &&
+      (error.code === "23503" || /device_id|devices/i.test(error.message ?? ""));
+    if (deviceFk) {
+      const { error: retryErr } = await this.db.from("audit_logs").insert({ ...row, device_id: null });
+      if (retryErr) throw retryErr;
+      return;
+    }
+    throw error;
   }
 }
 

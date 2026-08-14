@@ -2,7 +2,7 @@
   "name": "@electronic-erp/desktop",
   "version": "0.1.0",
   "private": true,
-  "description": "Electronic ERP Windows POS — Electron + SQLite offline shell",
+  "description": "Electronic ERP Windows POS — Electron online shell (Supabase via API)",
   "main": "dist/main.js",
   "type": "module",
   "author": "Electronic ERP",
@@ -32,8 +32,7 @@
     ],
     "asar": true,
     "asarUnpack": [
-      "**/*.node",
-      "**/better-sqlite3/**"
+      "**/*.node"
     ],
     "win": {
       "target": [

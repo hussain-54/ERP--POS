@@ -54,8 +54,6 @@ export const ERP_MODULES: ErpModuleRoute[] = [
   { path: "/permissions", title: "Permissions", group: "Admin", description: "Permission matrix." },
   { path: "/audit", title: "Audit Trail", group: "Governance", description: "Immutable audit log." },
   { path: "/notifications", title: "Notifications", group: "Governance", description: "Notification center." },
-  { path: "/offline-pos", title: "Offline POS", group: "Platform", description: "Offline POS status." },
-  { path: "/sync", title: "Advanced Offline Sync", group: "Platform", description: "Sync center and conflicts." },
   { path: "/branches", title: "Multi-Branch", group: "Admin", description: "Branch administration." },
   { path: "/tax", title: "Pakistan Tax / FBR", group: "Compliance", description: "Tax readiness." },
   { path: "/import-export", title: "Import / Export", group: "Platform", description: "Data import and export." },

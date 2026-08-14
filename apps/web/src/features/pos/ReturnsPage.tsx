@@ -12,6 +12,12 @@ import {
 import { Button, Card, Input, Select, useToast } from "@electronic-erp/ui";
 import { useAuth } from "@/features/auth/AuthContext";
 import { inventoryApi } from "@/features/inventory/inventory-api";
+import {
+  formatOnlineFailure,
+  INTERNET_REQUIRED_MESSAGE,
+  INTERNET_REQUIRED_TITLE,
+  requireInternetConnection,
+} from "@/lib/online-required";
 import { posApi } from "./pos-api";
 
 function uuid() {
@@ -53,6 +59,9 @@ const STEPS: Array<{ id: WizardStep; label: string }> = [
 export function ReturnsPage() {
   const toast = useToast();
   const { branchId } = useAuth();
+  const [online, setOnline] = useState(
+    typeof navigator !== "undefined" ? navigator.onLine : true,
+  );
   const [step, setStep] = useState<WizardStep>(1);
   const [warehouseId, setWarehouseId] = useState("");
   const [invoiceNumber, setInvoiceNumber] = useState("");
@@ -81,6 +90,17 @@ export function ReturnsPage() {
     });
   }, []);
 
+  useEffect(() => {
+    const on = () => setOnline(true);
+    const off = () => setOnline(false);
+    window.addEventListener("online", on);
+    window.addEventListener("offline", off);
+    return () => {
+      window.removeEventListener("online", on);
+      window.removeEventListener("offline", off);
+    };
+  }, []);
+
   const refreshHistory = useCallback(async () => {
     if (!branchId) return;
     try {
@@ -101,6 +121,7 @@ export function ReturnsPage() {
 
   async function search() {
     if (!branchId) return;
+    if (!requireInternetConnection(toast.push)) return;
     setBusy(true);
     try {
       const res = await posApi.searchReturnInvoices({
@@ -112,9 +133,10 @@ export function ReturnsPage() {
       });
       setMatches(res.items);
     } catch (err) {
+      const failed = formatOnlineFailure(err, "generic");
       toast.push({
-        title: "Search failed",
-        description: err instanceof Error ? err.message : "Error",
+        title: failed.title,
+        description: failed.description,
         tone: "danger",
       });
     } finally {
@@ -199,6 +221,7 @@ export function ReturnsPage() {
       toast.push({ title: "Complete all return steps first", tone: "danger" });
       return;
     }
+    if (!requireInternetConnection(toast.push)) return;
     setBusy(true);
     try {
       const ret = (await posApi.postReturn({
@@ -232,9 +255,13 @@ export function ReturnsPage() {
       toast.push({ title: "Return posted", tone: "success" });
       await refreshHistory();
     } catch (err) {
+      const failed = formatOnlineFailure(
+        err,
+        disposition === "exchange" ? "exchange" : "return",
+      );
       toast.push({
-        title: "Return failed",
-        description: err instanceof Error ? err.message : "Error",
+        title: failed.title,
+        description: failed.description,
         tone: "danger",
       });
     } finally {
@@ -261,6 +288,16 @@ export function ReturnsPage() {
           sold minus previously returned.
         </p>
       </div>
+
+      {!online ? (
+        <div
+          role="alert"
+          className="rounded-xl border border-red-300 bg-red-50 px-3 py-2 text-sm text-red-800"
+        >
+          <strong>{INTERNET_REQUIRED_TITLE}</strong>
+          <span className="mt-0.5 block">{INTERNET_REQUIRED_MESSAGE}</span>
+        </div>
+      ) : null}
 
       <div className="flex flex-wrap gap-2">
         {STEPS.map((s) => (
@@ -572,7 +609,8 @@ export function ReturnsPage() {
           {preview ? (
             <div className="mt-3 rounded-lg border p-3 text-sm">
               <div>
-                Scope: <strong>{preview.scope}</strong> · Amount:{" "}
+                Scope: <strong>{preview.scope}</strong> · Method:{" "}
+                <strong>{preview.refundMethod ?? "—"}</strong> · Amount:{" "}
                 <strong>{preview.refundAmount.toFixed(2)}</strong>
               </div>
               <div className="text-[var(--erp-muted)]">{preview.reason}</div>

@@ -1,6 +1,11 @@
 import { describe, expect, it } from "vitest";
 import { computeStockMetrics, assertNonNegativeStock } from "./stock-balances.js";
-import { applyMovementToBalance, differenceQty, effectForMovement } from "./stock-ledger.js";
+import {
+  applyMovementToBalance,
+  assertStockMovementQty,
+  differenceQty,
+  effectForMovement,
+} from "./stock-ledger.js";
 import type { StockMovementType } from "@electronic-erp/contracts";
 
 const ALL_TYPES: StockMovementType[] = [
@@ -114,5 +119,24 @@ describe("stock ledger movements", () => {
         false,
       ),
     ).toThrow(/Negative stock|Available stock/);
+  });
+
+  it("applies converted sale qty (2 boxes = 20 pieces) to on-hand", () => {
+    const { after } = applyMovementToBalance(
+      { qtyOnHand: "100", qtyReserved: "0", qtyDamaged: "0", qtyInTransit: "0" },
+      "sale",
+      "20",
+      false,
+    );
+    expect(after.qtyOnHand).toBe("80");
+    const ret = applyMovementToBalance(after, "sale_return", "10", false);
+    expect(ret.after.qtyOnHand).toBe("90");
+  });
+
+  it("rejects invalid stock movement quantities", () => {
+    expect(() => assertStockMovementQty("sale", "0")).toThrow(/zero/i);
+    expect(() => assertStockMovementQty("sale", "-2")).toThrow(/positive/i);
+    expect(() => assertStockMovementQty("sale", "NaN")).toThrow(/invalid/i);
+    expect(() => assertStockMovementQty("adjustment", "-5")).not.toThrow();
   });
 });

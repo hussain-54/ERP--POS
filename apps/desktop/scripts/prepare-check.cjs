@@ -21,13 +21,6 @@ try {
 }
 
 try {
-  require.resolve("better-sqlite3", { paths: [root, path.join(root, "../..")] });
-  ok("better-sqlite3 dependency");
-} catch (e) {
-  fail("better-sqlite3 dependency", e.message);
-}
-
-try {
   require.resolve("electron-builder", { paths: [root, path.join(root, "../..")] });
   ok("electron-builder dependency");
 } catch (e) {

@@ -44,8 +44,6 @@ import { PermissionsPage } from "@/features/admin/PermissionsPage";
 import { ApprovalsPage } from "@/features/admin/ApprovalsPage";
 import { AuditPage } from "@/features/admin/AuditPage";
 import { BranchesPage } from "@/features/admin/BranchesPage";
-import { SyncCenterPage } from "@/features/sync/SyncCenterPage";
-import { OfflinePosStatusPage } from "@/features/sync/OfflinePosStatusPage";
 import { PrintingPage } from "@/features/hardware/PrintingPage";
 import { DevicesPage } from "@/features/hardware/DevicesPage";
 import { CrmPage } from "@/features/commerce/CrmPage";
@@ -114,8 +112,6 @@ const implemented: Record<string, ReactNode> = {
   "/approvals": <ApprovalsPage />,
   "/audit": <AuditPage />,
   "/branches": <BranchesPage />,
-  "/sync": <SyncCenterPage />,
-  "/offline-pos": <OfflinePosStatusPage />,
   "/printing": <PrintingPage />,
   "/devices": <DevicesPage />,
 };

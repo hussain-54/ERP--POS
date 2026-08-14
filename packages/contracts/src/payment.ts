@@ -74,8 +74,11 @@ export const PostSplitPaymentSchema = z.object({
   billTotal: PositiveDecimalStringSchema.optional(),
 }).superRefine((val, ctx) => {
   // Walk-in POS cash sales may post payments against a sale with no customer ledger party.
-  const walkInSale = val.partyType === "customer" && !val.customerId && val.sourceType === "sale";
-  if (val.partyType === "customer" && !val.customerId && !walkInSale) {
+  const walkInOk =
+    val.partyType === "customer" &&
+    !val.customerId &&
+    (val.sourceType === "sale" || val.sourceType === "sale_return");
+  if (val.partyType === "customer" && !val.customerId && !walkInOk) {
     ctx.addIssue({ code: z.ZodIssueCode.custom, message: "customerId required", path: ["customerId"] });
   }
   if (val.partyType === "supplier" && !val.supplierId) {

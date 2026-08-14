@@ -140,3 +140,18 @@ export function normalizeQtyDelta(type: StockMovementType, qtyDelta: string): st
 export function differenceQty(before: string, after: string): string {
   return subtractDecimal(after, before);
 }
+
+/** Magnitude types must be a non-zero finite number; adjustments may be signed. */
+export function assertStockMovementQty(type: StockMovementType, qtyDelta: string): void {
+  const trimmed = String(qtyDelta ?? "").trim();
+  if (!trimmed || !/^-?\d+(\.\d{1,6})?$/.test(trimmed) || !Number.isFinite(Number(trimmed))) {
+    throw new ValidationDomainError("Invalid stock quantity");
+  }
+  if (compareDecimal(trimmed, ZERO) === 0) {
+    throw new ValidationDomainError("qtyDelta cannot be zero");
+  }
+  const signedOk = type === "adjustment" || type === "stock_count" || type === "opening";
+  if (!signedOk && compareDecimal(trimmed, ZERO) < 0) {
+    throw new ValidationDomainError("Stock quantity must be positive for this movement type");
+  }
+}

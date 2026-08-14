@@ -28,8 +28,7 @@
         <p id="first-run-message" class="lead"></p>
         <dl class="grid">
           <div><dt>Device ID</dt><dd id="device-id">—</dd></div>
-          <div><dt>Database</dt><dd id="db-path">—</dd></div>
-          <div><dt>Integrity</dt><dd id="integrity">—</dd></div>
+          <div><dt>Config</dt><dd id="config-path">—</dd></div>
           <div><dt>Provisioned</dt><dd id="provisioned">—</dd></div>
         </dl>
 
@@ -40,23 +39,14 @@
           <label>Branch ID <input name="branchId" required /></label>
           <label>Device name <input name="name" value="Windows POS" /></label>
           <div class="actions">
-            <button type="submit">Register device (online)</button>
-            <button type="button" id="btn-toggle-online">Simulate offline</button>
+            <button type="submit">Register device</button>
           </div>
           <p class="hint">
-            If this terminal has never been provisioned, cloud registration and master-data
-            download require internet. After provisioning, sales work offline. Cloud init is never faked.
+            Internet connection required. Device identity is stored on this PC; sales post through
+            the cloud API / Supabase.
           </p>
         </form>
         <p id="form-error" class="error" hidden></p>
-      </section>
-
-      <section class="panel">
-        <h2>Offline POS</h2>
-        <p class="lead">Post a smoke sale locally (requires provisioned device).</p>
-        <button type="button" id="btn-smoke-sale">Create offline smoke sale</button>
-        <button type="button" id="btn-pending">Refresh pending sales</button>
-        <pre id="pending-sales" class="code">[]</pre>
       </section>
 
       <section class="panel">

@@ -446,6 +446,19 @@ describe("supabase foundation migration", () => {
     expect(sql).toContain("tracking_configured");
     expect(sql).toContain("deliveries.view");
   });
+
+  it("phase 3B stock atomic RPC migration exists", () => {
+    const migration = path.join(
+      root,
+      "supabase/migrations/20260814000001_post_stock_movement_atomic.sql",
+    );
+    expect(existsSync(migration)).toBe(true);
+    const sql = readFileSync(migration, "utf8");
+    expect(sql).toContain("apply_stock_movement_atomic");
+    expect(sql).toContain("stock_movements");
+    expect(sql).toContain("stock_balances");
+    expect(sql).toContain("security invoker");
+  });
 });
 
 describe("Phase 17 security — web must not ship service role", () => {

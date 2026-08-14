@@ -10,7 +10,6 @@ export * from "./purchase.js";
 export * from "./stock.js";
 export * from "./payment.js";
 export * from "./accounting.js";
-export * from "./sync.js";
 export * from "./authz.js";
 export * from "./audit.js";
 export * from "./after-sales.js";

@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import type { Customer } from "@electronic-erp/contracts";
 import {
   assertPosCustomerForSale,
   evaluatePosCustomerCredit,
@@ -6,19 +7,43 @@ import {
   resolvePosCustomerMode,
   toPosCustomerProfile,
 } from "@electronic-erp/domain";
-import { PosCustomerOfflineCache } from "./pos-customer-runtime";
 
 const org = "11111111-1111-4111-8111-111111111111";
+
+function customer(partial: Partial<Customer> & Pick<Customer, "id" | "code" | "name">): Customer {
+  const now = new Date().toISOString();
+  return {
+    organizationId: org,
+    nameUr: null,
+    mobile: null,
+    alternateMobile: null,
+    email: null,
+    address: null,
+    cnic: null,
+    referenceName: null,
+    customerType: "retail",
+    creditLimit: "0",
+    creditDays: 0,
+    totalPurchases: "0",
+    totalPaid: "0",
+    outstanding: "0",
+    isBlocked: false,
+    isActive: true,
+    createdAt: now,
+    updatedAt: now,
+    version: 1,
+    deletedAt: null,
+    ...partial,
+  };
+}
 
 describe("POS customer session flows", () => {
   it("supports walk-in, existing, new, switching, pricing, and credit", () => {
     expect(resolvePosCustomerMode({ walkIn: true })).toBe("walk_in");
     expect(() => assertPosCustomerForSale({ mode: "walk_in" })).not.toThrow();
 
-    const cache = new PosCustomerOfflineCache();
-    const created = cache.create({
+    const created = customer({
       id: "dddddddd-dddd-4ddd-8ddd-dddddddddddd",
-      organizationId: org,
       code: "N1",
       name: "New Customer",
       mobile: "03003333333",
@@ -34,17 +59,15 @@ describe("POS customer session flows", () => {
     );
     expect(profile.priceLevel).toBe(priceLevelForCustomerType("wholesale"));
 
-    const other = cache.create({
+    const other = customer({
       id: "eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee",
-      organizationId: org,
       code: "E1",
       name: "Existing Retail",
       customerType: "retail",
       creditLimit: "1000",
       creditDays: 7,
     });
-    // switch customer for current sale
-    const switched = toPosCustomerProfile(cache.get(other.id)!);
+    const switched = toPosCustomerProfile(other);
     expect(switched.priceLevel).toBe("retail");
     expect(resolvePosCustomerMode({ walkIn: false, customerId: switched.id })).toBe("existing");
 
