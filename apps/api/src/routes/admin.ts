@@ -14,6 +14,10 @@ import { AuthorizationService } from "@electronic-erp/domain";
 import { createUserClient } from "../lib/supabase.js";
 import { requireAuth, type AuthedRequest } from "../middleware/auth.js";
 
+/**
+ * Admin router — modules 26 Users, 27 Permissions, 28 Audit, 30 Branches, 25 Approvals, 01 Dashboard (group).
+ * Shared on purpose. Mount: /api/v1/admin. Repository: AdminRepository.
+ */
 export const adminRouter = Router();
 adminRouter.use(requireAuth);
 
@@ -30,6 +34,7 @@ function userId(req: AuthedRequest): string | null {
   return req.authz?.userId ?? null;
 }
 
+// 26 Users & Role Management
 adminRouter.post("/roles/seed", async (req: AuthedRequest, res, next) => {
   try {
     authz(req).assert("roles.manage");
@@ -48,6 +53,7 @@ adminRouter.get("/roles", async (req: AuthedRequest, res, next) => {
   }
 });
 
+// 27 Permissions
 adminRouter.get("/permissions", async (req: AuthedRequest, res, next) => {
   try {
     authz(req).assert("permissions.manage");
@@ -80,6 +86,7 @@ adminRouter.put("/roles/:roleId/permissions", async (req: AuthedRequest, res, ne
   }
 });
 
+// 26 Users
 adminRouter.get("/users", async (req: AuthedRequest, res, next) => {
   try {
     authz(req).assert("users.manage");
@@ -136,6 +143,7 @@ adminRouter.get("/users/:userId/permissions", async (req: AuthedRequest, res, ne
   }
 });
 
+// 30 Multi-Branch
 adminRouter.get("/branches", async (req: AuthedRequest, res, next) => {
   try {
     if (!authz(req).can("branches.manage") && !authz(req).canViewAllBranches()) {
@@ -171,6 +179,7 @@ adminRouter.post("/branches/memberships", async (req: AuthedRequest, res, next) 
   }
 });
 
+// 01 Dashboard — group KPIs
 adminRouter.get("/dashboard/group", async (req: AuthedRequest, res, next) => {
   try {
     authz(req).assert("dashboard.group_view");
@@ -180,6 +189,7 @@ adminRouter.get("/dashboard/group", async (req: AuthedRequest, res, next) => {
   }
 });
 
+// 25 Approval Workflow
 adminRouter.post("/approvals", async (req: AuthedRequest, res, next) => {
   try {
     authz(req).assert("approvals.act");
@@ -228,6 +238,7 @@ adminRouter.post("/approvals/:id/decide", async (req: AuthedRequest, res, next) 
   }
 });
 
+// 28 Audit Trail
 adminRouter.get("/audit", async (req: AuthedRequest, res, next) => {
   try {
     authz(req).assert("audit.view");

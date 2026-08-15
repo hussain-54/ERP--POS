@@ -10,6 +10,10 @@ import {
 import { createUserClient } from "../lib/supabase.js";
 import { requireAuth, type AuthedRequest } from "../middleware/auth.js";
 
+/**
+ * Hardware router — module 33 Printing, 35 Devices (drawer/events).
+ * Mount: /api/v1/hardware. Repository: HardwareRepository.
+ */
 export const hardwareRouter = Router();
 hardwareRouter.use(requireAuth);
 
@@ -23,6 +27,7 @@ function orgId(req: AuthedRequest): string {
   return req.authz!.organizationId;
 }
 
+// 33 Printing
 hardwareRouter.post("/print", async (req: AuthedRequest, res, next) => {
   try {
     if (!authz(req).can("printing.print") && !authz(req).can("printing.manage") && !authz(req).can("barcodes.print")) {
@@ -76,6 +81,7 @@ hardwareRouter.post("/print-jobs/:id/status", async (req: AuthedRequest, res, ne
   }
 });
 
+// 35 Devices
 hardwareRouter.post("/cash-drawer/open", async (req: AuthedRequest, res, next) => {
   try {
     authz(req).assert("cash_drawer.open");

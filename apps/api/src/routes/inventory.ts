@@ -14,6 +14,10 @@ import { AuthorizationService } from "@electronic-erp/domain";
 import { createUserClient } from "../lib/supabase.js";
 import { requireAuth, type AuthedRequest } from "../middleware/auth.js";
 
+/**
+ * Inventory router — module 10 Inventory; warehouse masters also serve module 11.
+ * Mount: /api/v1/inventory. Repository: InventoryRepository.
+ */
 export const inventoryRouter = Router();
 inventoryRouter.use(requireAuth);
 
@@ -33,6 +37,7 @@ function userId(req: AuthedRequest): string | null {
   return req.authz?.userId ?? null;
 }
 
+// 11 Warehouses (masters; racks/shelves/bins/transfers stay on purchasesRouter)
 inventoryRouter.get("/warehouses", async (req: AuthedRequest, res, next) => {
   try {
     authz(req).assert("inventory.view");
@@ -57,6 +62,7 @@ inventoryRouter.post("/warehouses", async (req: AuthedRequest, res, next) => {
   }
 });
 
+// 10 Inventory
 inventoryRouter.get("/balances", async (req: AuthedRequest, res, next) => {
   try {
     authz(req).assert("inventory.view");

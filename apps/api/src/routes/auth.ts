@@ -6,6 +6,10 @@ import {
 import { AuthService } from "../services/auth-service.js";
 import { requireAuth, type AuthedRequest } from "../middleware/auth.js";
 
+/**
+ * Auth router — outside the 39 product modules (login / password reset).
+ * Mount: /api/v1/auth. Service: AuthService. Repository: UserRepository.
+ */
 export const authRouter = Router();
 const authService = new AuthService();
 

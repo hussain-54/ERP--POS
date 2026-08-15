@@ -22,6 +22,11 @@ import { AuthorizationService } from "@electronic-erp/domain";
 import { createUserClient } from "../lib/supabase.js";
 import { requireAuth, type AuthedRequest } from "../middleware/auth.js";
 
+/**
+ * Enterprise router — modules 20 Salesmen, 31 Tax, 24 Documents, 29 Notifications, 39 System HR.
+ * Mount: /api/v1 (hr, references, commissions, tax, documents, notifications).
+ * Repository: EnterpriseRepository.
+ */
 export const enterpriseRouter = Router();
 
 function repo(req: AuthedRequest): EnterpriseRepository {
@@ -41,7 +46,7 @@ function assertAny(req: AuthedRequest, keys: string[]) {
   if (!keys.some((k) => a.can(k))) a.assert(keys[0]!);
 }
 
-// ─── HR ─────────────────────────────────────────────────
+// ─── 39 System HR / 20 Salesmen (employees + commissions) ─
 enterpriseRouter.post("/hr/employees", requireAuth, async (req: AuthedRequest, res, next) => {
   try {
     assertAny(req, ["hr.manage"]);
@@ -75,6 +80,7 @@ enterpriseRouter.patch("/hr/employees/:id", requireAuth, async (req: AuthedReque
   }
 });
 
+// 20 Salesman / Field Sales — references
 enterpriseRouter.post("/references", requireAuth, async (req: AuthedRequest, res, next) => {
   try {
     assertAny(req, ["salesman.manage", "hr.manage", "pos.sell"]);
@@ -109,6 +115,7 @@ enterpriseRouter.patch("/references/:id", requireAuth, async (req: AuthedRequest
   }
 });
 
+// 20 Salesman / Field Sales — commissions
 enterpriseRouter.post("/commissions/pay", requireAuth, async (req: AuthedRequest, res, next) => {
   try {
     assertAny(req, ["commissions.manage", "hr.payroll"]);
@@ -213,7 +220,7 @@ enterpriseRouter.get("/hr/commissions", requireAuth, async (req: AuthedRequest, 
   }
 });
 
-// ─── Tax ────────────────────────────────────────────────
+// ─── 31 Tax & Pakistan Compliance ────────────────────────
 enterpriseRouter.put("/tax/profile", requireAuth, async (req: AuthedRequest, res, next) => {
   try {
     assertAny(req, ["tax.manage"]);
@@ -280,7 +287,7 @@ enterpriseRouter.get("/tax/reports", requireAuth, async (req: AuthedRequest, res
   }
 });
 
-// ─── Documents ──────────────────────────────────────────
+// ─── 24 Documents ───────────────────────────────────────
 enterpriseRouter.post("/documents", requireAuth, async (req: AuthedRequest, res, next) => {
   try {
     assertAny(req, ["documents.manage"]);
@@ -307,7 +314,7 @@ enterpriseRouter.get("/documents", requireAuth, async (req: AuthedRequest, res, 
   }
 });
 
-// ─── Notifications ──────────────────────────────────────
+// ─── 29 Notification Center ─────────────────────────────
 enterpriseRouter.get("/notifications", requireAuth, async (req: AuthedRequest, res, next) => {
   try {
     assertAny(req, ["notifications.view", "notifications.manage", "notifications.broadcast"]);

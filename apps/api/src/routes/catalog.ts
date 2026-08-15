@@ -31,6 +31,10 @@ import {
   SUPPLIER_IMPORT_TEMPLATE,
 } from "../services/import-service.js";
 
+/**
+ * Catalog router — modules 02 Product Management, 03 Barcode & QR, 32 Import/Export (catalog templates).
+ * Mount: /api/v1/catalog. Repository: CatalogRepository.
+ */
 export const catalogRouter = Router();
 catalogRouter.use(requireAuth);
 
@@ -46,7 +50,7 @@ function orgId(req: AuthedRequest): string {
   return req.authz!.organizationId;
 }
 
-// Taxonomy
+// 02 Product Management — taxonomy
 const taxonomy = [
   ["categories", CreateCategorySchema, "createCategory"],
   ["subcategories", CreateSubcategorySchema, "createSubcategory"],
@@ -105,7 +109,7 @@ for (const [pathName, schema, method] of taxonomy) {
   });
 }
 
-// Units
+// 02 Product Management — units
 catalogRouter.get("/units", async (req: AuthedRequest, res, next) => {
   try {
     authz(req).assert("units.manage");
@@ -175,7 +179,7 @@ catalogRouter.get("/attribute-definitions", async (req: AuthedRequest, res, next
   }
 });
 
-// Products
+// 02 Product Management — products
 catalogRouter.get("/products", async (req: AuthedRequest, res, next) => {
   try {
     authz(req).assert("products.read");
@@ -262,6 +266,7 @@ catalogRouter.post("/products/:id/variants", async (req: AuthedRequest, res, nex
   }
 });
 
+// 03 Barcode & QR
 catalogRouter.post("/barcodes/generate", async (req: AuthedRequest, res, next) => {
   try {
     authz(req).assert("barcodes.manage");
@@ -405,7 +410,7 @@ catalogRouter.post("/products/:id/media", async (req: AuthedRequest, res, next) 
   }
 });
 
-// Import / export templates
+// 32 Import / Export — catalog templates (also on infrastructureRouter)
 catalogRouter.get("/import/templates/:entity", async (req: AuthedRequest, res, next) => {
   try {
     authz(req).assert("products.import");

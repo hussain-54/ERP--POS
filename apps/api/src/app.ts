@@ -18,6 +18,7 @@ import { commerceRouter } from "./routes/commerce.js";
 import { aiRouter } from "./routes/ai.js";
 import { enterpriseRouter } from "./routes/enterprise.js";
 import { infrastructureRouter } from "./routes/infrastructure.js";
+import "./module-api-ownership.js";
 import { errorHandler, notFoundHandler } from "./middleware/error-handler.js";
 import { requireAuth, type AuthedRequest } from "./middleware/auth.js";
 import { log } from "./lib/logger.js";
@@ -94,21 +95,22 @@ export function createApp() {
   });
 
   app.use(healthRouter);
+  // Grouped API mounts (do not split into 39 routers). See module-api-ownership.ts.
   app.use("/api/v1/auth", authRouter);
-  app.use("/api/v1/catalog", catalogRouter);
-  app.use("/api/v1/inventory", inventoryRouter);
-  app.use("/api/v1/parties", partiesRouter);
-  app.use("/api/v1/pos", posRouter);
-  app.use("/api/v1/purchases", purchasesRouter);
-  app.use("/api/v1/after-sales", afterSalesRouter);
-  app.use("/api/v1/accounting", accountingRouter);
-  app.use("/api/v1/admin", adminRouter);
-  app.use("/api/v1/hardware", hardwareRouter);
-  app.use("/api/v1/reports", reportsRouter);
-  app.use("/api/v1", commerceRouter);
-  app.use("/api/v1", aiRouter);
-  app.use("/api/v1", enterpriseRouter);
-  app.use("/api/v1", infrastructureRouter);
+  app.use("/api/v1/catalog", catalogRouter); // 02 Products, 03 Barcodes, 32 Import (catalog templates)
+  app.use("/api/v1/inventory", inventoryRouter); // 10 Inventory, 11 Warehouses (masters)
+  app.use("/api/v1/parties", partiesRouter); // 12 Customers, 13 Suppliers, 22 Installments, 05 Payments
+  app.use("/api/v1/pos", posRouter); // 05 POS / Sales
+  app.use("/api/v1/purchases", purchasesRouter); // 09 Purchases, 08 Delivery, 11 locations/transfers, 13 price lists
+  app.use("/api/v1/after-sales", afterSalesRouter); // 06 Quotations, 07 Orders, 14 Service, 15 Warranty
+  app.use("/api/v1/accounting", accountingRouter); // 16 Accounts, 17 Banking, 21 Expenses
+  app.use("/api/v1/admin", adminRouter); // 26 Users, 27 Permissions, 28 Audit, 30 Branches, 25 Approvals, 01 dashboard
+  app.use("/api/v1/hardware", hardwareRouter); // 33 Printing, 35 Devices
+  app.use("/api/v1/reports", reportsRouter); // 01 Dashboard, 19 Reports
+  app.use("/api/v1", commerceRouter); // 18 CRM, 23 Loyalty, 07 B2B, 39 Store
+  app.use("/api/v1", aiRouter); // 04 AI Camera, 19 AI Insights
+  app.use("/api/v1", enterpriseRouter); // 20 Salesmen, 31 Tax, 24 Documents, 29 Notifications, 39 HR
+  app.use("/api/v1", infrastructureRouter); // 39 Security/Integrations, 34 Backup, 32 Import/Export
 
   app.get("/api/v1/protected/ping", requireAuth, (req: AuthedRequest, res) => {
     res.json({

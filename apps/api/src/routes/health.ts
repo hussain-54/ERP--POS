@@ -3,6 +3,9 @@ import { getConnectionStatus } from "../lib/supabase.js";
 import { createAnonClient } from "../lib/supabase.js";
 import { supabaseConfigured } from "../config.js";
 
+/**
+ * Health probes — outside the 39 product modules.
+ */
 export const healthRouter = Router();
 
 healthRouter.get("/health", (_req, res) => {

@@ -13,6 +13,10 @@ import { AuthorizationService } from "@electronic-erp/domain";
 import { createUserClient } from "../lib/supabase.js";
 import { requireAuth, type AuthedRequest } from "../middleware/auth.js";
 
+/**
+ * Parties router — modules 12 Customers, 13 Suppliers, 22 Installments, 05 Sales payments.
+ * Shared on purpose. Mount: /api/v1/parties. Repository: PartiesRepository.
+ */
 export const partiesRouter = Router();
 partiesRouter.use(requireAuth);
 
@@ -29,7 +33,7 @@ function userId(req: AuthedRequest): string | null {
   return req.authz?.userId ?? null;
 }
 
-// Customers
+// 12 Customers
 partiesRouter.get("/customers", async (req: AuthedRequest, res, next) => {
   try {
     authz(req).assert("customers.read");
@@ -142,7 +146,7 @@ partiesRouter.post("/customers/:id/ledger", async (req: AuthedRequest, res, next
   }
 });
 
-// Suppliers
+// 13 Suppliers
 partiesRouter.get("/suppliers", async (req: AuthedRequest, res, next) => {
   try {
     authz(req).assert("suppliers.read");
@@ -193,7 +197,7 @@ partiesRouter.post("/suppliers/:id/ledger", async (req: AuthedRequest, res, next
   }
 });
 
-// Payment methods
+// 05 POS / Sales — payment methods (Payments page)
 partiesRouter.get("/payment-methods", async (req: AuthedRequest, res, next) => {
   try {
     authz(req).assert("payments.receive");
@@ -222,7 +226,7 @@ partiesRouter.post("/payment-methods", async (req: AuthedRequest, res, next) => 
   }
 });
 
-// Split payments
+// 05 POS / Sales — split payments
 partiesRouter.post("/payments", async (req: AuthedRequest, res, next) => {
   try {
     const direction = req.body.direction === "pay" ? "pay" : "receive";
@@ -234,7 +238,7 @@ partiesRouter.post("/payments", async (req: AuthedRequest, res, next) => {
   }
 });
 
-// Credit
+// 12 Customers — credit / udhaar
 partiesRouter.post("/credit/approvals", async (req: AuthedRequest, res, next) => {
   try {
     authz(req).assert("credit.manage");
@@ -273,7 +277,7 @@ partiesRouter.post("/credit/reminders/generate", async (req: AuthedRequest, res,
   }
 });
 
-// Installments
+// 22 Installments
 partiesRouter.post("/installments", async (req: AuthedRequest, res, next) => {
   try {
     authz(req).assert("installments.manage");

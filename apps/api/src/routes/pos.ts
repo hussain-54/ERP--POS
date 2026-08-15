@@ -16,6 +16,10 @@ import { AuthorizationService, ForbiddenDomainError } from "@electronic-erp/doma
 import { createUserClient } from "../lib/supabase.js";
 import { requireAuth, type AuthedRequest } from "../middleware/auth.js";
 
+/**
+ * POS router — module 05 POS / Sales (terminal, holds, invoices, returns).
+ * Mount: /api/v1/pos. Repository: PosRepository.
+ */
 export const posRouter = Router();
 posRouter.use(requireAuth);
 

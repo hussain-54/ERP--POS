@@ -11,6 +11,10 @@ import { createUserClient } from "../lib/supabase.js";
 import { requireAuth, type AuthedRequest } from "../middleware/auth.js";
 import { AiService } from "../services/ai-service.js";
 
+/**
+ * AI router — module 04 AI Camera; /ai/insights serves module 19 Reports.
+ * Mount: /api/v1/ai. Repository: AiRepository.
+ */
 export const aiRouter = Router();
 
 function service(req: AuthedRequest): AiService {
@@ -30,6 +34,7 @@ function assertAny(req: AuthedRequest, keys: string[]) {
   if (!keys.some((k) => a.can(k))) a.assert(keys[0]!);
 }
 
+// 04 AI Camera Product Recognition
 aiRouter.post("/ai/recognize-product", requireAuth, async (req: AuthedRequest, res, next) => {
   try {
     assertAny(req, ["ai.recognize", "pos.sell"]);
@@ -56,6 +61,7 @@ aiRouter.post("/ai/recognize-product/confirm", requireAuth, async (req: AuthedRe
   }
 });
 
+// 19 Reports — AI Insights
 aiRouter.get("/ai/insights", requireAuth, async (req: AuthedRequest, res, next) => {
   try {
     assertAny(req, ["ai.insights", "bi.view", "reports.view"]);

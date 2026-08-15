@@ -18,6 +18,13 @@ import { z } from "zod";
 import { createUserClient } from "../lib/supabase.js";
 import { requireAuth, type AuthedRequest } from "../middleware/auth.js";
 
+/**
+ * Purchases router — module 09 Purchases, plus shared:
+ * 08 Delivery (/deliveries — kept here on purpose),
+ * 11 Warehouses (locations + transfers),
+ * 13 Suppliers (supplier-prices).
+ * Mount: /api/v1/purchases. Repository: PurchasesRepository.
+ */
 export const purchasesRouter = Router();
 purchasesRouter.use(requireAuth);
 
@@ -38,6 +45,7 @@ function assertAny(req: AuthedRequest, keys: string[]) {
   if (!keys.some((k) => a.can(k))) a.assert(keys[0]!);
 }
 
+// 09 Purchases
 purchasesRouter.post("/invoices", async (req: AuthedRequest, res, next) => {
   try {
     authz(req).assert("purchases.write");
@@ -68,6 +76,7 @@ purchasesRouter.post("/returns", async (req: AuthedRequest, res, next) => {
   }
 });
 
+// 13 Suppliers — price lists (UI reuses PurchasesPage)
 purchasesRouter.get("/supplier-prices", async (req: AuthedRequest, res, next) => {
   try {
     authz(req).assert("purchases.prices");
@@ -88,6 +97,7 @@ purchasesRouter.get("/supplier-prices/history", async (req: AuthedRequest, res, 
   }
 });
 
+// 11 Warehouses — racks, shelves, bins, transfers (masters live on inventoryRouter)
 purchasesRouter.post("/locations/racks", async (req: AuthedRequest, res, next) => {
   try {
     authz(req).assert("warehouses.manage");
@@ -161,6 +171,7 @@ purchasesRouter.post("/transfers/:id/advance", async (req: AuthedRequest, res, n
   }
 });
 
+// 08 Delivery — kept on purchasesRouter; do not split URLs
 purchasesRouter.post("/deliveries", async (req: AuthedRequest, res, next) => {
   try {
     authz(req).assert("deliveries.manage");

@@ -15,6 +15,10 @@ import { AuthorizationService } from "@electronic-erp/domain";
 import { createUserClient } from "../lib/supabase.js";
 import { requireAuth, type AuthedRequest } from "../middleware/auth.js";
 
+/**
+ * Commerce router — modules 18 CRM, 23 Loyalty, 07 Orders (B2B), 39 System (store).
+ * Mount: /api/v1 (crm, loyalty, b2b, store). Repository: CommerceRepository.
+ */
 export const commerceRouter = Router();
 
 function repo(req: AuthedRequest): CommerceRepository {
@@ -34,7 +38,7 @@ function assertAny(req: AuthedRequest, keys: string[]) {
   if (!keys.some((k) => a.can(k))) a.assert(keys[0]!);
 }
 
-// ─── CRM ─────────────────────────────────────────────────
+// ─── 18 CRM & Marketing ──────────────────────────────────
 commerceRouter.post("/crm/segments", requireAuth, async (req: AuthedRequest, res, next) => {
   try {
     assertAny(req, ["crm.manage"]);
@@ -112,7 +116,7 @@ commerceRouter.post(
   },
 );
 
-// ─── Loyalty ─────────────────────────────────────────────
+// ─── 23 Loyalty ──────────────────────────────────────────
 commerceRouter.post("/loyalty/tiers/seed", requireAuth, async (req: AuthedRequest, res, next) => {
   try {
     assertAny(req, ["loyalty.manage"]);
@@ -191,7 +195,7 @@ commerceRouter.get("/loyalty/offers", requireAuth, async (req: AuthedRequest, re
   }
 });
 
-// ─── B2B ─────────────────────────────────────────────────
+// ─── 07 Orders — B2B ─────────────────────────────────────
 commerceRouter.post("/b2b/users", requireAuth, async (req: AuthedRequest, res, next) => {
   try {
     assertAny(req, ["b2b.manage"]);
@@ -259,7 +263,7 @@ commerceRouter.post(
   },
 );
 
-// ─── Online store ────────────────────────────────────────
+// ─── 39 System — Online store ────────────────────────────
 commerceRouter.put("/store/settings", requireAuth, async (req: AuthedRequest, res, next) => {
   try {
     assertAny(req, ["store.manage"]);

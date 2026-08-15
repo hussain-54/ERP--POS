@@ -27,6 +27,10 @@ import {
   SUPPLIER_IMPORT_TEMPLATE,
 } from "../services/import-service.js";
 
+/**
+ * Infrastructure router — modules 39 Security/Integrations, 34 Backup, 32 Import/Export.
+ * Mount: /api/v1 (security, backup, integrations, data). Repository: InfrastructureRepository.
+ */
 export const infrastructureRouter = Router();
 
 function infra(req: AuthedRequest): InfrastructureRepository {
@@ -55,7 +59,7 @@ function assertAny(req: AuthedRequest, keys: string[]) {
   if (!keys.some((k) => a.can(k))) a.assert(keys[0]!);
 }
 
-// ─── Security ────────────────────────────────────────────
+// ─── 39 System — Security ────────────────────────────────
 infrastructureRouter.get("/security/settings", requireAuth, async (req: AuthedRequest, res, next) => {
   try {
     assertAny(req, ["security.view", "security.manage"]);
@@ -174,7 +178,7 @@ infrastructureRouter.post("/security/2fa", requireAuth, async (req: AuthedReques
   }
 });
 
-// ─── Backup ──────────────────────────────────────────────
+// ─── 34 Backup & Disaster Recovery ───────────────────────
 infrastructureRouter.post("/backup/jobs", requireAuth, async (req: AuthedRequest, res, next) => {
   try {
     assertAny(req, ["backup.manage"]);
@@ -223,7 +227,7 @@ infrastructureRouter.post("/backup/restore", requireAuth, async (req: AuthedRequ
   }
 });
 
-// ─── Integrations (versioned /api/v1 consumers) ───────────
+// ─── 39 System — Integrations ────────────────────────────
 infrastructureRouter.post("/integrations/clients", requireAuth, async (req: AuthedRequest, res, next) => {
   try {
     assertAny(req, ["integrations.manage"]);
@@ -273,7 +277,7 @@ infrastructureRouter.post(
   },
 );
 
-// ─── Import / Export (Excel/CSV/PDF) ─────────────────────
+// ─── 32 Import / Export ──────────────────────────────────
 infrastructureRouter.get("/data/import/templates/:entity", requireAuth, async (req: AuthedRequest, res, next) => {
   try {
     assertAny(req, ["import.execute", "products.import"]);

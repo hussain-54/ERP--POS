@@ -13,6 +13,10 @@ import { AuthorizationService } from "@electronic-erp/domain";
 import { createUserClient } from "../lib/supabase.js";
 import { requireAuth, type AuthedRequest } from "../middleware/auth.js";
 
+/**
+ * Reports router — modules 01 Dashboard and 19 Reports & Analytics (BI).
+ * Mount: /api/v1/reports. Repository: ReportingRepository (+ AccountingRepository for accounting kinds).
+ */
 export const reportsRouter = Router();
 reportsRouter.use(requireAuth);
 

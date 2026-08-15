@@ -13,6 +13,10 @@ import { AuthorizationService } from "@electronic-erp/domain";
 import { createUserClient } from "../lib/supabase.js";
 import { requireAuth, type AuthedRequest } from "../middleware/auth.js";
 
+/**
+ * Accounting router — modules 16 Accounts, 17 Banking, 21 Expenses (reports also feed 19).
+ * Shared on purpose. Mount: /api/v1/accounting. Repository: AccountingRepository.
+ */
 export const accountingRouter = Router();
 accountingRouter.use(requireAuth);
 
@@ -29,6 +33,7 @@ function userId(req: AuthedRequest): string | null {
   return req.authz?.userId ?? null;
 }
 
+// 16 Accounts
 accountingRouter.post("/coa/seed", async (req: AuthedRequest, res, next) => {
   try {
     authz(req).assert("accounts.write");
@@ -86,6 +91,7 @@ accountingRouter.get("/vouchers", async (req: AuthedRequest, res, next) => {
   }
 });
 
+// 17 Banking
 accountingRouter.post("/bank-accounts", async (req: AuthedRequest, res, next) => {
   try {
     authz(req).assert("banking.manage");
@@ -147,6 +153,7 @@ accountingRouter.post("/reconciliations", async (req: AuthedRequest, res, next) 
   }
 });
 
+// 21 Expenses
 accountingRouter.post("/expenses", async (req: AuthedRequest, res, next) => {
   try {
     authz(req).assert("expenses.manage");
@@ -175,6 +182,7 @@ accountingRouter.get("/expense-categories", async (req: AuthedRequest, res, next
   }
 });
 
+// 16 Accounts / 19 Reports — finance statements
 accountingRouter.get("/reports/trial-balance", async (req: AuthedRequest, res, next) => {
   try {
     authz(req).assert("reports.finance");

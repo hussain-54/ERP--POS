@@ -1,6 +1,6 @@
 import { useEffect, useState, type FormEvent } from "react";
 import { Button, Card, Form, FormActions, Input, useToast } from "@electronic-erp/ui";
-import { partiesApi } from "./parties-api";
+import { partiesApi } from "@/features/customers/parties-api";
 import { useAuth } from "@/features/auth/AuthContext";
 
 function uuid() {

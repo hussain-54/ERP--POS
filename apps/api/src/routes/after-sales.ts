@@ -17,6 +17,10 @@ import { AuthorizationService } from "@electronic-erp/domain";
 import { createUserClient } from "../lib/supabase.js";
 import { requireAuth, type AuthedRequest } from "../middleware/auth.js";
 
+/**
+ * After-sales router — modules 06 Quotations, 07 Orders, 14 Service, 15 Warranty.
+ * Shared on purpose. Mount: /api/v1/after-sales. Repository: AfterSalesRepository.
+ */
 export const afterSalesRouter = Router();
 afterSalesRouter.use(requireAuth);
 
@@ -33,7 +37,7 @@ function userId(req: AuthedRequest): string | null {
   return req.authz?.userId ?? null;
 }
 
-// Quotations
+// 06 Quotations
 afterSalesRouter.post("/quotations", async (req: AuthedRequest, res, next) => {
   try {
     authz(req).assert("quotations.write");
@@ -73,7 +77,7 @@ afterSalesRouter.post("/quotations/:id/convert-order", async (req: AuthedRequest
   }
 });
 
-// Orders
+// 07 Orders
 afterSalesRouter.post("/orders", async (req: AuthedRequest, res, next) => {
   try {
     authz(req).assert("orders.write");
@@ -118,7 +122,7 @@ afterSalesRouter.post("/orders/:id/convert-invoice", async (req: AuthedRequest, 
   }
 });
 
-// Service
+// 14 Service & Repair
 afterSalesRouter.post("/service-jobs", async (req: AuthedRequest, res, next) => {
   try {
     authz(req).assert("service.manage");
@@ -172,7 +176,7 @@ afterSalesRouter.get("/service-jobs/:id/bill", async (req: AuthedRequest, res, n
   }
 });
 
-// Warranty
+// 15 Warranty
 afterSalesRouter.get("/warranties/lookup", async (req: AuthedRequest, res, next) => {
   try {
     authz(req).assert("warranty.manage");
