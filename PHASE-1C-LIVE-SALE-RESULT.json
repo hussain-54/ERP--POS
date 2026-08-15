@@ -1,0 +1,59 @@
+{
+  "steps": [
+    {
+      "name": "health",
+      "status": 200,
+      "ok": true,
+      "supabaseConfigured": true
+    },
+    {
+      "name": "login",
+      "status": 200,
+      "org": true,
+      "branch": true
+    },
+    {
+      "name": "warehouse",
+      "warehouseId": true
+    },
+    {
+      "name": "payment_method",
+      "paymentMethodId": true,
+      "code": "CASH"
+    },
+    {
+      "name": "product_reuse",
+      "found": true
+    },
+    {
+      "name": "product_search",
+      "status": 200,
+      "productId": true,
+      "unitId": true,
+      "unitPrice": 100,
+      "stockBefore": "10"
+    },
+    {
+      "name": "create_sale",
+      "httpStatus": 500,
+      "ok": false,
+      "saleId": null,
+      "invoiceNumber": null,
+      "status": null,
+      "paymentStatus": null,
+      "error": "Internal server error"
+    },
+    {
+      "name": "stock_after",
+      "stockBefore": "10",
+      "stockAfter": "9"
+    },
+    {
+      "name": "RESULT",
+      "pass": false,
+      "httpStatus": 500,
+      "stockBefore": "10",
+      "stockAfter": "9"
+    }
+  ]
+}

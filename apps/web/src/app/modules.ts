@@ -1,68 +1,848 @@
+export type NavStatus = "implemented" | "placeholder" | "legacy";
+
+export type NavIconName =
+  | "dashboard"
+  | "products"
+  | "barcode"
+  | "camera"
+  | "pos"
+  | "quote"
+  | "orders"
+  | "delivery"
+  | "purchases"
+  | "inventory"
+  | "warehouse"
+  | "customers"
+  | "suppliers"
+  | "service"
+  | "warranty"
+  | "accounts"
+  | "banking"
+  | "crm"
+  | "reports"
+  | "salesman"
+  | "expenses"
+  | "installments"
+  | "loyalty"
+  | "documents"
+  | "approvals"
+  | "users"
+  | "permissions"
+  | "audit"
+  | "notifications"
+  | "branches"
+  | "tax"
+  | "import"
+  | "printing"
+  | "backup"
+  | "devices"
+  | "industry"
+  | "customize"
+  | "rules"
+  | "admin";
+
+export interface NavItemOptions {
+  permission?: string;
+  /** Hide from sidebar but keep the route. Default true. */
+  sidebar?: boolean;
+  availableOn?: string;
+}
+
 export interface ErpModuleRoute {
   path: string;
   title: string;
   group: string;
   description: string;
+  status?: NavStatus;
+  /** Existing screen that already covers this function (placeholder only). */
+  availableOn?: string;
+  sidebar?: boolean;
+  permission?: string;
 }
 
-/** Placeholder routes for every major ERP module — no business logic yet. */
-export const ERP_MODULES: ErpModuleRoute[] = [
-  { path: "/", title: "Dashboard", group: "Core", description: "Operational overview and alerts." },
-  { path: "/pos", title: "POS / Sales", group: "Sales", description: "Point of sale terminal." },
-  { path: "/products", title: "Products", group: "Catalog", description: "Product master management." },
-  { path: "/units", title: "Units & Quantity", group: "Catalog", description: "Units and conversions." },
-  { path: "/categories", title: "Categories / Brands / Companies", group: "Catalog", description: "Taxonomy masters." },
-  { path: "/barcodes", title: "Barcode & QR", group: "Catalog", description: "Codes and labels." },
-  { path: "/ai-camera", title: "AI Camera Recognition", group: "Catalog", description: "Camera-assisted product match." },
-  { path: "/pricing", title: "Pricing", group: "Catalog", description: "Price levels and lists." },
-  { path: "/discounts", title: "Discounts", group: "Sales", description: "Discount policies." },
-  { path: "/customers", title: "Customers", group: "Parties", description: "Customer master." },
-  { path: "/payments", title: "Payments", group: "Sales", description: "Tender and receipts." },
-  { path: "/credit", title: "Credit / Udhaar", group: "Sales", description: "Customer credit and aging." },
-  { path: "/installments", title: "Installments", group: "Sales", description: "Installment plans and dues." },
-  { path: "/returns", title: "Sales Returns / Exchange", group: "Sales", description: "Returns and exchanges." },
-  { path: "/invoices", title: "Invoice Management", group: "Sales", description: "Invoice register and reprints." },
-  { path: "/sales-management", title: "Sales Management", group: "Sales", description: "Sales register, filters, KPIs, and reports." },
-  { path: "/held-sales", title: "Hold / Resume Sale", group: "Sales", description: "Parked POS carts." },
-  { path: "/salesman", title: "Salesman / References", group: "Sales", description: "Commissions and targets." },
-  { path: "/purchases", title: "Purchases", group: "Purchasing", description: "Purchase invoices, stock-in, supplier prices." },
-  { path: "/purchase-returns", title: "Purchase Returns", group: "Purchasing", description: "Purchase return lifecycle." },
-  { path: "/suppliers", title: "Suppliers", group: "Purchasing", description: "Supplier master." },
-  { path: "/purchase-automation", title: "Supplier Purchase Automation", group: "Purchasing", description: "Reorder suggestions." },
-  { path: "/inventory", title: "Inventory", group: "Inventory", description: "Stock on hand and movements." },
-  { path: "/batches-serials", title: "Batch / Serial / Warranty / Expiry", group: "Inventory", description: "Traceability." },
-  { path: "/warehouses", title: "Warehouse", group: "Inventory", description: "Warehouses and bins." },
-  { path: "/stock-transfers", title: "Stock Transfer", group: "Inventory", description: "Inter-warehouse transfers." },
-  { path: "/deliveries", title: "Delivery", group: "Sales", description: "Delivery notes." },
-  { path: "/quotations", title: "Quotations", group: "Sales", description: "Quotes and conversion." },
-  { path: "/service", title: "Service & Repair", group: "Service", description: "Job cards and repairs." },
-  { path: "/warranty", title: "Warranty", group: "Service", description: "Warranty claims." },
-  { path: "/accounts", title: "Accounts & Finance", group: "Finance", description: "COA and journals." },
-  { path: "/banking", title: "Banking", group: "Finance", description: "Bank books and reconcile." },
-  { path: "/expenses", title: "Expenses", group: "Finance", description: "Expense entry." },
-  { path: "/ai-insights", title: "AI Smart Business", group: "Insights", description: "AI insights." },
-  { path: "/bi", title: "Business Intelligence", group: "Insights", description: "KPI dashboards." },
-  { path: "/reports", title: "Complete Reporting", group: "Insights", description: "Operational reports." },
-  { path: "/crm", title: "CRM & Marketing", group: "Growth", description: "Segments and campaigns." },
-  { path: "/loyalty", title: "Loyalty", group: "Growth", description: "Points and rewards." },
-  { path: "/b2b", title: "B2B Wholesale Portal", group: "Channels", description: "Wholesale portal admin." },
-  { path: "/online-store", title: "Online Store", group: "Channels", description: "Storefront configuration." },
-  { path: "/mobile", title: "Mobile Apps", group: "Channels", description: "Mobile channel settings." },
-  { path: "/documents", title: "Document Management", group: "Governance", description: "Attachments and files." },
-  { path: "/approvals", title: "Approval Workflow", group: "Governance", description: "Approval inbox." },
-  { path: "/users", title: "Users & Roles", group: "Admin", description: "User administration." },
-  { path: "/permissions", title: "Permissions", group: "Admin", description: "Permission matrix." },
-  { path: "/audit", title: "Audit Trail", group: "Governance", description: "Immutable audit log." },
-  { path: "/notifications", title: "Notifications", group: "Governance", description: "Notification center." },
-  { path: "/branches", title: "Multi-Branch", group: "Admin", description: "Branch administration." },
-  { path: "/tax", title: "Pakistan Tax / FBR", group: "Compliance", description: "Tax readiness." },
-  { path: "/import-export", title: "Import / Export", group: "Platform", description: "Data import and export." },
-  { path: "/printing", title: "Printing", group: "Platform", description: "Print templates." },
-  { path: "/backup", title: "Backup / DR", group: "Platform", description: "Backup and recovery." },
-  { path: "/integrations", title: "API Integration", group: "Platform", description: "API keys and webhooks." },
-  { path: "/settings", title: "Advanced Settings", group: "Admin", description: "Organization settings." },
-  { path: "/security", title: "Security", group: "Admin", description: "Security controls." },
-  { path: "/devices", title: "Device Support", group: "Platform", description: "Registered devices." },
-  { path: "/transaction-linking", title: "Automatic Transaction Linking", group: "Platform", description: "Linked document trace." },
-  { path: "/hr", title: "HR & Employees", group: "HR", description: "Employees, attendance, payroll." },
+export interface ErpNavChild {
+  path: string;
+  title: string;
+  description: string;
+  status: NavStatus;
+  availableOn?: string;
+  sidebar?: boolean;
+  permission?: string;
+}
+
+export interface ErpNavSection {
+  id: string;
+  title: string;
+  icon: NavIconName;
+  path: string;
+  description: string;
+  permission?: string;
+  children: ErpNavChild[];
+}
+
+function live(path: string, title: string, description: string, opts?: NavItemOptions): ErpNavChild {
+  return {
+    path,
+    title,
+    description,
+    status: "implemented",
+    permission: opts?.permission,
+    sidebar: opts?.sidebar,
+    availableOn: opts?.availableOn,
+  };
+}
+
+function soon(path: string, title: string, description: string, opts?: NavItemOptions): ErpNavChild {
+  return {
+    path,
+    title,
+    description,
+    status: "placeholder",
+    availableOn: opts?.availableOn,
+    permission: opts?.permission,
+    sidebar: opts?.sidebar,
+  };
+}
+
+/**
+ * Show a nav item when it has no permission mapping, when the session has not
+ * loaded any keys yet (fail open), or when the user has the mapped key.
+ */
+export function canShowNavItem(
+  permission: string | undefined,
+  grantedCount: number,
+  hasPermission: (key: string) => boolean,
+): boolean {
+  if (!permission) return true;
+  if (grantedCount === 0) return true;
+  return hasPermission(permission);
+}
+
+/** 39-module navigation tree. Children map to existing routes or placeholders. */
+export const ERP_NAV_SECTIONS: ErpNavSection[] = [
+  {
+    id: "01",
+    title: "Dashboard",
+    icon: "dashboard",
+    path: "/",
+    description: "Operational overview and alerts.",
+    permission: "dashboard.view",
+    children: [],
+  },
+  {
+    id: "02",
+    title: "Products",
+    icon: "products",
+    path: "/products",
+    description: "Product master, taxonomy, units, and pricing.",
+    permission: "products.read",
+    children: [
+      live("/products", "Products", "Product master list.", {
+        permission: "products.read",
+        sidebar: false,
+      }),
+      live("/categories", "Categories", "Category taxonomy.", { permission: "catalog_taxonomy.manage" }),
+      live("/subcategories", "Subcategories", "Subcategory taxonomy.", {
+        permission: "catalog_taxonomy.manage",
+      }),
+      live("/brands", "Brands", "Brand master.", { permission: "catalog_taxonomy.manage" }),
+      live("/companies", "Companies", "Company / manufacturer master.", {
+        permission: "catalog_taxonomy.manage",
+      }),
+      soon("/products/variants", "Variants", "Variant editor on the product form.", {
+        availableOn: "/products",
+        permission: "products.read",
+      }),
+      live("/units", "Units", "Units and conversions.", { permission: "units.manage" }),
+      soon("/products/attributes", "Attributes", "Attribute fields on the product form.", {
+        availableOn: "/products",
+        permission: "products.read",
+      }),
+      soon("/products/media", "Media", "Media upload on the product form.", {
+        availableOn: "/products",
+        permission: "products.manage_media",
+      }),
+      soon("/products/specifications", "Specifications", "Specifications on the product form.", {
+        availableOn: "/products",
+        permission: "products.read",
+      }),
+      live("/pricing", "Pricing", "Price levels and lists.", { permission: "pricing.read" }),
+    ],
+  },
+  {
+    id: "03",
+    title: "Barcodes",
+    icon: "barcode",
+    path: "/barcodes",
+    description: "Barcode and QR assignment and labels.",
+    permission: "barcodes.manage",
+    children: [
+      live("/barcodes", "Barcodes", "Generate and list barcodes.", {
+        permission: "barcodes.manage",
+        sidebar: false,
+      }),
+      live("/qr", "QR Codes", "QR generation (same barcode tools).", { permission: "barcodes.manage" }),
+    ],
+  },
+  {
+    id: "04",
+    title: "AI Camera",
+    icon: "camera",
+    path: "/ai-camera",
+    description: "Camera-assisted product match.",
+    permission: "ai.recognize",
+    children: [],
+  },
+  {
+    id: "05",
+    title: "Sales",
+    icon: "pos",
+    path: "/pos",
+    description: "Point of sale terminal and sales documents.",
+    permission: "pos.sell",
+    children: [
+      live("/pos", "New Sale", "POS terminal.", { permission: "pos.sell", sidebar: false }),
+      live("/held-sales", "Hold / Resume", "Parked POS carts (same terminal; opens the holds drawer).", {
+        permission: "pos.hold",
+      }),
+      live("/invoices", "Invoices", "Invoice register and reprints.", { permission: "pos.view_invoices" }),
+      live("/sales-management", "Register", "Sales register, filters, and KPIs.", {
+        permission: "pos.view_invoices",
+      }),
+      live("/returns", "Returns", "Sales returns.", { permission: "pos.return" }),
+      live("/exchange", "Exchange", "Exchanges (same returns screen).", { permission: "pos.return" }),
+      live("/payments", "Payments", "Tender and receipts.", { permission: "payments.receive" }),
+      soon("/discounts", "Discounts", "Discount policies. POS already enforces discount caps.", {
+        permission: "pos.sell",
+      }),
+      live("/pos/references", "References", "Outside references (same salesman screen).", {
+        permission: "hr.view",
+      }),
+      live("/pos/salesmen", "Salesmen", "Salesman profiles and commissions (same module 20 screen).", {
+        permission: "hr.view",
+      }),
+      live("/pos/installments", "Installments", "Installment plans (same module 22 /credit screen).", {
+        permission: "installments.manage",
+      }),
+      live("/pos", "Customer / Checkout helpers", "Customer search, walk-in, and payment split on the terminal.", {
+        permission: "pos.sell",
+        sidebar: false,
+      }),
+    ],
+  },
+  {
+    id: "06",
+    title: "Quotations",
+    icon: "quote",
+    path: "/quotations",
+    description: "Quotes and conversion.",
+    permission: "quotations.read",
+    children: [],
+  },
+  {
+    id: "07",
+    title: "Orders",
+    icon: "orders",
+    path: "/orders",
+    description: "Sales orders and wholesale order intake.",
+    permission: "orders.read",
+    children: [
+      live("/orders", "Orders", "Order list (shared with quotations screen).", {
+        permission: "orders.read",
+        sidebar: false,
+      }),
+      live("/b2b", "B2B", "Wholesale portal orders.", { permission: "b2b.manage" }),
+    ],
+  },
+  {
+    id: "08",
+    title: "Delivery",
+    icon: "delivery",
+    path: "/deliveries",
+    description: "Delivery notes and tracking.",
+    permission: "deliveries.view",
+    children: [],
+  },
+  {
+    id: "09",
+    title: "Purchases",
+    icon: "purchases",
+    path: "/purchases",
+    description: "Purchase invoices, returns, and reorder.",
+    permission: "purchases.read",
+    children: [
+      live("/purchases", "Invoices", "Purchases and supplier prices.", {
+        permission: "purchases.read",
+        sidebar: false,
+      }),
+      live("/purchase-returns", "Returns", "Purchase return posting.", { permission: "purchases.return" }),
+      soon("/purchase-automation", "Automation", "Reorder suggestions are not implemented yet.", {
+        permission: "purchases.read",
+      }),
+    ],
+  },
+  {
+    id: "10",
+    title: "Inventory",
+    icon: "inventory",
+    path: "/inventory",
+    description: "Stock on hand, movements, and traceability.",
+    permission: "inventory.view",
+    children: [
+      live("/inventory", "Stock", "Stock balances and movement ledger.", {
+        permission: "inventory.view",
+        sidebar: false,
+      }),
+      live("/stock-ops", "Movements", "Manual movements, adjustments, counts.", {
+        permission: "inventory.adjust",
+      }),
+      live("/batches-serials", "Batches", "Batch records.", { permission: "inventory.batch" }),
+      live("/inventory/serials", "Serials", "Serial records (same traceability screen).", {
+        permission: "inventory.serial",
+      }),
+      live("/inventory/expiry", "Expiry", "Expiry tracking (same traceability screen).", {
+        permission: "inventory.batch",
+      }),
+      live("/inventory/adjustments", "Adjustments", "Stock adjustments (stock operations).", {
+        permission: "inventory.adjust",
+      }),
+      live("/inventory/damaged", "Damaged", "Damage movements (stock operations).", {
+        permission: "inventory.adjust",
+      }),
+      live("/inventory/audit", "Counts", "Stock counts (stock operations).", { permission: "inventory.count" }),
+    ],
+  },
+  {
+    id: "11",
+    title: "Warehouses",
+    icon: "warehouse",
+    path: "/warehouses",
+    description: "Warehouses, locations, and transfers.",
+    permission: "warehouses.manage",
+    children: [
+      live("/warehouses", "Warehouses", "Warehouse master.", {
+        permission: "warehouses.manage",
+        sidebar: false,
+      }),
+      live("/warehouses/racks", "Racks", "Racks on the warehouses screen.", { permission: "warehouses.manage" }),
+      live("/warehouses/shelves", "Shelves", "Shelves on the warehouses screen.", {
+        permission: "warehouses.manage",
+      }),
+      live("/warehouses/bins", "Bins", "Bins on the warehouses screen.", { permission: "warehouses.manage" }),
+      soon("/warehouses/receiving", "Receiving", "Dedicated receiving desk is not implemented yet.", {
+        availableOn: "/purchases",
+        permission: "purchases.read",
+      }),
+      soon("/warehouses/dispatch", "Dispatch", "Dedicated dispatch desk is not implemented yet.", {
+        availableOn: "/deliveries",
+        permission: "deliveries.view",
+      }),
+      live("/stock-transfers", "Transfers", "Inter-warehouse transfers.", { permission: "inventory.transfer" }),
+    ],
+  },
+  {
+    id: "12",
+    title: "Customers",
+    icon: "customers",
+    path: "/customers",
+    description: "Customer master, ledger, and credit.",
+    permission: "customers.read",
+    children: [
+      live("/customers", "Profiles", "Customer master.", { permission: "customers.read", sidebar: false }),
+      live("/customers/ledger", "Ledger", "Customer ledger on the customer screen.", {
+        permission: "ledgers.view",
+      }),
+      soon("/customers/receivables", "Receivables", "Receivables reports live under Reports.", {
+        availableOn: "/reports",
+        permission: "reports.view",
+      }),
+      live("/credit", "Credit", "Credit / udhaar approvals.", { permission: "credit.manage" }),
+      live("/customers/payment-history", "History", "Payment history on the customer screen.", {
+        permission: "customers.read",
+      }),
+    ],
+  },
+  {
+    id: "13",
+    title: "Suppliers",
+    icon: "suppliers",
+    path: "/suppliers",
+    description: "Supplier master, ledger, and prices.",
+    permission: "suppliers.read",
+    children: [
+      live("/suppliers", "Profiles", "Supplier master.", { permission: "suppliers.read", sidebar: false }),
+      live("/suppliers/ledger", "Ledger", "Supplier ledger on the supplier screen.", {
+        permission: "ledgers.view",
+      }),
+      soon("/suppliers/payables", "Payables", "Payables reports live under Reports.", {
+        availableOn: "/reports",
+        permission: "reports.view",
+      }),
+      live("/suppliers/price-lists", "Price Lists", "Supplier prices on Purchases.", {
+        permission: "purchases.prices",
+      }),
+      soon("/suppliers/performance", "Performance", "Supplier performance analytics are not implemented yet.", {
+        permission: "suppliers.read",
+      }),
+    ],
+  },
+  {
+    id: "14",
+    title: "Service",
+    icon: "service",
+    path: "/service",
+    description: "Job cards, technicians, and repairs.",
+    permission: "service.manage",
+    children: [
+      live("/service", "Job Cards", "Service jobs.", { permission: "service.manage", sidebar: false }),
+      live("/service/complaints", "Complaints", "Complaint capture on the service screen.", {
+        permission: "service.manage",
+      }),
+      live("/service/technicians", "Technicians", "Technician assignment on the service screen.", {
+        permission: "service.manage",
+      }),
+      live("/service/repairs", "Repairs", "Repair workflow on the service screen.", {
+        permission: "service.manage",
+      }),
+      live("/service/charges", "Charges", "Service billing on the service screen.", {
+        permission: "service.manage",
+      }),
+    ],
+  },
+  {
+    id: "15",
+    title: "Warranty",
+    icon: "warranty",
+    path: "/warranty",
+    description: "Warranty claims and replacements.",
+    permission: "warranty.manage",
+    children: [
+      live("/warranty", "Claims", "Warranty claims.", { permission: "warranty.manage", sidebar: false }),
+      live("/warranty/replacements", "Replacements", "Warranty replacements.", {
+        permission: "warranty.manage",
+      }),
+      live("/warranty/history", "History", "Lookup and claim history.", { permission: "warranty.manage" }),
+    ],
+  },
+  {
+    id: "16",
+    title: "Accounts",
+    icon: "accounts",
+    path: "/accounts",
+    description: "Chart of accounts, journals, and vouchers.",
+    permission: "accounts.read",
+    children: [
+      soon("/accounts/cash", "Cash", "Cash book reports live under Reports.", {
+        availableOn: "/reports",
+        permission: "reports.finance",
+      }),
+      live("/accounts/journals", "Journals", "Journals and vouchers.", { permission: "accounts.write" }),
+      soon("/accounts/receipts", "Receipts", "Receipt posting uses Payments.", {
+        availableOn: "/payments",
+        permission: "payments.receive",
+      }),
+      live("/accounts/profit-loss", "P&L", "P&L from the reports hub.", { permission: "reports.finance" }),
+    ],
+  },
+  {
+    id: "17",
+    title: "Banking",
+    icon: "banking",
+    path: "/banking",
+    description: "Bank books and reconciliation.",
+    permission: "banking.manage",
+    children: [],
+  },
+  {
+    id: "18",
+    title: "CRM",
+    icon: "crm",
+    path: "/crm",
+    description: "Segments, campaigns, and engagement.",
+    permission: "crm.view",
+    children: [
+      live("/crm", "Segments", "CRM segments.", { permission: "crm.view", sidebar: false }),
+      live("/crm/campaigns", "Campaigns", "Campaigns including SMS and WhatsApp.", { permission: "crm.manage" }),
+      live("/crm/sms", "SMS", "SMS channel campaigns.", { permission: "crm.manage" }),
+      live("/crm/whatsapp", "WhatsApp", "WhatsApp channel campaigns.", { permission: "crm.manage" }),
+      live("/crm/marketing", "Marketing", "Marketing campaigns on the CRM screen.", {
+        permission: "crm.manage",
+      }),
+      live("/crm/engagement", "Engagement", "Profiles and campaign activity.", { permission: "crm.view" }),
+    ],
+  },
+  {
+    id: "19",
+    title: "Reports",
+    icon: "reports",
+    path: "/reports",
+    description: "Operational reports, BI, and AI insights.",
+    permission: "reports.view",
+    children: [
+      live("/reports", "Reports", "Operational report hub.", { permission: "reports.view", sidebar: false }),
+      live("/bi", "BI", "KPI dashboards.", { permission: "bi.view" }),
+      live("/ai-insights", "AI Insights", "AI business insights.", { permission: "ai.insights" }),
+    ],
+  },
+  {
+    id: "20",
+    title: "Salesmen",
+    icon: "salesman",
+    path: "/salesman",
+    description: "Salesmen, references, and commissions.",
+    permission: "hr.view",
+    children: [
+      live("/salesman", "References", "Employees, references, and commissions.", {
+        permission: "hr.view",
+        sidebar: false,
+      }),
+    ],
+  },
+  {
+    id: "21",
+    title: "Expenses",
+    icon: "expenses",
+    path: "/expenses",
+    description: "Expense entry.",
+    permission: "expenses.manage",
+    children: [],
+  },
+  {
+    id: "22",
+    title: "Installments",
+    icon: "installments",
+    path: "/installments",
+    description: "Installment plans and dues.",
+    permission: "installments.manage",
+    children: [],
+  },
+  {
+    id: "23",
+    title: "Loyalty",
+    icon: "loyalty",
+    path: "/loyalty",
+    description: "Points, tiers, and rewards.",
+    permission: "loyalty.view",
+    children: [],
+  },
+  {
+    id: "24",
+    title: "Documents",
+    icon: "documents",
+    path: "/documents",
+    description: "Attachments and files.",
+    permission: "documents.view",
+    children: [],
+  },
+  {
+    id: "25",
+    title: "Approvals",
+    icon: "approvals",
+    path: "/approvals",
+    description: "Approval inbox.",
+    permission: "approvals.act",
+    children: [],
+  },
+  {
+    id: "26",
+    title: "Users",
+    icon: "users",
+    path: "/users",
+    description: "User and role administration.",
+    permission: "users.manage",
+    children: [],
+  },
+  {
+    id: "27",
+    title: "Permissions",
+    icon: "permissions",
+    path: "/permissions",
+    description: "Permission matrix.",
+    permission: "permissions.manage",
+    children: [],
+  },
+  {
+    id: "28",
+    title: "Audit",
+    icon: "audit",
+    path: "/audit",
+    description: "Immutable audit log.",
+    permission: "audit.view",
+    children: [],
+  },
+  {
+    id: "29",
+    title: "Notifications",
+    icon: "notifications",
+    path: "/notifications",
+    description: "Notification center.",
+    permission: "notifications.view",
+    children: [],
+  },
+  {
+    id: "30",
+    title: "Branches",
+    icon: "branches",
+    path: "/branches",
+    description: "Branch administration.",
+    permission: "branches.manage",
+    children: [],
+  },
+  {
+    id: "31",
+    title: "Tax",
+    icon: "tax",
+    path: "/tax",
+    description: "Tax profile, rates, and FBR readiness.",
+    permission: "tax.view",
+    children: [],
+  },
+  {
+    id: "32",
+    title: "Import / Export",
+    icon: "import",
+    path: "/import-export",
+    description: "Data import and export.",
+    permission: "import.execute",
+    children: [],
+  },
+  {
+    id: "33",
+    title: "Printing",
+    icon: "printing",
+    path: "/printing",
+    description: "Print jobs and templates.",
+    permission: "printing.manage",
+    children: [],
+  },
+  {
+    id: "34",
+    title: "Backup",
+    icon: "backup",
+    path: "/backup",
+    description: "Backup jobs and restore points.",
+    permission: "backup.view",
+    children: [],
+  },
+  {
+    id: "35",
+    title: "Devices",
+    icon: "devices",
+    path: "/devices",
+    description: "Registered devices and hardware events.",
+    permission: "devices.manage",
+    children: [],
+  },
+  {
+    id: "36",
+    title: "Industry",
+    icon: "industry",
+    path: "/industry-engine",
+    description: "Industry-specific configuration.",
+    permission: "settings.manage",
+    children: [],
+  },
+  {
+    id: "37",
+    title: "Customization",
+    icon: "customize",
+    path: "/customization-engine",
+    description: "UI and field customization.",
+    permission: "settings.manage",
+    children: [],
+  },
+  {
+    id: "38",
+    title: "Automation",
+    icon: "rules",
+    path: "/rules-engine",
+    description: "Automation rules and linked documents.",
+    permission: "settings.manage",
+    children: [
+      soon("/rules-engine", "Rules", "Automation engine is not implemented yet.", {
+        permission: "settings.manage",
+        sidebar: false,
+      }),
+      soon("/transaction-linking", "Linking", "Automatic document linking is not implemented yet.", {
+        permission: "settings.manage",
+      }),
+    ],
+  },
+  {
+    id: "39",
+    title: "System",
+    icon: "admin",
+    path: "/settings",
+    description: "Organization settings, security, and channels.",
+    permission: "settings.manage",
+    children: [
+      soon("/settings", "General", "Organization settings are not implemented yet.", {
+        permission: "settings.manage",
+        sidebar: false,
+      }),
+      soon("/settings/company", "Company", "Dedicated company profile screen is not implemented yet.", {
+        permission: "settings.manage",
+      }),
+      soon("/settings/localization", "Localization", "Localization settings are not implemented yet.", {
+        permission: "settings.manage",
+      }),
+      soon("/settings/currency", "Currency", "Currency settings are not implemented yet.", {
+        permission: "settings.manage",
+      }),
+      soon("/settings/language", "Language", "Language settings are not implemented yet.", {
+        permission: "settings.manage",
+      }),
+      soon("/settings/datetime", "Date & Time", "Date and time settings are not implemented yet.", {
+        permission: "settings.manage",
+      }),
+      soon("/settings/numbering", "Numbering", "Document numbering is not implemented yet.", {
+        permission: "settings.manage",
+      }),
+      soon("/settings/invoice-templates", "Templates", "Invoice template designer is not implemented yet.", {
+        permission: "settings.manage",
+      }),
+      soon("/settings/barcode", "Barcode", "Barcode defaults live under Barcodes.", {
+        availableOn: "/barcodes",
+        permission: "barcodes.manage",
+      }),
+      soon("/settings/pos", "POS", "POS configuration is not a separate admin screen yet.", {
+        availableOn: "/pos",
+        permission: "pos.configure",
+      }),
+      soon("/settings/email", "Email", "Email gateway settings are not implemented yet.", {
+        permission: "settings.manage",
+      }),
+      soon("/settings/sms", "SMS", "SMS gateway settings are not implemented yet.", {
+        permission: "settings.manage",
+      }),
+      soon("/settings/storage", "Storage", "Storage settings are not implemented yet.", {
+        permission: "settings.manage",
+      }),
+      soon("/settings/logs", "Logs", "System logs are not implemented yet.", {
+        availableOn: "/audit",
+        permission: "audit.view",
+      }),
+      soon("/settings/maintenance", "Maintenance", "Maintenance tools are not implemented yet.", {
+        permission: "settings.manage",
+      }),
+      live("/security", "Security", "Sessions, 2FA, and login history.", { permission: "security.view" }),
+      live("/integrations", "Integrations", "API keys and webhooks.", { permission: "integrations.view" }),
+      live("/online-store", "Store", "Storefront configuration.", { permission: "store.manage" }),
+      soon("/mobile", "Mobile", "Mobile channel settings are not implemented yet.", {
+        permission: "settings.manage",
+      }),
+      live("/hr", "HR", "Employees, attendance, and payroll.", { permission: "hr.view" }),
+    ],
+  },
 ];
+
+/**
+ * Duplicate URLs kept on purpose (do not delete).
+ * Same page component, two addresses.
+ */
+export const DUPLICATE_ROUTE_PAIRS: Array<{ canonical: string; duplicate: string; note: string }> = [
+  { canonical: "/pos", duplicate: "/held-sales", note: "Same PosPage; /held-sales opens the holds drawer" },
+  { canonical: "/pos", duplicate: "/pos/new", note: "Same PosPage; naming alias only" },
+  { canonical: "/salesman", duplicate: "/pos/salesmen", note: "Same SalesmanPage; POS child alias (module 20 kept)" },
+  { canonical: "/salesman", duplicate: "/pos/references", note: "Same SalesmanPage; POS References child" },
+  { canonical: "/installments", duplicate: "/credit", note: "Same CreditInstallmentsPage; credit stays under Customers" },
+  {
+    canonical: "/installments",
+    duplicate: "/pos/installments",
+    note: "Same CreditInstallmentsPage; POS child alias (module 22 kept)",
+  },
+  { canonical: "/quotations", duplicate: "/orders", note: "Same QuotationsPage (orders section)" },
+  { canonical: "/returns", duplicate: "/exchange", note: "Same ReturnsPage" },
+  { canonical: "/barcodes", duplicate: "/qr", note: "Same BarcodesPage" },
+  { canonical: "/categories", duplicate: "/subcategories", note: "Same TaxonomyPage, different tab" },
+  { canonical: "/categories", duplicate: "/brands", note: "Same TaxonomyPage, different tab" },
+  { canonical: "/categories", duplicate: "/companies", note: "Same TaxonomyPage, different tab" },
+  { canonical: "/inventory", duplicate: "/stock-ops", note: "StockOpsPage was unrouted; now under Inventory" },
+];
+
+/** Paths that render the POS terminal chrome (no ERP sidebar). Do not use startsWith("/pos/"). */
+export const POS_TERMINAL_PATHS = new Set(["/pos", "/held-sales", "/pos/new"]);
+
+export function isPosTerminalPath(pathname: string): boolean {
+  return POS_TERMINAL_PATHS.has(pathname);
+}
+
+const LEGACY_ROUTES: ErpModuleRoute[] = [];
+
+function flattenSections(): ErpModuleRoute[] {
+  const rows: ErpModuleRoute[] = [];
+  for (const section of ERP_NAV_SECTIONS) {
+    rows.push({
+      path: section.path,
+      title: section.title,
+      group: section.title,
+      description: section.description,
+      permission: section.permission,
+      status: section.children.some((c) => c.path === section.path)
+        ? section.children.find((c) => c.path === section.path)?.status
+        : section.path === "/industry-engine" ||
+            section.path === "/customization-engine" ||
+            section.path === "/rules-engine" ||
+            section.path === "/settings"
+          ? "placeholder"
+          : "implemented",
+      sidebar: true,
+    });
+    for (const child of section.children) {
+      rows.push({
+        path: child.path,
+        title: child.title,
+        group: section.title,
+        description: child.description,
+        status: child.status,
+        availableOn: child.availableOn,
+        sidebar: child.sidebar !== false,
+        permission: child.permission ?? section.permission,
+      });
+    }
+  }
+  return rows;
+}
+
+function uniqueByPath(items: ErpModuleRoute[]): ErpModuleRoute[] {
+  const seen = new Set<string>();
+  const out: ErpModuleRoute[] = [];
+  for (const item of items) {
+    if (seen.has(item.path)) continue;
+    seen.add(item.path);
+    out.push(item);
+  }
+  return out;
+}
+
+/**
+ * Flat route registry used by the router.
+ * Every original URL is preserved; new placeholder/alias paths are appended.
+ */
+export const ERP_MODULES: ErpModuleRoute[] = uniqueByPath([...flattenSections(), ...LEGACY_ROUTES]);
+
+export const ERP_SIDEBAR_SECTIONS: ErpNavSection[] = ERP_NAV_SECTIONS.map((section) => ({
+  ...section,
+  children: section.children.filter((child) => child.sidebar !== false),
+}));
+
+export const EXTRA_APP_PATHS = ["/products/new", "/pos/new"] as const;
+
+export function findModuleByPath(pathname: string): ErpModuleRoute | undefined {
+  return ERP_MODULES.find((m) => m.path === pathname);
+}
+
+export function findSectionForPath(pathname: string): ErpNavSection | undefined {
+  return ERP_NAV_SECTIONS.find(
+    (section) =>
+      section.path === pathname ||
+      section.children.some((child) => child.path === pathname) ||
+      (section.path !== "/" && pathname.startsWith(`${section.path}/`)),
+  );
+}
+
+export function requiredPermissionForPath(pathname: string): string | undefined {
+  const item = findModuleByPath(pathname);
+  if (item?.permission) return item.permission;
+  return findSectionForPath(pathname)?.permission;
+}

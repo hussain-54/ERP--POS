@@ -1,5 +1,5 @@
 import { useMemo, useState } from "react";
-import { Link, NavLink, Outlet, useLocation, useNavigate } from "react-router-dom";
+import { Link, Outlet, useLocation, useNavigate } from "react-router-dom";
 import {
   Badge,
   Button,
@@ -9,42 +9,58 @@ import {
   Select,
 } from "@electronic-erp/ui";
 import { useAuth } from "@/features/auth/AuthContext";
-import { ERP_MODULES } from "@/app/modules";
+import {
+  canShowNavItem,
+  ERP_MODULES,
+  findSectionForPath,
+  findModuleByPath,
+  isPosTerminalPath,
+  requiredPermissionForPath,
+} from "@/app/modules";
+import { SidebarNav } from "@/app/shell/SidebarNav";
+import { UnauthorizedPage } from "@/features/modules/RouteFallbackPage";
 
 export function AppShell() {
-  const { user, branchId, branches, setBranchId, logout, hasPermission } = useAuth();
+  const { user, branchId, branches, setBranchId, logout, hasPermission, permissions } = useAuth();
   const [mobileOpen, setMobileOpen] = useState(false);
   const [commandOpen, setCommandOpen] = useState(false);
   const [query, setQuery] = useState("");
+  const [collapsed, setCollapsed] = useState(false);
   const location = useLocation();
   const navigate = useNavigate();
+  const grantedCount = permissions.length;
 
-  const isPosTerminal =
-    location.pathname === "/pos" ||
-    location.pathname === "/held-sales" ||
-    location.pathname.startsWith("/pos/");
-
-  const filteredNav = useMemo(() => {
-    const q = query.trim().toLowerCase();
-    if (!q) return ERP_MODULES;
-    return ERP_MODULES.filter(
-      (m) => m.title.toLowerCase().includes(q) || m.group.toLowerCase().includes(q),
-    );
-  }, [query]);
+  const compact = collapsed && !mobileOpen;
+  const isPosTerminal = isPosTerminalPath(location.pathname);
+  const required = requiredPermissionForPath(location.pathname);
+  const forbidden =
+    Boolean(required) && grantedCount > 0 && !canShowNavItem(required, grantedCount, hasPermission);
 
   const crumbs = useMemo(() => {
-    const mod = ERP_MODULES.find((m) => m.path === location.pathname);
-    return mod ? [mod.group, mod.title] : ["App"];
+    const section = findSectionForPath(location.pathname);
+    const item = findModuleByPath(location.pathname);
+    if (section && item && item.title !== section.title) {
+      return [section.title, item.title];
+    }
+    if (section) return [section.title];
+    return item ? [item.group, item.title] : ["App"];
   }, [location.pathname]);
 
-  const commandItems = ERP_MODULES.map((m) => ({
-    id: m.path,
-    label: m.title,
-    group: m.group,
-    onSelect: () => navigate(m.path),
-  }));
+  const commandItems = useMemo(
+    () =>
+      ERP_MODULES.filter(
+        (m) =>
+          m.sidebar !== false && canShowNavItem(m.permission, grantedCount, hasPermission),
+      ).map((m) => ({
+        id: `${m.path}:${m.title}`,
+        label: m.title,
+        group: m.group,
+        onSelect: () => navigate(m.path),
+      })),
+    [navigate, grantedCount, hasPermission],
+  );
 
-  if (isPosTerminal) {
+  if (isPosTerminal && !forbidden) {
     return (
       <div className="min-h-screen bg-[var(--erp-bg)]">
         <Outlet />
@@ -54,47 +70,47 @@ export function AppShell() {
   }
 
   return (
-    <div className="min-h-screen lg:grid lg:grid-cols-[280px_1fr]">
+    <div className={`min-h-screen lg:grid ${collapsed ? "lg:grid-cols-[72px_1fr]" : "lg:grid-cols-[280px_1fr]"}`}>
       <aside
-        className={`fixed inset-y-0 left-0 z-40 w-[280px] border-r border-[var(--erp-border)] bg-white/95 backdrop-blur transition lg:static ${
-          mobileOpen ? "translate-x-0" : "-translate-x-full lg:translate-x-0"
-        }`}
+        className={`fixed inset-y-0 left-0 z-40 border-r border-[var(--erp-border)] bg-white/95 backdrop-blur transition lg:static ${
+          collapsed ? "w-[280px] lg:w-[72px]" : "w-[280px]"
+        } ${mobileOpen ? "translate-x-0" : "-translate-x-full lg:translate-x-0"}`}
       >
-        <div className="flex h-16 items-center justify-between px-4">
-          <Link to="/" className="text-lg font-semibold text-[var(--erp-brand)]">
-            Electronic ERP
+        <div className="flex h-16 items-center justify-between gap-1 px-3">
+          <Link to="/" className="truncate text-lg font-semibold text-[var(--erp-brand)]">
+            {compact ? "E" : "Electronic ERP"}
           </Link>
-          <Button className="lg:hidden" variant="ghost" size="sm" onClick={() => setMobileOpen(false)}>
-            Close
-          </Button>
-        </div>
-        <div className="px-3 pb-3">
-          <SearchInput
-            placeholder="Filter modules…"
-            value={query}
-            onChange={(e) => setQuery(e.target.value)}
-          />
-        </div>
-        <nav className="h-[calc(100vh-8rem)] space-y-1 overflow-auto px-2 pb-6">
-          {filteredNav.map((item) => (
-            <NavLink
-              key={item.path}
-              to={item.path}
-              end={item.path === "/"}
-              onClick={() => setMobileOpen(false)}
-              className={({ isActive }) =>
-                `block rounded-xl px-3 py-2 text-sm ${
-                  isActive
-                    ? "bg-[var(--erp-brand)] text-white"
-                    : "text-[var(--erp-ink)] hover:bg-[var(--erp-bg)]"
-                }`
-              }
+          <div className="flex items-center gap-1">
+            <Button
+              className="hidden lg:inline-flex"
+              variant="ghost"
+              size="sm"
+              aria-label={collapsed ? "Expand sidebar" : "Collapse sidebar"}
+              onClick={() => setCollapsed((value) => !value)}
             >
-              <div className="font-medium">{item.title}</div>
-              <div className="text-xs opacity-80">{item.group}</div>
-            </NavLink>
-          ))}
-        </nav>
+              {collapsed ? "»" : "«"}
+            </Button>
+            <Button className="lg:hidden" variant="ghost" size="sm" onClick={() => setMobileOpen(false)}>
+              Close
+            </Button>
+          </div>
+        </div>
+        {!compact ? (
+          <div className="px-3 pb-3">
+            <SearchInput
+              placeholder="Filter modules…"
+              value={query}
+              onChange={(e) => setQuery(e.target.value)}
+            />
+          </div>
+        ) : null}
+        <SidebarNav
+          query={compact ? "" : query}
+          onNavigate={() => setMobileOpen(false)}
+          collapsed={compact}
+          grantedCount={grantedCount}
+          hasPermission={hasPermission}
+        />
       </aside>
 
       <div className="min-w-0">
@@ -149,9 +165,7 @@ export function AppShell() {
           </div>
         </header>
 
-        <main className="px-3 py-4 md:px-6 md:py-6">
-          <Outlet />
-        </main>
+        <main className="px-3 py-4 md:px-6 md:py-6">{forbidden ? <UnauthorizedPage /> : <Outlet />}</main>
       </div>
 
       <CommandPalette open={commandOpen} items={commandItems} onClose={() => setCommandOpen(false)} />

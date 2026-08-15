@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
+import { useLocation } from "react-router-dom";
 import {
   maxReturnableQty,
   prepareSaleReturn,
@@ -58,6 +59,8 @@ const STEPS: Array<{ id: WizardStep; label: string }> = [
 
 export function ReturnsPage() {
   const toast = useToast();
+  const { pathname } = useLocation();
+  const heading = pathname === "/exchange" ? "Exchange" : "Returns";
   const { branchId } = useAuth();
   const [online, setOnline] = useState(
     typeof navigator !== "undefined" ? navigator.onLine : true,
@@ -282,7 +285,7 @@ export function ReturnsPage() {
   return (
     <div className="space-y-4">
       <div>
-        <h1 className="text-2xl font-semibold">Returns / Exchange</h1>
+        <h1 className="text-2xl font-semibold">{heading}</h1>
         <p className="text-sm text-[var(--erp-muted)]">
           Search invoice → select items → inspection → refund/exchange → confirm. Qty cannot exceed
           sold minus previously returned.

@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
+import { useLocation } from "react-router-dom";
 import type { ProductSearchResult } from "@electronic-erp/contracts";
 import {
   applyDiscount,
@@ -18,11 +19,11 @@ import { useToast } from "@electronic-erp/ui";
 import { useAuth } from "@/features/auth/AuthContext";
 import { posApi } from "./pos-api";
 import { inventoryApi } from "@/features/inventory/inventory-api";
-import { enterpriseApi } from "@/features/enterprise/enterprise-api";
+import { enterpriseApi } from "@/features/system/enterprise-api";
 import { purchasesApi } from "@/features/purchases/purchases-api";
-import { mapSalesmanEmployees, type SalesmanOption } from "./SalesmanPage";
+import { mapSalesmanEmployees, type SalesmanOption } from "@/features/salesman/SalesmanPage";
 import { posHardware } from "./hardware";
-import { aiApi } from "@/features/ai/ai-api";
+import { aiApi } from "@/features/ai-camera/ai-api";
 import "./pos-tokens.css";
 import { PosSidebar } from "./components/PosSidebar";
 import { PosHeader } from "./components/PosHeader";
@@ -33,10 +34,10 @@ import { PosPaymentPanel } from "./components/PosPaymentPanel";
 import { PosApprovalDialog } from "./components/PosApprovalDialog";
 import { ReceiptPreview, type InvoicePreview } from "./components/ReceiptPreview";
 import { PosHoldsPanel, type HeldSaleListItem } from "./components/PosHoldsPanel";
-import { catalogApi } from "@/features/catalog/catalog-api";
+import { catalogApi } from "@/features/product-management/catalog-api";
 import { usePosSession } from "./session/usePosSession";
 import { posCustomerRepository } from "./session/pos-customer-repository";
-import { partiesApi } from "@/features/parties/parties-api";
+import { partiesApi } from "@/features/customers/parties-api";
 import type { CustomerSearchHit } from "@electronic-erp/contracts";
 import {
   POSActionBar,
@@ -109,8 +110,10 @@ function saveProducts(key: string, items: ProductSearchResult[]) {
   localStorage.setItem(key, JSON.stringify(items.slice(0, 40)));
 }
 
-export function PosPage() {
+export function PosPage({ entry = "sale" }: { entry?: "sale" | "holds" }) {
   const toast = useToast();
+  const { pathname } = useLocation();
+  const holdEntry = entry === "holds" || pathname === "/held-sales";
   const { branchId, branches, setBranchId, user, hasPermission, organizationId } = useAuth();
   const session = usePosSession();
   const {
@@ -200,7 +203,7 @@ export function PosPage() {
   const [receipt, setReceipt] = useState<InvoicePreview | null>(null);
   const [receiptFormat, setReceiptFormat] = useState<"80mm" | "58mm" | "a4">("80mm");
   const [clock, setClock] = useState(() => new Date());
-  const [showHolds, setShowHolds] = useState(false);
+  const [showHolds, setShowHolds] = useState(holdEntry);
   const [creatingCustomer, setCreatingCustomer] = useState(false);
 
   const searchRef = useRef<HTMLInputElement>(null);
@@ -242,6 +245,10 @@ export function PosPage() {
       window.removeEventListener("offline", off);
     };
   }, []);
+
+  useEffect(() => {
+    if (holdEntry) setShowHolds(true);
+  }, [holdEntry]);
 
   useEffect(() => {
     void partiesApi.seedPaymentMethods().then((r) => {

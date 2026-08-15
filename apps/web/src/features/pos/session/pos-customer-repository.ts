@@ -3,8 +3,8 @@
  */
 import type { Customer, CustomerSearchHit, UpdateCustomerInput } from "@electronic-erp/contracts";
 import { toCustomerSearchHit } from "@electronic-erp/domain";
-import { partiesApi } from "@/features/parties/parties-api";
-import { commerceApi } from "@/features/commerce/commerce-api";
+import { partiesApi } from "@/features/customers/parties-api";
+import { commerceApi } from "@/features/crm/commerce-api";
 import { toPosCustomerProfile } from "./pos-customer-runtime";
 
 export type PosCustomerCreateInput = {

@@ -1,21 +1,26 @@
 import { NavLink } from "react-router-dom";
+import { ERP_NAV_SECTIONS } from "@/app/modules";
 import { POSButton } from "./POSButton";
 import { POSIconButton } from "./POSIconButton";
 import { posCn } from "./posCn";
 
-const NAV: Array<{ to: string; label: string; end?: boolean }> = [
-  { to: "/", label: "ERP Home", end: true },
-  { to: "/pos", label: "POS", end: true },
-  { to: "/held-sales", label: "Hold / Resume" },
-  { to: "/customers", label: "Customers" },
-  { to: "/products", label: "Products" },
-  { to: "/invoices", label: "Invoices" },
-  { to: "/returns", label: "Returns" },
-  { to: "/salesman", label: "Salesman" },
-  { to: "/deliveries", label: "Deliveries" },
-  { to: "/reports", label: "Reports" },
-  { to: "/settings", label: "Settings" },
-];
+function posSalesNav(): Array<{ to: string; label: string; end?: boolean }> {
+  const section = ERP_NAV_SECTIONS.find((item) => item.id === "05");
+  const seen = new Set<string>();
+  const children: Array<{ to: string; label: string; end?: boolean }> = [];
+  for (const child of section?.children ?? []) {
+    if (seen.has(child.path)) continue;
+    seen.add(child.path);
+    children.push({
+      to: child.path,
+      label: child.path === "/pos" ? "New Sale" : child.title,
+      end: child.path === "/pos" ? true : undefined,
+    });
+  }
+  return [{ to: "/", label: "ERP Home", end: true }, ...children, { to: "/settings", label: "Settings" }];
+}
+
+const POS_SALES_NAV = posSalesNav();
 
 export interface POSSidebarProps {
   collapsed: boolean;
@@ -57,7 +62,7 @@ export function POSSidebar({
       <div className="flex h-14 items-center justify-between px-3">
         {!collapsed ? (
           <span className="text-sm font-semibold tracking-wide text-[var(--pos-on-navy)]">
-            POS / Sales
+            Sales
           </span>
         ) : null}
         <POSIconButton label="Toggle sidebar" tone="onNavy" onClick={onToggle}>
@@ -66,9 +71,9 @@ export function POSSidebar({
       </div>
 
       <nav className="flex-1 space-y-0.5 px-2 pb-4" aria-label="POS">
-        {NAV.map((item) => (
+        {POS_SALES_NAV.map((item) => (
           <NavLink
-            key={item.to}
+            key={`${item.to}:${item.label}`}
             to={item.to}
             end={item.end}
             title={item.label}

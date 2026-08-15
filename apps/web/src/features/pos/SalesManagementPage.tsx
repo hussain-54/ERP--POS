@@ -1,11 +1,11 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { Button, Card, Input, Select, useToast } from "@electronic-erp/ui";
 import { useAuth } from "@/features/auth/AuthContext";
-import { adminApi } from "@/features/admin/admin-api";
-import { partiesApi } from "@/features/parties/parties-api";
-import { reportingApi } from "@/features/reporting/reporting-api";
-import { mapSalesmanEmployees } from "./SalesmanPage";
-import { enterpriseApi } from "@/features/enterprise/enterprise-api";
+import { adminApi } from "@/features/users/admin-api";
+import { partiesApi } from "@/features/customers/parties-api";
+import { reportingApi } from "@/features/reports/reporting-api";
+import { mapSalesmanEmployees } from "@/features/salesman/SalesmanPage";
+import { enterpriseApi } from "@/features/system/enterprise-api";
 import { posApi } from "./pos-api";
 import { ReceiptPreview, type InvoicePreview } from "./components/ReceiptPreview";
 
