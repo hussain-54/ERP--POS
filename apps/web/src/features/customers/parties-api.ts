@@ -1,3 +1,4 @@
+/** Shared client: 12 Customers, 13 Suppliers, 22 Installments, 05 Sales payments. Do not split into 39 clients. */
 import type { Customer, PartyLedgerEntry, Payment, Supplier } from "@electronic-erp/contracts";
 import { apiFetch } from "@/lib/api";
 import { authStorage } from "@/features/auth/auth-service";

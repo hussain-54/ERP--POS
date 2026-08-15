@@ -1,3 +1,4 @@
+/** Shared client: 18 CRM, 23 Loyalty, 07 B2B, 39 Store. Do not split into 39 clients. */
 import { apiFetch } from "@/lib/api";
 import { authStorage } from "@/features/auth/auth-service";
 

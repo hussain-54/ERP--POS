@@ -1,19 +1,26 @@
-import { describe, expect, it } from "vitest";
-import { render, screen } from "@testing-library/react";
+import { afterEach, describe, expect, it } from "vitest";
+import { isValidElement } from "react";
+import { cleanup, render, screen } from "@testing-library/react";
 import { MemoryRouter } from "react-router-dom";
 import { ToastProvider } from "@electronic-erp/ui";
 import { ModulePlaceholderPage } from "@/features/modules/ModulePlaceholderPage";
 import {
   canShowNavItem,
+  DUPLICATE_ROUTE_PAIRS,
   ERP_FEATURE_FOLDERS,
   ERP_MODULES,
   ERP_NAV_SECTIONS,
   ERP_SIDEBAR_SECTIONS,
   EXTRA_APP_PATHS,
+  isComingSoonEngineSection,
   isPosTerminalPath,
 } from "@/app/modules";
 import { SidebarNav } from "@/app/shell/SidebarNav";
-import { router } from "@/app/router";
+import { IMPLEMENTED_ROUTES, router } from "@/app/router";
+
+afterEach(() => {
+  cleanup();
+});
 
 describe("web foundation", () => {
   it("renders module placeholder", () => {
@@ -40,7 +47,7 @@ describe("web foundation", () => {
       "POS",
       "Hold / Resume",
       "Invoices",
-      "Sales Register",
+      "Register",
       "Returns",
       "Exchange",
       "Payments",
@@ -174,7 +181,7 @@ describe("39-module navigation lock", () => {
       "POS",
       "Hold / Resume",
       "Invoices",
-      "Sales Register",
+      "Register",
       "Returns",
       "Exchange",
       "Payments",
@@ -184,7 +191,7 @@ describe("39-module navigation lock", () => {
       "Installments",
     ]);
     expect(titles("07")).toEqual(["Orders", "B2B"]);
-    expect(titles("09")).toEqual(["Purchases", "Purchase Returns", "Automation"]);
+    expect(titles("09")).toEqual(["Purchases", "Returns", "Automation"]);
     expect(titles("10")).toEqual([
       "Inventory",
       "Movements",
@@ -193,8 +200,23 @@ describe("39-module navigation lock", () => {
       "Expiry",
       "Adjustments",
       "Damaged",
-      "Counts / Audit",
+      "Counts",
     ]);
+    expect(titles("11")).toEqual([
+      "Warehouses",
+      "Racks",
+      "Shelves",
+      "Bins",
+      "Receiving",
+      "Dispatch",
+      "Transfers",
+    ]);
+    expect(titles("12")).toEqual(["Customers", "Ledger", "Receivables", "Credit", "History"]);
+    expect(titles("13")).toEqual(["Suppliers", "Ledger", "Payables", "Price Lists", "Performance"]);
+    expect(titles("14")).toEqual(["Service", "Complaints", "Technicians", "Repairs", "Charges"]);
+    expect(titles("15")).toEqual(["Warranty", "Replacements", "History"]);
+    expect(titles("16")).toEqual(["Accounts", "Cash", "Journals", "Receipts", "P&L"]);
+    expect(titles("18")).toEqual(["CRM", "Campaigns", "SMS", "WhatsApp", "Marketing", "Engagement"]);
     expect(titles("19")).toEqual(["Reports", "BI", "AI Insights"]);
     expect(titles("20")).toEqual(["Salesmen", "References", "Commissions"]);
     expect(titles("26")).toEqual(["Users / Roles"]);
@@ -206,12 +228,13 @@ describe("39-module navigation lock", () => {
     expect(titles("36")).toEqual(["Coming Soon"]);
     expect(titles("37")).toEqual(["Coming Soon"]);
     expect(titles("38")).toEqual(["Rules", "Transaction Linking", "Coming Soon"]);
-    expect(titles("39")?.filter((t) => t !== "Numbering")).toEqual([
+    expect(titles("39")).toEqual([
       "Company",
       "Localization",
       "Currency",
       "Language",
-      "Date / Numbering",
+      "Date",
+      "Numbering",
       "Templates",
       "Barcode",
       "POS",
@@ -233,7 +256,10 @@ describe("39-module navigation lock", () => {
       const section = ERP_NAV_SECTIONS.find((s) => s.id === id);
       const route = ERP_MODULES.find((m) => m.path === section?.path);
       expect(route?.status).toBe("placeholder");
+      expect(isComingSoonEngineSection(section!)).toBe(true);
     }
+    expect(isComingSoonEngineSection({ id: "39" })).toBe(false);
+    expect(isComingSoonEngineSection({ id: "05" })).toBe(false);
   });
 
   it("locks frontend feature folder names without inventing 36–38 folders", () => {
@@ -301,6 +327,91 @@ describe("nav structure", () => {
     }
   });
 
+  it("shows the intended sidebar children without duplicating parent rows", () => {
+    const visible = (id: string) =>
+      ERP_SIDEBAR_SECTIONS.find((s) => s.id === id)?.children.map((c) => c.title);
+    expect(visible("05")).toEqual([
+      "Hold / Resume",
+      "Invoices",
+      "Register",
+      "Returns",
+      "Exchange",
+      "Payments",
+      "Discounts",
+      "References",
+      "Salesmen",
+      "Installments",
+    ]);
+    expect(visible("07")).toEqual(["B2B"]);
+    expect(visible("09")).toEqual(["Returns", "Automation"]);
+    expect(visible("10")).toEqual([
+      "Movements",
+      "Batches",
+      "Serials",
+      "Expiry",
+      "Adjustments",
+      "Damaged",
+      "Counts",
+    ]);
+    expect(visible("11")).toEqual(["Racks", "Shelves", "Bins", "Receiving", "Dispatch", "Transfers"]);
+    expect(visible("12")).toEqual(["Ledger", "Receivables", "Credit", "History"]);
+    expect(visible("13")).toEqual(["Ledger", "Payables", "Price Lists", "Performance"]);
+    expect(visible("14")).toEqual(["Complaints", "Technicians", "Repairs", "Charges"]);
+    expect(visible("15")).toEqual(["Replacements", "History"]);
+    expect(visible("16")).toEqual(["Cash", "Journals", "Receipts", "P&L"]);
+    expect(visible("18")).toEqual(["Campaigns", "SMS", "WhatsApp", "Marketing", "Engagement"]);
+    expect(visible("19")).toEqual(["BI", "AI Insights"]);
+    expect(visible("39")).toEqual([
+      "Company",
+      "Localization",
+      "Currency",
+      "Language",
+      "Date",
+      "Numbering",
+      "Templates",
+      "Barcode",
+      "POS",
+      "Email",
+      "SMS",
+      "Storage",
+      "Logs",
+      "Maintenance",
+      "Security",
+      "Integrations",
+      "Store",
+      "Mobile",
+      "HR",
+    ]);
+  });
+
+  it("reuses existing screens for shared children and keeps Coming Soon items as placeholders", () => {
+    const child = (id: string, title: string) =>
+      ERP_NAV_SECTIONS.find((s) => s.id === id)?.children.find((c) => c.title === title);
+
+    expect(child("05", "Salesmen")?.path).toBe("/pos/salesmen");
+    expect(child("05", "Installments")?.path).toBe("/pos/installments");
+    expect(child("05", "References")?.path).toBe("/pos/references");
+    expect(child("07", "B2B")?.path).toBe("/b2b");
+    expect(child("16", "P&L")?.path).toBe("/accounts/profit-loss");
+    expect(child("13", "Price Lists")?.path).toBe("/suppliers/price-lists");
+
+    for (const [id, title] of [
+      ["05", "Discounts"],
+      ["09", "Automation"],
+      ["11", "Receiving"],
+      ["11", "Dispatch"],
+      ["12", "Receivables"],
+      ["13", "Payables"],
+      ["13", "Performance"],
+      ["16", "Cash"],
+      ["16", "Receipts"],
+      ["39", "Maintenance"],
+      ["39", "Mobile"],
+    ] as const) {
+      expect(child(id, title)?.status).toBe("placeholder");
+    }
+  });
+
   it("hides repeated parent-path children from the ERP sidebar", () => {
     for (const section of ERP_SIDEBAR_SECTIONS) {
       expect(section.children.some((child) => child.path === section.path)).toBe(false);
@@ -325,6 +436,37 @@ describe("nav structure", () => {
     expect(ERP_MODULES.some((m) => m.path === "/pos/salesmen")).toBe(true);
   });
 
+  it("points duplicate routes at the canonical page without merging files", () => {
+    const registered = new Set<string>([...ERP_MODULES.map((m) => m.path), ...EXTRA_APP_PATHS]);
+    const pageType = (path: string) => {
+      const el = IMPLEMENTED_ROUTES[path];
+      expect(isValidElement(el), path).toBe(true);
+      return isValidElement(el) ? el.type : null;
+    };
+
+    for (const pair of DUPLICATE_ROUTE_PAIRS) {
+      expect(registered.has(pair.canonical), pair.canonical).toBe(true);
+      expect(registered.has(pair.duplicate), pair.duplicate).toBe(true);
+      if (pair.sameComponent === false) {
+        expect(pageType(pair.canonical)).not.toBe(pageType(pair.duplicate));
+      } else {
+        expect(pageType(pair.canonical)).toBe(pageType(pair.duplicate));
+      }
+    }
+
+    expect(pageType("/pos")).toBe(pageType("/held-sales"));
+    expect(pageType("/quotations")).toBe(pageType("/orders"));
+    expect(pageType("/returns")).toBe(pageType("/exchange"));
+    expect(pageType("/barcodes")).toBe(pageType("/qr"));
+    expect(pageType("/installments")).toBe(pageType("/credit"));
+    expect(pageType("/installments")).toBe(pageType("/pos/installments"));
+    expect(pageType("/salesman")).toBe(pageType("/pos/salesmen"));
+    expect(pageType("/salesman")).toBe(pageType("/pos/references"));
+    expect(pageType("/categories")).toBe(pageType("/subcategories"));
+    expect(pageType("/stock-ops")).toBe(pageType("/inventory/adjustments"));
+    expect(pageType("/inventory")).not.toBe(pageType("/stock-ops"));
+  });
+
   it("covers extra deep-link paths used by the router", () => {
     expect(EXTRA_APP_PATHS).toContain("/products/new");
     expect(EXTRA_APP_PATHS).toContain("/pos/new");
@@ -334,6 +476,17 @@ describe("nav structure", () => {
       expect(serialized).toContain(path.replace(/^\//, ""));
     }
     expect(serialized).toContain("*");
+  });
+
+  it("registers every parent and child navigation path", () => {
+    const modulePaths = new Set(ERP_MODULES.map((m) => m.path));
+    for (const section of ERP_NAV_SECTIONS) {
+      expect(modulePaths.has(section.path)).toBe(true);
+      for (const child of section.children) {
+        expect(modulePaths.has(child.path)).toBe(true);
+      }
+    }
+    expect(ERP_NAV_SECTIONS).toHaveLength(39);
   });
 
   it("fails open when no permissions are loaded and closed when they are", () => {
@@ -351,6 +504,8 @@ describe("nav structure", () => {
     );
     expect(screen.getByLabelText("ERP modules")).toBeInTheDocument();
     expect(screen.getByRole("link", { name: "Customers" })).toHaveAttribute("href", "/customers");
+    expect(screen.getByRole("link", { name: "Products" })).toHaveAttribute("title", "Product Management");
+    expect(screen.getByRole("link", { name: "Industry" })).toHaveAttribute("href", "/industry-engine");
     rerender(
       <MemoryRouter initialEntries={["/customers"]}>
         <SidebarNav query="" onNavigate={() => undefined} collapsed />
@@ -358,5 +513,15 @@ describe("nav structure", () => {
     );
     expect(screen.getByLabelText("ERP modules")).toBeInTheDocument();
     expect(screen.queryByRole("button", { name: /Collapse Customers/i })).not.toBeInTheDocument();
+  });
+
+  it("finds a parent by official module name without listing every route as a top-level item", () => {
+    const view = render(
+      <MemoryRouter initialEntries={["/"]}>
+        <SidebarNav query="Product Management" onNavigate={() => undefined} />
+      </MemoryRouter>,
+    );
+    expect(view.getByRole("link", { name: "Products" })).toBeInTheDocument();
+    expect(view.queryByRole("link", { name: "Customers" })).not.toBeInTheDocument();
   });
 });

@@ -1,3 +1,4 @@
+/** Shared client: 20 Salesmen, 24 Documents, 29 Notifications, 31 Tax, 39 HR. Do not split into 39 clients. */
 import { apiFetch } from "@/lib/api";
 import { authStorage } from "@/features/auth/auth-service";
 

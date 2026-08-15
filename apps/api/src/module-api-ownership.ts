@@ -13,6 +13,7 @@ export type ModuleApiOwnership = {
   mount: string;
   repository: string;
   domain: string;
+  note?: string;
 };
 
 export const MODULE_API_OWNERSHIP: readonly ModuleApiOwnership[] = [
@@ -79,6 +80,7 @@ export const MODULE_API_OWNERSHIP: readonly ModuleApiOwnership[] = [
     mount: "/api/v1/purchases/deliveries",
     repository: "PurchasesRepository",
     domain: "delivery-lifecycle.ts, delivery-tracking.ts",
+    note: "Lives in purchases.ts on purpose. Do not split in this step.",
   },
   {
     id: "09",
@@ -140,7 +142,7 @@ export const MODULE_API_OWNERSHIP: readonly ModuleApiOwnership[] = [
     id: "16",
     module: "Accounts",
     apiGroup: "accounting",
-    mount: "/api/v1/accounting/accounts, /journals, /vouchers, /reports",
+    mount: "/api/v1/accounting/accounts, /api/v1/accounting/journals, /api/v1/accounting/vouchers, /api/v1/accounting/reports",
     repository: "AccountingRepository",
     domain: "accounting-posting.ts, finance-reports.ts",
   },
@@ -148,7 +150,7 @@ export const MODULE_API_OWNERSHIP: readonly ModuleApiOwnership[] = [
     id: "17",
     module: "Banking",
     apiGroup: "accounting",
-    mount: "/api/v1/accounting/bank-accounts, /bank-statements, /reconciliations",
+    mount: "/api/v1/accounting/bank-accounts, /api/v1/accounting/bank-statements, /api/v1/accounting/reconciliations",
     repository: "AccountingRepository",
     domain: "accounting-posting.ts",
   },
@@ -276,7 +278,7 @@ export const MODULE_API_OWNERSHIP: readonly ModuleApiOwnership[] = [
     id: "33",
     module: "Printing",
     apiGroup: "hardware",
-    mount: "/api/v1/hardware/print, /print-jobs",
+    mount: "/api/v1/hardware/print, /api/v1/hardware/print-jobs",
     repository: "HardwareRepository",
     domain: "packages/hardware (no domain engine)",
   },
@@ -292,7 +294,7 @@ export const MODULE_API_OWNERSHIP: readonly ModuleApiOwnership[] = [
     id: "35",
     module: "Devices / Printing",
     apiGroup: "hardware",
-    mount: "/api/v1/hardware/events, /cash-drawer, /capabilities",
+    mount: "/api/v1/hardware/events, /api/v1/hardware/cash-drawer, /api/v1/hardware/capabilities",
     repository: "HardwareRepository",
     domain: "packages/hardware (no domain engine)",
   },
@@ -324,7 +326,7 @@ export const MODULE_API_OWNERSHIP: readonly ModuleApiOwnership[] = [
     id: "39",
     module: "System Administration",
     apiGroup: "infrastructure, commerce, enterprise",
-    mount: "/api/v1/security, /integrations, /store, /hr",
+    mount: "/api/v1/security, /api/v1/integrations, /api/v1/store, /api/v1/hr",
     repository: "InfrastructureRepository, CommerceRepository, EnterpriseRepository",
     domain: "infrastructure.ts, commerce.ts, enterprise.ts",
   },
@@ -333,3 +335,87 @@ export const MODULE_API_OWNERSHIP: readonly ModuleApiOwnership[] = [
 if (MODULE_API_OWNERSHIP.length !== 39) {
   throw new Error("MODULE_API_OWNERSHIP must list exactly 39 product modules");
 }
+
+/** Reverse index: grouped router → product module ids. Not 39 routers. */
+export const API_GROUP_TO_MODULES: Readonly<Record<string, readonly string[]>> = (() => {
+  const out: Record<string, string[]> = {};
+  for (const row of MODULE_API_OWNERSHIP) {
+    for (const group of row.apiGroup.split(",").map((s) => s.trim())) {
+      if (group === "none") continue;
+      (out[group] ??= []).push(row.id);
+    }
+  }
+  return out;
+})();
+
+/** Auth and health sit outside the 39 product modules. */
+export const NON_MODULE_API_GROUPS = [
+  { apiGroup: "auth", mount: "/api/v1/auth", note: "Login / session. Not a product module." },
+  { apiGroup: "health", mount: "/health", note: "Probes. Not a product module." },
+] as const;
+
+/**
+ * Shared web clients. Do not copy these into 39 feature-folder clients.
+ */
+export const SHARED_WEB_API_CLIENTS = [
+  { client: "parties-api", folder: "features/customers", modules: "05 payments, 12 customers, 13 suppliers, 22 installments" },
+  { client: "after-sales-api", folder: "features/quotations", modules: "06 quotations, 07 orders, 14 service, 15 warranty" },
+  { client: "admin-api", folder: "features/users", modules: "01 dashboard group, 25 approvals, 26 users, 27 permissions, 28 audit, 30 branches" },
+  { client: "commerce-api", folder: "features/crm", modules: "07 B2B, 18 CRM, 23 loyalty, 39 store" },
+  { client: "enterprise-api", folder: "features/system", modules: "20 salesmen, 24 documents, 29 notifications, 31 tax, 39 HR" },
+  { client: "infrastructure-api", folder: "features/system", modules: "32 import/export, 34 backup, 39 security/integrations" },
+] as const;
+
+/**
+ * Genuine shared ownership. Keep grouped routers. Do not split.
+ */
+export const OWNERSHIP_AMBIGUITIES = [
+  {
+    topic: "Delivery",
+    modules: "08",
+    livesIn: "purchases.ts → /api/v1/purchases/deliveries",
+    action: "Keep. Domain is delivery-lifecycle.ts; router stays purchases.",
+  },
+  {
+    topic: "Warehouse locations and transfers",
+    modules: "11",
+    livesIn: "inventory.ts warehouses + purchases.ts locations/transfers",
+    action: "Keep split as implemented. Masters vs bin/transfer ops.",
+  },
+  {
+    topic: "Supplier price lists",
+    modules: "13",
+    livesIn: "parties.ts suppliers + purchases.ts supplier-prices",
+    action: "Keep. UI reuses PurchasesPage.",
+  },
+  {
+    topic: "Sales payments",
+    modules: "05",
+    livesIn: "parties.ts /payments (not pos.ts)",
+    action: "Keep. POS sales stay on pos.ts; tender posting is parties.",
+  },
+  {
+    topic: "Orders vs B2B",
+    modules: "07",
+    livesIn: "after-sales.ts /orders + commerce.ts /b2b",
+    action: "Keep. Wholesale portal is commerce; sales orders are after-sales.",
+  },
+  {
+    topic: "HR employees",
+    modules: "20, 39",
+    livesIn: "enterprise.ts /hr",
+    action: "Keep one HR API. Salesmen and System HR share it.",
+  },
+  {
+    topic: "Finance reports",
+    modules: "16, 19, 12, 13",
+    livesIn: "accounting.ts /reports + reports.ts + AI insights",
+    action: "Keep. P&L UI may use ReportsHubPage; accounting report APIs stay.",
+  },
+  {
+    topic: "Import / export",
+    modules: "32",
+    livesIn: "catalog.ts /import|/export + infrastructure.ts /data/import|/data/export",
+    action: "Keep both mounts. Catalog templates vs generic data import.",
+  },
+] as const;

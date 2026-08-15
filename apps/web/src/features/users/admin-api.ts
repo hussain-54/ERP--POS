@@ -1,3 +1,4 @@
+/** Shared client: 25 Approvals, 26 Users, 27 Permissions, 28 Audit, 30 Branches. Do not split into 39 clients. */
 import { apiFetch } from "@/lib/api";
 import { authStorage } from "@/features/auth/auth-service";
 

@@ -120,6 +120,11 @@ export function canShowNavItem(
   return hasPermission(permission);
 }
 
+/** Modules 36–38 are Coming Soon parents. System (39) is not — it has live children. */
+export function isComingSoonEngineSection(section: Pick<ErpNavSection, "id">): boolean {
+  return section.id === "36" || section.id === "37" || section.id === "38";
+}
+
 /**
  * Locked 39-module ERP navigation (FINAL 39-MODULE ALIGNMENT REPORT).
  * `title` is the short sidebar label — do not expand it to `masterTitle`.
@@ -228,7 +233,7 @@ export const ERP_NAV_SECTIONS: ErpNavSection[] = [
         permission: "pos.hold",
       }),
       live("/invoices", "Invoices", "Invoice register and reprints.", { permission: "pos.view_invoices" }),
-      live("/sales-management", "Sales Register", "Sales register, filters, and KPIs.", {
+      live("/sales-management", "Register", "Sales register, filters, and KPIs.", {
         permission: "pos.view_invoices",
       }),
       live("/returns", "Returns", "Sales returns.", { permission: "pos.return" }),
@@ -307,7 +312,7 @@ export const ERP_NAV_SECTIONS: ErpNavSection[] = [
         permission: "purchases.read",
         sidebar: false,
       }),
-      live("/purchase-returns", "Purchase Returns", "Purchase return posting.", {
+      live("/purchase-returns", "Returns", "Purchase return posting.", {
         permission: "purchases.return",
       }),
       soon("/purchase-automation", "Automation", "Reorder suggestions are not implemented yet.", {
@@ -344,7 +349,7 @@ export const ERP_NAV_SECTIONS: ErpNavSection[] = [
       live("/inventory/damaged", "Damaged", "Damage movements (stock operations).", {
         permission: "inventory.adjust",
       }),
-      live("/inventory/audit", "Counts / Audit", "Stock counts (stock operations).", {
+      live("/inventory/audit", "Counts", "Stock counts (stock operations).", {
         permission: "inventory.count",
       }),
     ],
@@ -880,12 +885,11 @@ export const ERP_NAV_SECTIONS: ErpNavSection[] = [
       soon("/settings/language", "Language", "Language settings are not implemented yet.", {
         permission: "settings.manage",
       }),
-      soon("/settings/datetime", "Date / Numbering", "Date, time, and document numbering are not implemented yet.", {
+      soon("/settings/datetime", "Date", "Date and time settings are not implemented yet.", {
         permission: "settings.manage",
       }),
       soon("/settings/numbering", "Numbering", "Document numbering is not implemented yet.", {
         permission: "settings.manage",
-        sidebar: false,
       }),
       soon("/settings/invoice-templates", "Templates", "Invoice template designer is not implemented yet.", {
         permission: "settings.manage",
@@ -926,15 +930,54 @@ export const ERP_NAV_SECTIONS: ErpNavSection[] = [
 ];
 
 /**
- * Duplicate URLs kept on purpose (do not delete).
- * Same page component, two addresses.
+ * Intentional duplicate URLs. Do not delete, merge pages, or redirect.
+ * Canonical path owns the screen; aliases reuse that component unless
+ * `sameComponent` is false (related inventory screens that stay distinct).
+ *
+ * Canonical owners:
+ *   /pos → PosPage
+ *   /quotations → QuotationsPage
+ *   /returns → ReturnsPage
+ *   /barcodes → BarcodesPage
+ *   /installments → CreditInstallmentsPage
+ *   /salesman → SalesmanPage
+ *   /inventory → InventoryPage
+ *   /stock-ops → StockOpsPage
+ *   /categories → TaxonomyPage (tab from pathname)
  */
-export const DUPLICATE_ROUTE_PAIRS: Array<{ canonical: string; duplicate: string; note: string }> = [
+export const DUPLICATE_ROUTE_PAIRS: Array<{
+  canonical: string;
+  duplicate: string;
+  note: string;
+  sameComponent?: boolean;
+}> = [
   { canonical: "/pos", duplicate: "/held-sales", note: "Same PosPage; /held-sales opens the holds drawer" },
   { canonical: "/pos", duplicate: "/pos/new", note: "Same PosPage; naming alias only" },
+  { canonical: "/quotations", duplicate: "/orders", note: "Same QuotationsPage (orders section)" },
+  { canonical: "/returns", duplicate: "/exchange", note: "Same ReturnsPage" },
+  { canonical: "/barcodes", duplicate: "/qr", note: "Same BarcodesPage" },
+  { canonical: "/installments", duplicate: "/credit", note: "Same CreditInstallmentsPage; credit stays under Customers" },
+  {
+    canonical: "/installments",
+    duplicate: "/pos/installments",
+    note: "Same CreditInstallmentsPage; POS child alias (module 22 kept)",
+  },
   { canonical: "/salesman", duplicate: "/pos/salesmen", note: "Same SalesmanPage; POS child alias (module 20 kept)" },
+  { canonical: "/salesman", duplicate: "/pos/references", note: "Same SalesmanPage; POS References child" },
   { canonical: "/salesman", duplicate: "/salesman/references", note: "Same SalesmanPage; module 20 References child" },
   { canonical: "/salesman", duplicate: "/salesman/commissions", note: "Same SalesmanPage; module 20 Commissions child" },
+  {
+    canonical: "/inventory",
+    duplicate: "/stock-ops",
+    note: "Related inventory screens; InventoryPage vs StockOpsPage — do not merge",
+    sameComponent: false,
+  },
+  { canonical: "/stock-ops", duplicate: "/inventory/adjustments", note: "Same StockOpsPage; Adjustments child" },
+  { canonical: "/stock-ops", duplicate: "/inventory/damaged", note: "Same StockOpsPage; Damaged child" },
+  { canonical: "/stock-ops", duplicate: "/inventory/audit", note: "Same StockOpsPage; Counts child" },
+  { canonical: "/categories", duplicate: "/subcategories", note: "Same TaxonomyPage, tab from pathname" },
+  { canonical: "/categories", duplicate: "/brands", note: "Same TaxonomyPage, tab from pathname" },
+  { canonical: "/categories", duplicate: "/companies", note: "Same TaxonomyPage, tab from pathname" },
   { canonical: "/tax", duplicate: "/tax/rates", note: "Same TaxPage; rates section alias" },
   { canonical: "/tax", duplicate: "/tax/reports", note: "Same TaxPage; reports section alias" },
   { canonical: "/import-export", duplicate: "/import-export/export", note: "Same ImportExportPage; export alias" },
@@ -944,20 +987,6 @@ export const DUPLICATE_ROUTE_PAIRS: Array<{ canonical: string; duplicate: string
   { canonical: "/backup", duplicate: "/backup/restore-points", note: "Same BackupPage; restore-points alias" },
   { canonical: "/devices", duplicate: "/devices/drawer", note: "Same DevicesPage; drawer alias" },
   { canonical: "/devices", duplicate: "/devices/events", note: "Same DevicesPage; events alias" },
-  { canonical: "/salesman", duplicate: "/pos/references", note: "Same SalesmanPage; POS References child" },
-  { canonical: "/installments", duplicate: "/credit", note: "Same CreditInstallmentsPage; credit stays under Customers" },
-  {
-    canonical: "/installments",
-    duplicate: "/pos/installments",
-    note: "Same CreditInstallmentsPage; POS child alias (module 22 kept)",
-  },
-  { canonical: "/quotations", duplicate: "/orders", note: "Same QuotationsPage (orders section)" },
-  { canonical: "/returns", duplicate: "/exchange", note: "Same ReturnsPage" },
-  { canonical: "/barcodes", duplicate: "/qr", note: "Same BarcodesPage" },
-  { canonical: "/categories", duplicate: "/subcategories", note: "Same TaxonomyPage, different tab" },
-  { canonical: "/categories", duplicate: "/brands", note: "Same TaxonomyPage, different tab" },
-  { canonical: "/categories", duplicate: "/companies", note: "Same TaxonomyPage, different tab" },
-  { canonical: "/inventory", duplicate: "/stock-ops", note: "StockOpsPage was unrouted; now under Inventory" },
 ];
 
 /** Paths that render the POS terminal chrome (no ERP sidebar). Do not use startsWith("/pos/"). */

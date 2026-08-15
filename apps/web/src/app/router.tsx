@@ -66,7 +66,8 @@ import { OnlineStorePage } from "@/features/system/OnlineStorePage";
  * Live page bindings grouped by the 39-module tree.
  * Paths not listed here still register via ERP_MODULES and render ModulePlaceholderPage
  * (Coming Soon), including 36–38 and System settings children.
- * Duplicate URLs are intentional — do not merge or redirect.
+ * Duplicate URLs are route aliases of the same element (see DUPLICATE_ROUTE_PAIRS).
+ * Do not delete aliases, merge page files, or introduce redirects.
  */
 const implemented: Record<string, ReactNode> = {
   // 01 Dashboard — canonical /
@@ -245,6 +246,9 @@ const implemented: Record<string, ReactNode> = {
   "/integrations": <IntegrationsPage />,
   "/online-store": <OnlineStorePage />,
 };
+
+/** Canonical + alias path → existing page element. Used to lock duplicate ownership. */
+export const IMPLEMENTED_ROUTES: Readonly<Record<string, ReactNode>> = implemented;
 
 export const router = createBrowserRouter([
   { path: "/login", element: <LoginPage /> },

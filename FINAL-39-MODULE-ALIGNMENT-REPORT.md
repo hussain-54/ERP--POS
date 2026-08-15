@@ -288,7 +288,7 @@ Sales also lists Salesmen and Installments as children while modules 20 and 22 r
 
 | Feature | Lives in | 39-module home | Note |
 |---------|----------|----------------|------|
-| Payments page file | `features/customers/PaymentsPage.tsx` | 05 Sales (nav) | Nav is correct; folder still under customers |
+| Payments page file | `features/pos/PaymentsPage.tsx` | 05 Sales | Moved from `customers/` (file move only; `parties-api` stays shared) |
 | Delivery API | `apps/api/src/routes/purchases.ts` | 08 Delivery | UI folder is `delivery/` |
 | Orders list | QuotationsPage | 07 Orders | Shared after-sales screen |
 | Supplier price lists | PurchasesPage | 13 Suppliers (nav child) | Intentional reuse |
@@ -299,7 +299,7 @@ Sales also lists Salesmen and Installments as children while modules 20 and 22 r
 | AI insights | Reports child | 19 | Correct fold |
 | Shared API clients | `parties-api`, `after-sales-api`, `admin-api`, `commerce-api`, `enterprise-api`, `infrastructure-api` | Several modules | One client per old backend bucket |
 
-None of these were moved in this audit (no business/folder churn).
+None of these require a further folder or API split in the structural alignment. Delivery stays on `purchases.ts`.
 
 ---
 
@@ -361,7 +361,7 @@ Do **not** do these as a silent “alignment” pass. They are follow-up work.
 
 1. Keep duplicate URLs until a dedicated merge phase; then pick one canonical path and 301/redirect the rest.
 2. Split `/orders` onto its own list when wholesale orders need a different UX from quotations.
-3. Move `PaymentsPage` into `features/pos/` or `features/customers/` consistently with nav (file move only).
+3. ~~Move `PaymentsPage` into `features/pos/`~~ **Done** (`features/pos/PaymentsPage.tsx`).
 4. Give Reports a table/chart UI; keep the same APIs.
 5. Replace UUID-paste screens with search pickers (barcodes, payments, installments, B2B).
 6. Implement or hide 36–38 rather than leaving Coming Soon if the product story does not need engines yet.

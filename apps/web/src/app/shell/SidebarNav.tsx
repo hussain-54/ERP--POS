@@ -1,11 +1,18 @@
 import { useEffect, useMemo, useState } from "react";
 import { NavLink, useLocation } from "react-router-dom";
-import { canShowNavItem, ERP_SIDEBAR_SECTIONS, type ErpNavSection } from "@/app/modules";
+import {
+  canShowNavItem,
+  ERP_SIDEBAR_SECTIONS,
+  isComingSoonEngineSection,
+  isPosTerminalPath,
+  type ErpNavSection,
+} from "@/app/modules";
 import { NavIcon } from "@/app/shell/nav-icons";
 
 function sectionMatches(section: ErpNavSection, query: string): boolean {
   if (!query) return true;
   if (section.title.toLowerCase().includes(query)) return true;
+  if (section.masterTitle.toLowerCase().includes(query)) return true;
   return section.children.some(
     (child) =>
       child.title.toLowerCase().includes(query) || child.path.toLowerCase().includes(query),
@@ -20,6 +27,7 @@ function childMatches(title: string, path: string, query: string): boolean {
 function isSectionActive(section: ErpNavSection, pathname: string): boolean {
   if (section.path === "/") return pathname === "/";
   if (pathname === section.path) return true;
+  if (section.id === "05" && isPosTerminalPath(pathname)) return true;
   if (section.children.some((child) => child.path === pathname)) return true;
   return pathname.startsWith(`${section.path}/`);
 }
@@ -72,6 +80,7 @@ export function SidebarNav({
           : section.children
         ).filter((child) => canShowNavItem(child.permission, grantedCount, hasPermission));
         const parentActive = isSectionActive(section, location.pathname);
+        const comingSoonParent = isComingSoonEngineSection(section);
 
         return (
           <div key={section.id} className="pb-0.5">
@@ -80,7 +89,7 @@ export function SidebarNav({
                 to={section.path}
                 end
                 onClick={onNavigate}
-                title={section.title}
+                title={section.masterTitle}
                 className={({ isActive }) =>
                   `flex min-w-0 flex-1 items-center gap-2.5 rounded-xl px-2.5 py-2 text-sm ${
                     isActive || parentActive
@@ -90,7 +99,16 @@ export function SidebarNav({
                 }
               >
                 <NavIcon name={section.icon} />
-                {collapsed ? <span className="sr-only">{section.title}</span> : <span className="truncate font-medium">{section.title}</span>}
+                {collapsed ? (
+                  <span className="sr-only">{section.title}</span>
+                ) : (
+                  <span className="truncate font-medium">{section.title}</span>
+                )}
+                {comingSoonParent && !collapsed ? (
+                  <span className="ml-auto shrink-0 text-[10px] uppercase tracking-wide opacity-70" aria-hidden="true">
+                    Soon
+                  </span>
+                ) : null}
               </NavLink>
               {!collapsed && children.length > 0 ? (
                 <button

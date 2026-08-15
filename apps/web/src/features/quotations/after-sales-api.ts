@@ -1,3 +1,4 @@
+/** Shared client: 06 Quotations, 07 Orders, 14 Service, 15 Warranty. Do not split into 39 clients. */
 import { apiFetch } from "@/lib/api";
 import { authStorage } from "@/features/auth/auth-service";
 

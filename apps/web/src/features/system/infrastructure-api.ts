@@ -1,3 +1,4 @@
+/** Shared client: 32 Import/Export, 34 Backup, 39 Security/Integrations. Do not split into 39 clients. */
 import { apiFetch } from "@/lib/api";
 import { authStorage } from "@/features/auth/auth-service";
 

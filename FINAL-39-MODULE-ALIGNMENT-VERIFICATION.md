@@ -1,11 +1,11 @@
 # FINAL 39-MODULE ALIGNMENT VERIFICATION
 
-**Date:** 2026-08-15  
-**Phase:** 7 — read/verify only  
-**Branch:** `main` @ `64571ec` plus uncommitted alignment work (Phases 1–6 of this pass)  
-**Runtime:** Online-only (Supabase). No SQLite, offline POS, or sync engine.
+**Date:** 2026-08-16
+**Step:** 7 — final structural verification
+**HEAD:** `9263736` plus uncommitted STEPs 2–6 (nav, folders, duplicates, API ownership docs)
+**Runtime:** Online-only (Supabase). No SQLite, offline POS, or sync engine in app code.
 
-This document verifies the repository against the approved 39-module ERP structure. No new features, redesign, business-logic, schema, pricing, or POS terminal changes were made in this phase.
+This pass is read-only except for documentation that was stale versus the verified tree. No features, UI redesign, POS redesign, pricing, inventory, accounting, database, migrations, or engines 36–38 were implemented.
 
 ---
 
@@ -13,260 +13,219 @@ This document verifies the repository against the approved 39-module ERP structu
 
 | # | Check | Result |
 |---|---|---|
-| 1 | Exactly 39 top-level navigation parents | **PASS** |
-| 2 | Every parent has correct ownership | **PASS** |
-| 3 | Every navigation route exists | **PASS** |
-| 4 | No broken imports | **PASS** (typecheck) |
-| 5 | No orphaned live feature pages | **PASS** |
-| 6 | No accidental duplicate component implementations | **PASS** |
-| 7 | Existing duplicate URLs still work | **PASS** |
-| 8 | Placeholder modules remain placeholders | **PASS** (36–38; 39 parent `/settings`) |
-| 9 | No missing module | **PASS** |
-| 10 | No unauthorized business logic changes | **PASS** |
-| 11 | POS remains online-only | **PASS** |
-| 12 | No SQLite | **PASS** |
-| 13 | No offline sync | **PASS** |
-| 14 | No new database migrations | **PASS** |
-| 15 | No changed API contracts | **PASS** |
-| 16 | Existing permissions remain intact | **PASS** |
-| 17 | Mobile navigation still works | **PASS** (AppShell drawer + smoke test) |
-| 18 | Desktop navigation still works | **PASS** (Electron loads the same web app) |
-| 19 | ProtectedRoute still works | **PASS** |
-| 20 | POS chrome remains separate from ERP shell | **PASS** (`/pos`, `/held-sales`, `/pos/new` only) |
+| 1 | Exactly 39 parent modules | **PASS** — `ERP_NAV_SECTIONS.length === 39` |
+| 2 | Every parent has the correct children | **PASS** — locked in `smoke.test.tsx` |
+| 3 | Every navigation route is registered | **PASS** — `ERP_MODULES` flattened into the router |
+| 4 | Every existing route still works | **PASS** — no URL removals; extras `/products/new`, `/pos/new` kept |
+| 5 | Duplicate routes remain functional | **PASS** — `DUPLICATE_ROUTE_PAIRS` + `IMPLEMENTED_ROUTES` type lock |
+| 6 | Placeholder modules remain Coming Soon | **PASS** — 36–38 and `/settings` |
+| 7 | No missing modules | **PASS** |
+| 8 | No dead navigation | **PASS** — every child path is in `ERP_MODULES` |
+| 9 | No broken imports | **PASS** — typecheck |
+| 10 | No orphaned live pages | **PASS** — 58 `*Page.tsx` files; all wired |
+| 11 | POS isolated from ERP shell | **PASS** — `/pos`, `/held-sales`, `/pos/new` only |
+| 12 | Mobile navigation still works | **PASS** — AppShell drawer uses `SidebarNav` |
+| 13 | Permission keys still work | **PASS** — every parent/child has a key; fail-open |
+| 14 | ProtectedRoute remains intact | **PASS** |
+| 15 | API architecture remains grouped | **PASS** — 13 product groups + auth/health |
+| 16 | Feature folders follow module ownership | **PASS** — `ERP_FEATURE_FOLDERS`; 36–38 have no folders |
+| 17 | Shared pages remain shared | **PASS** — no copied implementations |
+| 18 | No database changes | **PASS** — `packages/db` and `supabase/migrations` untouched this pass |
+| 19 | No business logic changed | **PASS** — `packages/domain` / contracts / POS engines untouched this pass |
+| 20 | No offline/sync introduced | **PASS** — no `better-sqlite3` / SyncEngine in `apps/` |
 
 ---
 
-## A. Module count
+## 1. 39-module verification table
 
-**39 / 39.** Official names match the approved list:
+Short sidebar label is **Module**. Official name is in parentheses where it differs.
 
-| ID | Master module | Status |
-|----|---------------|--------|
-| 01 | Dashboard | Live |
-| 02 | Product Management | Live |
-| 03 | Barcode & QR | Live |
-| 04 | AI Camera Product Recognition | Live |
-| 05 | POS / Sales | Live |
-| 06 | Quotations | Live |
-| 07 | Orders | Live |
-| 08 | Delivery | Live |
-| 09 | Purchases | Live |
-| 10 | Inventory | Live |
-| 11 | Warehouses | Live |
-| 12 | Customers | Live |
-| 13 | Suppliers | Live |
-| 14 | Service & Repair | Live |
-| 15 | Warranty | Live |
-| 16 | Accounts | Live |
-| 17 | Banking | Live |
-| 18 | CRM & Marketing | Live |
-| 19 | Reports & Analytics | Live |
-| 20 | Salesman / Field Sales | Live |
-| 21 | Expenses | Live |
-| 22 | Installments | Live |
-| 23 | Loyalty | Live |
-| 24 | Documents | Live |
-| 25 | Approval Workflow | Live |
-| 26 | Users & Role Management | Live |
-| 27 | Permissions | Live |
-| 28 | Audit Trail | Live |
-| 29 | Notification Center | Live |
-| 30 | Multi-Branch | Live |
-| 31 | Tax & Pakistan Compliance | Live |
-| 32 | Import / Export | Live |
-| 33 | Printing | Live |
-| 34 | Backup & Disaster Recovery | Live |
-| 35 | Devices / Printing | Live |
-| 36 | Industry Engine | Coming Soon |
-| 37 | Customization Engine | Coming Soon |
-| 38 | Rules / Automation Engine | Coming Soon |
-| 39 | System Administration | Parent Coming Soon; live children HR / Security / Integrations / Store |
+| # | Module | Route | Feature | Status |
+|---|--------|-------|---------|--------|
+| 01 | Dashboard | `/` | `dashboard/DashboardPage` | Live |
+| 02 | Products (Product Management) | `/products` | `product-management/` | Live |
+| 03 | Barcodes (Barcode & QR) | `/barcodes` | `barcode-qr/BarcodesPage` | Live · alias `/qr` |
+| 04 | AI Camera | `/ai-camera` | `ai-camera/AiCameraPage` | Live |
+| 05 | Sales (POS / Sales) | `/pos` | `pos/` terminal + invoices/returns/payments | Live · aliases `/held-sales`, `/pos/new` |
+| 06 | Quotations | `/quotations` | `quotations/QuotationsPage` | Live |
+| 07 | Orders | `/orders` | Same `QuotationsPage`; child `/b2b` → `orders/B2bPage` | Live · shared |
+| 08 | Delivery | `/deliveries` | `delivery/DeliveriesPage` | Live · API still on purchases |
+| 09 | Purchases | `/purchases` | `purchases/` | Live · Automation Soon |
+| 10 | Inventory | `/inventory` | `inventory/` (`InventoryPage` + `StockOpsPage` + `BatchSerialPage`) | Live |
+| 11 | Warehouses | `/warehouses` | `warehouses/` | Live · Receiving/Dispatch Soon |
+| 12 | Customers | `/customers` | `customers/CustomersPage` | Live · Receivables Soon |
+| 13 | Suppliers | `/suppliers` | `suppliers/SuppliersPage`; price lists reuse PurchasesPage | Live · Payables/Performance Soon |
+| 14 | Service (Service & Repair) | `/service` | `service-repair/ServicePage` | Live |
+| 15 | Warranty | `/warranty` | `warranty/WarrantyPage` | Live |
+| 16 | Accounts | `/accounts` | `accounts/AccountsPage`; P&L → ReportsHubPage | Live · Cash/Receipts Soon |
+| 17 | Banking | `/banking` | `banking/BankingPage` | Live |
+| 18 | CRM (CRM & Marketing) | `/crm` | `crm/CrmPage` | Live |
+| 19 | Reports (Reports & Analytics) | `/reports` | `reports/` + `/bi` + `/ai-insights` | Live |
+| 20 | Salesmen (Salesman / Field Sales) | `/salesman` | `salesman/SalesmanPage` | Live |
+| 21 | Expenses | `/expenses` | `expenses/ExpensesPage` | Live |
+| 22 | Installments | `/installments` | `installments/CreditInstallmentsPage` | Live |
+| 23 | Loyalty | `/loyalty` | `loyalty/LoyaltyPage` | Live |
+| 24 | Documents | `/documents` | `documents/DocumentsPage` | Live |
+| 25 | Approvals (Approval Workflow) | `/approvals` | `approvals/ApprovalsPage` | Live |
+| 26 | Users (Users & Role Management) | `/users` | `users/UsersRolesPage` | Live |
+| 27 | Permissions | `/permissions` | `permissions/PermissionsPage` | Live |
+| 28 | Audit (Audit Trail) | `/audit` | `audit/AuditPage` | Live |
+| 29 | Notifications (Notification Center) | `/notifications` | `notifications/NotificationsPage` | Live |
+| 30 | Branches (Multi-Branch) | `/branches` | `branches/BranchesPage` | Live |
+| 31 | Tax (Tax & Pakistan Compliance) | `/tax` | `tax/TaxPage` | Live |
+| 32 | Import / Export | `/import-export` | `import-export/ImportExportPage` | Live |
+| 33 | Printing | `/printing` | `printing/PrintingPage` | Live |
+| 34 | Backup (Backup & Disaster Recovery) | `/backup` | `backup/BackupPage` | Live |
+| 35 | Devices (Devices / Printing) | `/devices` | `devices/DevicesPage` | Live |
+| 36 | Industry (Industry Engine) | `/industry-engine` | none (placeholder) | Coming Soon |
+| 37 | Customization (Customization Engine) | `/customization-engine` | none (placeholder) | Coming Soon |
+| 38 | Automation (Rules / Automation Engine) | `/rules-engine` | none (placeholder) | Coming Soon |
+| 39 | System (System Administration) | `/settings` | `system/` live children HR / Security / Integrations / Store | Parent Coming Soon · live children |
 
-Locked in `ERP_NAV_SECTIONS` (`apps/web/src/app/modules.ts`) and `MODULE_API_OWNERSHIP` (`apps/api/src/module-api-ownership.ts`). Both assert length 39.
+**MISSING modules:** none.
 
----
-
-## B. Navigation count
-
-- `ERP_NAV_SECTIONS.length === 39`
-- Smoke test `LOCKED_PARENTS` matches IDs, `masterTitle`, short `title`, and parent `path`
-- Sidebar uses short labels (`Products`, `Sales`, `System`, …); official names stay on `masterTitle`
-- Parent-path children stay `sidebar: false` so the parent row is not duplicated
-- Hidden helpers (`Customer / Checkout helpers`, System `General`) were removed from the sidebar only; URLs were not dropped
-- `/settings/numbering` remains a hidden Coming Soon child so the URL is kept
+Functional thinness (UUID-paste, JSON reports, etc.) is unchanged from the original alignment report. This step did not re-implement those screens.
 
 ---
 
-## C. Route verification
+## 2. Files changed (this verification step)
 
-Router (`apps/web/src/app/router.tsx`):
+| Path | Why |
+|------|-----|
+| `FINAL-39-MODULE-ALIGNMENT-VERIFICATION.md` | Rewritten for Step 7 verified state |
+| `FINAL-39-MODULE-ALIGNMENT-REPORT.md` | Stale PaymentsPage path corrected to `features/pos/` |
+
+No application, API, domain, or database files were edited in Step 7.
+
+---
+
+## 3. Files moved (this verification step)
+
+**None.** `PaymentsPage` already lives at `apps/web/src/features/pos/PaymentsPage.tsx` from the earlier folder-alignment step. `customers/PaymentsPage.tsx` and unused `reports/ReportsPage.tsx` are not on disk.
+
+---
+
+## 4. Routes preserved
 
 - All `ERP_MODULES` paths register under `ProtectedRoute` → `AppShell`
-- Live pages bind through the `implemented` map (100 keys), grouped by modules 01–39
-- Paths not in `implemented` render `ModulePlaceholderPage` (Coming Soon)
+- Live bindings: `IMPLEMENTED_ROUTES` in `apps/web/src/app/router.tsx`
+- Unlisted nav paths render `ModulePlaceholderPage`
 - Extra deep links kept: `/products/new`, `/products/:id`, `/pos/new`
 - Catch-all `*` → `NotFoundPage`
+- Public auth: `/login`, `/auth/forgot-password`, `/auth/reset`
 
-Parent paths **not** in `implemented` (intentional Coming Soon):
-
-- `/industry-engine` (36)
-- `/customization-engine` (37)
-- `/rules-engine` (38)
-- `/settings` (39 parent)
-
-Auth routes remain public: `/login`, `/auth/forgot-password`, `/auth/reset`.
+No public URLs were removed or redirected.
 
 ---
 
-## D. Feature folder verification
+## 5. Duplicate routes preserved
 
-Implemented modules 01–35 and 39 map to:
+Canonical owners (same component, no redirects):
 
-`dashboard`, `product-management`, `barcode-qr`, `ai-camera`, `pos`, `quotations`, `orders`, `delivery`, `purchases`, `inventory`, `warehouses`, `customers`, `suppliers`, `service-repair`, `warranty`, `accounts`, `banking`, `crm`, `reports`, `salesman`, `expenses`, `installments`, `loyalty`, `documents`, `approvals`, `users`, `permissions`, `audit`, `notifications`, `branches`, `tax`, `import-export`, `printing`, `backup`, `devices`, `system`
+| Canonical | Aliases | Page |
+|-----------|---------|------|
+| `/pos` | `/held-sales`, `/pos/new` | PosPage |
+| `/quotations` | `/orders` | QuotationsPage |
+| `/returns` | `/exchange` | ReturnsPage |
+| `/barcodes` | `/qr` | BarcodesPage |
+| `/installments` | `/credit`, `/pos/installments` | CreditInstallmentsPage |
+| `/salesman` | `/pos/salesmen`, `/pos/references` | SalesmanPage |
+| `/inventory` | (distinct) `/stock-ops` | InventoryPage vs StockOpsPage |
+| `/stock-ops` | `/inventory/adjustments`, `/damaged`, `/audit` | StockOpsPage |
+| `/categories` | `/subcategories`, `/brands`, `/companies` | TaxonomyPage (tab from pathname) |
 
-Locked as `ERP_FEATURE_FOLDERS` (36–38 = `null`).
-
-Shell-only extras (not product modules): `auth/`, `modules/`.
-
-No `industry/`, `customization/`, or `automation/` folders.
-
-58 `*Page.tsx` files; all are referenced from the router or smoke tests. Unused `reports/ReportsPage.tsx` re-export was removed. `PaymentsPage` lives under `pos/` (shared `parties-api` stays in `customers/`).
+Also kept: tax/import-export/printing/backup/devices/salesman child aliases. Locked by `DUPLICATE_ROUTE_PAIRS`.
 
 ---
 
-## E. API ownership verification
+## 6. Placeholder modules
 
-API stays **grouped**. `MODULE_API_OWNERSHIP` has 39 rows. Mounts in `createApp()` are unchanged:
+- **36** `/industry-engine` — Coming Soon
+- **37** `/customization-engine` — Coming Soon
+- **38** `/rules-engine`, `/rules-engine/rules`, `/transaction-linking` — Coming Soon
+- **39** `/settings` and most settings children — Coming Soon; live: `/hr`, `/security`, `/integrations`, `/online-store`
+
+Other Soon children (Discounts, purchase Automation, Receiving/Dispatch, Receivables/Payables/Performance, Cash/Receipts, Mobile, Maintenance, product variant URLs, …) still use `ModulePlaceholderPage`. POS discount **enforcement** is unchanged.
+
+---
+
+## 7. API ownership confirmation
+
+API stays grouped. Not 39 routers. See `STEP-6-API-OWNERSHIP-REPORT.md` and `apps/api/src/module-api-ownership.ts`.
 
 | Mount | Modules |
 |-------|---------|
-| `/api/v1/auth` | Auth |
-| `/api/v1/catalog` | 02, 03, 32 (templates) |
-| `/api/v1/inventory` | 10, 11 (masters) |
+| `/api/v1/catalog` | 02, 03, 32 templates |
+| `/api/v1/inventory` | 10, 11 masters |
 | `/api/v1/parties` | 12, 13, 22, 05 payments |
 | `/api/v1/pos` | 05 |
-| `/api/v1/purchases` | 09, **08 Delivery**, 11 transfers, 13 price lists |
+| `/api/v1/purchases` | 09, **08 Delivery**, 11 locations/transfers, 13 prices |
 | `/api/v1/after-sales` | 06, 07, 14, 15 |
 | `/api/v1/accounting` | 16, 17, 21 |
-| `/api/v1/admin` | 26, 27, 28, 30, 25, 01 dashboard |
+| `/api/v1/admin` | 25–28, 30, 01 dashboard group |
 | `/api/v1/hardware` | 33, 35 |
 | `/api/v1/reports` | 01, 19 |
-| `/api/v1` commerce | 18, 23, 07 B2B, 39 Store |
+| `/api/v1` commerce | 18, 23, 07 B2B, 39 store |
 | `/api/v1` ai | 04, 19 insights |
-| `/api/v1` enterprise | 20, 31, 24, 29, 39 HR |
-| `/api/v1` infrastructure | 39 security/integrations, 34, 32 |
+| `/api/v1` enterprise | 20, 24, 29, 31, 39 HR |
+| `/api/v1` infrastructure | 32 data, 34, 39 security/integrations |
+| `/api/v1/auth`, `/health` | Outside the 39 |
 
-Route files received **comments only**. No URL, handler, or contract edits.
-
----
-
-## F. Duplicate route verification
-
-`DUPLICATE_ROUTE_PAIRS` lists 24 intentional aliases. All duplicate URLs are registered. Same page component, two (or more) addresses — **not** copied implementations.
-
-Includes pre-existing pairs (`/held-sales`, `/credit`, `/exchange`, `/qr`, `/orders` ↔ `/quotations`, `/pos/salesmen`, …) plus Phase 4 same-page aliases (`/salesman/references`, `/tax/rates`, `/import-export/export`, `/printing/queue`, `/backup/restore-points`, `/devices/drawer`, …).
-
-`/pos/new` remains a POS terminal alias.
+Delivery remains on `purchases.ts`. Shared web clients were not copied into 39 clients.
 
 ---
 
-## G. Placeholder verification
+## 8. Database confirmation
 
-- **36 Industry Engine** — `/industry-engine` → Coming Soon
-- **37 Customization Engine** — `/customization-engine` → Coming Soon
-- **38 Rules / Automation Engine** — `/rules-engine` Coming Soon; `/rules-engine/rules` and `/transaction-linking` also Coming Soon
-- **39 System Administration** — `/settings` and most settings children Coming Soon; live: `/hr`, `/security`, `/integrations`, `/online-store`
-
-Other Coming Soon children (discounts screen, purchase automation, warehouse receiving/dispatch, some receivables/payables/cash/receipts, product variant/media dedicated URLs, mobile channel, numbering, …) still render `ModulePlaceholderPage`. Core POS discount **enforcement** is unchanged and is not a dedicated `/discounts` page.
+- `packages/db` — no Step 7 (or STEPs 2–6) edits
+- `supabase/migrations` — no new migrations
+- Historical `20260810000010_offline_sync_engine.sql` remains schema history only
+- Runtime data path is still Supabase via user JWT clients
 
 ---
 
-## H. Import verification
+## 9. Business logic confirmation
 
-- Router imports resolve to existing feature files
-- `PaymentsPage` import: `@/features/pos/PaymentsPage` with `partiesApi` from `@/features/customers/parties-api`
-- No leftover `@/features/customers/PaymentsPage` or `ReportsPage` imports
-- API `app.ts` side-effect-imports `module-api-ownership.ts` (length assertion at load)
-- Typecheck covers web, api, domain, db, contracts, desktop
+Not modified in this alignment pass:
 
----
-
-## I. Typecheck
-
-**PASS** — `npm run typecheck` (contracts, domain, ai, db, hardware, ui, api, web, desktop)
+- `packages/domain` (sale, stock, payment, return, pricing, accounting posting)
+- `packages/contracts`
+- POS session / cart / hardware behavior
+- RBAC assertion in API handlers (keys unchanged)
 
 ---
 
-## J. Lint
+## 10. Test results
 
-**PASS** — `npm run lint` (alias of typecheck in this repo)
+Verified 2026-08-16 after the Step 7 commands.
 
----
-
-## K. Tests
-
-**PASS** — `npm test` — **283 tests**
-
-| Package | Tests |
-|---------|------:|
-| contracts | 12 |
-| domain | 222 |
-| api | 32 |
-| web | 17 |
-
-Web smoke suite locks: 39 parents, child titles, feature folders, POS terminal paths, duplicate URLs, 36–38 placeholders.
-
----
-
-## L. Build
-
-**PASS** — `npm run build` (packages + api + web Vite). Web: 383 modules transformed.
+| Command | Result |
+|---------|--------|
+| `npm run typecheck` | **PASS** (contracts, domain, ai, db, hardware, ui, api, web, desktop) |
+| `npm run lint` | **PASS** (root `lint` is `typecheck`) |
+| `npm test` | **PASS** — **292 tests** (contracts 12, domain 222, api 36, web 22) |
+| `npm run build` | **PASS** (packages + api + web Vite; 383 modules) |
 
 Known unrelated warning: Vite main chunk 1,616 kB (> 500 kB).
 
 ---
 
-## M. Git diff summary
+## 11. Remaining structural debt
 
-**HEAD:** `64571ec feat(web): align ERP UI with the 39-module architecture` (already on `origin/main`)
-
-**Uncommitted working tree (this alignment pass):** 22 files, +815 / −167
-
-| Path | Kind |
-|------|------|
-| `apps/web/src/app/modules.ts` | Nav lock: `masterTitle`, child labels/order, alias routes, `ERP_FEATURE_FOLDERS` |
-| `apps/web/src/app/router.tsx` | Regroup `implemented` by 01–39; PaymentsPage import path; alias bindings |
-| `apps/web/src/app/smoke.test.tsx` | 39-parent / child / folder locks |
-| `apps/web/src/features/customers/PaymentsPage.tsx` → `pos/PaymentsPage.tsx` | Folder ownership (import path only) |
-| `apps/web/src/features/reports/ReportsPage.tsx` | Deleted unused re-export |
-| `apps/api/src/module-api-ownership.ts` | New documentation table |
-| `apps/api/src/app.ts` + `routes/*.ts` | Comments + ownership import; **same mounts** |
-
-**Not modified:** `packages/contracts`, `packages/domain`, `packages/db`, `packages/ai`, `supabase/migrations`, POS session/pricing/sale engines, RBAC catalog, desktop main process.
-
-### Unrelated modifications
-
-**None found** in the working tree. Nothing was reverted.
-
-Historical Postgres columns `offline_transaction_id` / `sync_state` and migration `20260810000010_offline_sync_engine.sql` remain as **schema history** (online writers set `synced` / null). They are not an offline SQLite runtime.
-
----
-
-## N. Remaining technical debt
-
-1. **Coming Soon gaps** — dedicated screens still missing (Industry / Customization / Automation engines; many System settings children; discounts admin page; purchase automation; warehouse receiving/dispatch; some finance sub-screens). Do not implement in this pass.
-2. **Grouped API / domain / DB names** — catalog, parties, after-sales, accounting, admin, enterprise, infrastructure. Intentional; do not split into 39 routers.
-3. **Shared pages on alias URLs** — aliases open the same screen; they do not deep-link to a subsection unless the page already does.
-4. **Delivery on `purchases` router** — documented ownership; URL unchanged.
-5. **Vite chunk size** — web bundle > 500 kB after minify.
-6. **Lint = typecheck** — no separate ESLint gate at the root script.
-7. **Alias routes added in Phase 4** — extra Coming Soon URL `/rules-engine/rules` plus same-page aliases; original URLs still work.
-8. **Do not start Phase 4B** or Industry / Customization / Automation engines.
+1. Coming Soon screens (36–38 engines; many System settings; discounts admin; purchase automation; warehouse receiving/dispatch; some finance children). Do not implement here.
+2. Grouped API / domain / DB names (catalog, parties, after-sales, …). Intentional.
+3. Delivery API still on `purchases.ts`. Documented; do not split in this pass.
+4. Shared alias URLs open the same screen; they do not always deep-link to a subsection.
+5. Reports hub is still JSON-heavy; not a redesign in this pass.
+6. Vite main chunk > 500 kB (unrelated warning).
+7. Root `lint` is `typecheck`; no separate ESLint gate.
+8. Do not start Phase 4B or Industry / Customization / Automation engines.
+9. Do not reintroduce offline POS, SQLite, or a sync queue.
 
 ---
 
 ## Verdict
 
-The repository is structurally aligned with the approved 39-module ERP. Navigation, routes, feature folders, and API ownership documentation match the lock. Business logic, schema, contracts, pricing, POS terminal behavior, and online-only architecture are intact.
+The repository is structurally aligned with the approved 39-module ERP. Navigation, routes, feature folders, duplicate aliases, and grouped API ownership match the lock. Business logic, schema, contracts, pricing, POS terminal behavior, and online-only architecture are intact.
 
-**STOP.** No Phase 4B or future feature work.
+**STOP.**
