@@ -13,7 +13,7 @@ export function Badge({
     success: "bg-[#e8f8ef] text-[var(--erp-success)]",
     warning: "bg-[#fff4e5] text-[var(--erp-warning)]",
     danger: "bg-[#fdecea] text-[var(--erp-danger)]",
-    brand: "bg-[#e7f5f2] text-[var(--erp-brand)]",
+    brand: "bg-[var(--erp-brand-soft)] text-[var(--erp-brand)]",
   };
   return (
     <span className={cn("inline-flex rounded-full px-2.5 py-0.5 text-xs font-medium", tones[tone])}>

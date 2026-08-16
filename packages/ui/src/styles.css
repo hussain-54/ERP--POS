@@ -1,18 +1,19 @@
 :root {
-  --erp-bg: #f3f5f7;
+  --erp-bg: #f0f2f5;
   --erp-surface: #ffffff;
-  --erp-ink: #12202e;
-  --erp-muted: #5b6b7c;
-  --erp-border: #d7e0e8;
-  --erp-brand: #0f6a5c;
-  --erp-brand-strong: #0b5247;
-  --erp-accent: #c9842d;
+  --erp-ink: #1c1e21;
+  --erp-muted: #65676b;
+  --erp-border: #e4e6eb;
+  --erp-brand: #1877f2;
+  --erp-brand-strong: #166fe5;
+  --erp-brand-soft: #e7f3ff;
+  --erp-accent: #1877f2;
   --erp-danger: #b42318;
   --erp-success: #067647;
   --erp-warning: #b54708;
-  --erp-ring: rgba(15, 106, 92, 0.35);
-  --erp-shadow: 0 10px 30px rgba(18, 32, 46, 0.08);
-  --erp-radius: 12px;
+  --erp-ring: rgba(24, 119, 242, 0.35);
+  --erp-shadow: 0 1px 2px rgba(0, 0, 0, 0.06);
+  --erp-radius: 10px;
   --erp-font: "Segoe UI", "Noto Nastaliq Urdu", sans-serif;
 }
 

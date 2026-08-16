@@ -5,7 +5,7 @@ import { LoginPage } from "@/features/auth/LoginPage";
 import { ForgotPasswordPage } from "@/features/auth/ForgotPasswordPage";
 import { ResetPasswordPage } from "@/features/auth/ResetPasswordPage";
 import { AppShell } from "@/app/shell/AppShell";
-import { ERP_MODULES } from "@/app/modules";
+import { ERP_MODULES, isSystemAdminPath } from "@/app/modules";
 import { ModulePlaceholderPage } from "@/features/modules/ModulePlaceholderPage";
 import { NotFoundPage } from "@/features/modules/RouteFallbackPage";
 import { DashboardPage } from "@/features/dashboard/DashboardPage";
@@ -61,20 +61,28 @@ import { HrPage } from "@/features/system/HrPage";
 import { SecurityPage } from "@/features/system/SecurityPage";
 import { IntegrationsPage } from "@/features/system/IntegrationsPage";
 import { OnlineStorePage } from "@/features/system/OnlineStorePage";
+import { SystemAdminLayout } from "@/features/system/SystemAdminLayout";
+import { SystemAdminHome } from "@/features/system/SystemAdminHome";
+import { SystemComingSoonPage } from "@/features/system/SystemComingSoonPage";
 
 /**
  * Live page bindings grouped by the 39-module tree.
  * Paths not listed here still register via ERP_MODULES and render ModulePlaceholderPage
- * (Coming Soon), including 36–38 and System settings children.
+ * (Coming Soon), including 36–38. System Administration children use SystemComingSoonPage.
  * Duplicate URLs are route aliases of the same element (see DUPLICATE_ROUTE_PAIRS).
  * Do not delete aliases, merge page files, or introduce redirects.
  */
+function systemAdmin(page: ReactNode) {
+  return <SystemAdminLayout>{page}</SystemAdminLayout>;
+}
+
 const implemented: Record<string, ReactNode> = {
   // 01 Dashboard — canonical /
   "/": <DashboardPage />,
 
   // 02 Product Management — canonical /products
   "/products": <ProductsPage />,
+  "/products/new": <ProductFormPage />,
   "/categories": <TaxonomyPage />,
   "/subcategories": <TaxonomyPage />,
   "/brands": <TaxonomyPage />,
@@ -184,12 +192,15 @@ const implemented: Record<string, ReactNode> = {
 
   // 21 Expenses — canonical /expenses
   "/expenses": <ExpensesPage />,
+  "/expenses/period": <ExpensesPage />,
 
   // 22 Installments — canonical /installments · aliases /credit (12), /pos/installments (05)
   "/installments": <CreditInstallmentsPage />,
 
   // 23 Loyalty — canonical /loyalty
   "/loyalty": <LoyaltyPage />,
+  "/loyalty/offers": <LoyaltyPage />,
+  "/loyalty/redeem": <LoyaltyPage />,
 
   // 24 Documents — canonical /documents
   "/documents": <DocumentsPage />,
@@ -199,9 +210,11 @@ const implemented: Record<string, ReactNode> = {
 
   // 26 Users & Role Management — canonical /users
   "/users": <UsersRolesPage />,
+  "/users/roles": <UsersRolesPage />,
 
   // 27 Permissions — canonical /permissions
   "/permissions": <PermissionsPage />,
+  "/permissions/overrides": <PermissionsPage />,
 
   // 28 Audit Trail — canonical /audit
   "/audit": <AuditPage />,
@@ -211,6 +224,7 @@ const implemented: Record<string, ReactNode> = {
 
   // 30 Multi-Branch — canonical /branches
   "/branches": <BranchesPage />,
+  "/branches/membership": <BranchesPage />,
 
   // 31 Tax & Pakistan Compliance — canonical /tax
   "/tax": <TaxPage />,
@@ -240,11 +254,12 @@ const implemented: Record<string, ReactNode> = {
   // 37 Customization Engine — canonical /customization-engine (Coming Soon)
   // 38 Rules / Automation Engine — canonical /rules-engine (Coming Soon)
 
-  // 39 System Administration — canonical /settings (Coming Soon) · live children:
-  "/hr": <HrPage />,
-  "/security": <SecurityPage />,
-  "/integrations": <IntegrationsPage />,
-  "/online-store": <OnlineStorePage />,
+  // 39 System Administration — canonical /settings · live children keep existing pages
+  "/settings": systemAdmin(<SystemAdminHome />),
+  "/hr": systemAdmin(<HrPage />),
+  "/security": systemAdmin(<SecurityPage />),
+  "/integrations": systemAdmin(<IntegrationsPage />),
+  "/online-store": systemAdmin(<OnlineStorePage />),
 };
 
 /** Canonical + alias path → existing page element. Used to lock duplicate ownership. */
@@ -263,12 +278,17 @@ export const router = createBrowserRouter([
           ...ERP_MODULES.map((module) => ({
             path: module.path === "/" ? undefined : module.path.replace(/^\//, ""),
             index: module.path === "/",
-            element: implemented[module.path] ?? <ModulePlaceholderPage module={module} />,
+            element:
+              implemented[module.path] ??
+              (isSystemAdminPath(module.path) ? (
+                <SystemAdminLayout>
+                  <SystemComingSoonPage module={module} />
+                </SystemAdminLayout>
+              ) : (
+                <ModulePlaceholderPage module={module} />
+              )),
           })),
-          // 02 Product Management — form deep links (not flattened as ERP_MODULES rows)
-          { path: "products/new", element: <ProductFormPage /> },
           { path: "products/:id", element: <ProductFormPage /> },
-          // 05 POS / Sales — /pos/new alias (also in implemented)
           { path: "pos/new", element: <PosPage /> },
           { path: "*", element: <NotFoundPage /> },
         ],

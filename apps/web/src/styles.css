@@ -13,8 +13,6 @@ body,
 body {
   margin: 0;
   font-family: var(--erp-font);
-  background:
-    radial-gradient(circle at top left, rgba(15, 106, 92, 0.08), transparent 40%),
-    radial-gradient(circle at top right, rgba(201, 132, 45, 0.08), transparent 35%),
-    var(--erp-bg);
+  background: var(--erp-bg);
+  color: var(--erp-ink);
 }

@@ -16,7 +16,7 @@ export function POSActionBar({
     <div
       className={posCn(
         "flex flex-wrap items-center justify-between gap-2 border-t border-[var(--pos-border)] bg-[var(--pos-workspace)] px-3 py-2",
-        sticky && "sticky bottom-0 z-10 shadow-[0_-4px_12px_rgba(21,34,56,0.04)]",
+        sticky && "sticky bottom-0 z-10",
         className,
       )}
     >

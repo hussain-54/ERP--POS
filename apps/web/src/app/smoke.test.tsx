@@ -1,7 +1,7 @@
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { isValidElement } from "react";
-import { cleanup, render, screen } from "@testing-library/react";
-import { MemoryRouter } from "react-router-dom";
+import { cleanup, fireEvent, render, screen } from "@testing-library/react";
+import { MemoryRouter, Route, Routes } from "react-router-dom";
 import { ToastProvider } from "@electronic-erp/ui";
 import { ModulePlaceholderPage } from "@/features/modules/ModulePlaceholderPage";
 import {
@@ -14,8 +14,14 @@ import {
   EXTRA_APP_PATHS,
   isComingSoonEngineSection,
   isPosTerminalPath,
+  isSystemAdminPath,
+  resolveShellHeader,
 } from "@/app/modules";
+import { AppShell } from "@/app/shell/AppShell";
 import { SidebarNav } from "@/app/shell/SidebarNav";
+import { AuthProvider } from "@/features/auth/AuthContext";
+import { SystemAdminLayout } from "@/features/system/SystemAdminLayout";
+import { SystemAdminHome } from "@/features/system/SystemAdminHome";
 import { IMPLEMENTED_ROUTES, router } from "@/app/router";
 
 afterEach(() => {
@@ -44,7 +50,7 @@ describe("web foundation", () => {
     const sales = ERP_NAV_SECTIONS.find((s) => s.id === "05");
     expect(sales?.title).toBe("Sales");
     expect(sales?.children.map((c) => c.title)).toEqual([
-      "POS",
+      "New Sale",
       "Hold / Resume",
       "Invoices",
       "Register",
@@ -163,7 +169,8 @@ describe("39-module navigation lock", () => {
       ERP_NAV_SECTIONS.find((s) => s.id === id)?.children.map((c) => c.title);
     expect(titles("01")).toEqual(["Dashboard"]);
     expect(titles("02")).toEqual([
-      "Product Management",
+      "Products",
+      "New Product",
       "Categories",
       "Subcategories",
       "Brands",
@@ -178,7 +185,7 @@ describe("39-module navigation lock", () => {
     expect(titles("03")).toEqual(["Barcodes", "QR"]);
     expect(titles("04")).toEqual(["AI Camera"]);
     expect(titles("05")).toEqual([
-      "POS",
+      "New Sale",
       "Hold / Resume",
       "Invoices",
       "Register",
@@ -190,7 +197,9 @@ describe("39-module navigation lock", () => {
       "Salesmen",
       "Installments",
     ]);
+    expect(titles("06")).toEqual(["Quotations"]);
     expect(titles("07")).toEqual(["Orders", "B2B"]);
+    expect(titles("08")).toEqual(["Delivery"]);
     expect(titles("09")).toEqual(["Purchases", "Returns", "Automation"]);
     expect(titles("10")).toEqual([
       "Inventory",
@@ -216,24 +225,34 @@ describe("39-module navigation lock", () => {
     expect(titles("14")).toEqual(["Service", "Complaints", "Technicians", "Repairs", "Charges"]);
     expect(titles("15")).toEqual(["Warranty", "Replacements", "History"]);
     expect(titles("16")).toEqual(["Accounts", "Cash", "Journals", "Receipts", "P&L"]);
+    expect(titles("17")).toEqual(["Banking"]);
     expect(titles("18")).toEqual(["CRM", "Campaigns", "SMS", "WhatsApp", "Marketing", "Engagement"]);
     expect(titles("19")).toEqual(["Reports", "BI", "AI Insights"]);
     expect(titles("20")).toEqual(["Salesmen", "References", "Commissions"]);
-    expect(titles("26")).toEqual(["Users / Roles"]);
-    expect(titles("31")).toEqual(["Tax Profile", "Tax Rates", "Tax Reports"]);
+    expect(titles("21")).toEqual(["Expenses", "Period Reports"]);
+    expect(titles("22")).toEqual(["Installments"]);
+    expect(titles("23")).toEqual(["Loyalty", "Offers", "Redeem"]);
+    expect(titles("24")).toEqual(["Documents"]);
+    expect(titles("25")).toEqual(["Approvals"]);
+    expect(titles("26")).toEqual(["Users", "Roles"]);
+    expect(titles("27")).toEqual(["Permissions", "User Overrides"]);
+    expect(titles("28")).toEqual(["Audit"]);
+    expect(titles("29")).toEqual(["Notifications"]);
+    expect(titles("30")).toEqual(["Branches", "Membership"]);
+    expect(titles("31")).toEqual(["Tax", "Rates", "Tax Reports"]);
     expect(titles("32")).toEqual(["Import", "Export", "Templates"]);
     expect(titles("33")).toEqual(["Printing", "Print Queue", "Preview"]);
     expect(titles("34")).toEqual(["Backup", "Restore Points"]);
-    expect(titles("35")).toEqual(["Devices", "Drawer", "Device Events"]);
+    expect(titles("35")).toEqual(["Devices", "Cash Drawer", "Device Events"]);
     expect(titles("36")).toEqual(["Coming Soon"]);
     expect(titles("37")).toEqual(["Coming Soon"]);
-    expect(titles("38")).toEqual(["Rules", "Transaction Linking", "Coming Soon"]);
+    expect(titles("38")).toEqual(["Automation", "Transaction Linking", "Rules"]);
     expect(titles("39")).toEqual([
       "Company",
       "Localization",
       "Currency",
       "Language",
-      "Date",
+      "Date & Numbering",
       "Numbering",
       "Templates",
       "Barcode",
@@ -327,20 +346,30 @@ describe("nav structure", () => {
     }
   });
 
-  it("shows the intended sidebar children without duplicating parent rows", () => {
+  it("shows nested children under each parent without extra master modules", () => {
     const visible = (id: string) =>
       ERP_SIDEBAR_SECTIONS.find((s) => s.id === id)?.children.map((c) => c.title);
+    expect(visible("01")).toEqual([]);
+    expect(visible("02")).toEqual([
+      "New Product",
+      "Categories",
+      "Subcategories",
+      "Brands",
+      "Companies",
+      "Units",
+      "Pricing",
+      "Variants",
+      "Attributes",
+      "Media",
+      "Specifications",
+    ]);
     expect(visible("05")).toEqual([
       "Hold / Resume",
       "Invoices",
       "Register",
       "Returns",
-      "Exchange",
       "Payments",
       "Discounts",
-      "References",
-      "Salesmen",
-      "Installments",
     ]);
     expect(visible("07")).toEqual(["B2B"]);
     expect(visible("09")).toEqual(["Returns", "Automation"]);
@@ -353,35 +382,31 @@ describe("nav structure", () => {
       "Damaged",
       "Counts",
     ]);
-    expect(visible("11")).toEqual(["Racks", "Shelves", "Bins", "Receiving", "Dispatch", "Transfers"]);
-    expect(visible("12")).toEqual(["Ledger", "Receivables", "Credit", "History"]);
-    expect(visible("13")).toEqual(["Ledger", "Payables", "Price Lists", "Performance"]);
-    expect(visible("14")).toEqual(["Complaints", "Technicians", "Repairs", "Charges"]);
-    expect(visible("15")).toEqual(["Replacements", "History"]);
-    expect(visible("16")).toEqual(["Cash", "Journals", "Receipts", "P&L"]);
-    expect(visible("18")).toEqual(["Campaigns", "SMS", "WhatsApp", "Marketing", "Engagement"]);
-    expect(visible("19")).toEqual(["BI", "AI Insights"]);
-    expect(visible("39")).toEqual([
-      "Company",
-      "Localization",
-      "Currency",
-      "Language",
-      "Date",
-      "Numbering",
-      "Templates",
-      "Barcode",
-      "POS",
-      "Email",
-      "SMS",
-      "Storage",
-      "Logs",
-      "Maintenance",
-      "Security",
-      "Integrations",
-      "Store",
-      "Mobile",
-      "HR",
-    ]);
+    expect(visible("21")).toEqual(["Period Reports"]);
+    expect(visible("23")).toEqual(["Offers", "Redeem"]);
+    expect(visible("26")).toEqual(["Roles"]);
+    expect(visible("27")).toEqual(["User Overrides"]);
+    expect(visible("30")).toEqual(["Membership"]);
+    expect(visible("31")).toEqual(["Rates", "Tax Reports"]);
+    expect(visible("33")).toEqual([]);
+    expect(visible("35")).toEqual(["Cash Drawer", "Device Events"]);
+    expect(visible("38")).toEqual(["Transaction Linking"]);
+    expect(visible("39")).toEqual([]);
+    expect(ERP_SIDEBAR_SECTIONS).toHaveLength(39);
+    expect(ERP_SIDEBAR_SECTIONS.some((s) => s.path === "/held-sales")).toBe(false);
+    expect(ERP_SIDEBAR_SECTIONS.some((s) => s.path === "/credit")).toBe(false);
+    expect(ERP_SIDEBAR_SECTIONS.some((s) => s.path === "/pos/new")).toBe(false);
+    expect(ERP_SIDEBAR_SECTIONS.some((s) => s.path === "/pos/installments")).toBe(false);
+    expect(ERP_SIDEBAR_SECTIONS.find((s) => s.id === "05")?.children.some((c) => c.path === "/pos/salesmen")).toBe(
+      false,
+    );
+    expect(ERP_SIDEBAR_SECTIONS.find((s) => s.id === "05")?.children.some((c) => c.path === "/exchange")).toBe(
+      false,
+    );
+    expect(ERP_SIDEBAR_SECTIONS.find((s) => s.id === "12")?.children.some((c) => c.path === "/credit")).toBe(
+      false,
+    );
+    expect(ERP_SIDEBAR_SECTIONS.find((s) => s.id === "03")?.children.some((c) => c.path === "/qr")).toBe(false);
   });
 
   it("reuses existing screens for shared children and keeps Coming Soon items as placeholders", () => {
@@ -412,14 +437,18 @@ describe("nav structure", () => {
     }
   });
 
-  it("hides repeated parent-path children from the ERP sidebar", () => {
-    for (const section of ERP_SIDEBAR_SECTIONS) {
-      expect(section.children.some((child) => child.path === section.path)).toBe(false);
-    }
+  it("keeps landing children under parents and hides implementation-only aliases", () => {
     const sales = ERP_SIDEBAR_SECTIONS.find((s) => s.id === "05");
-    expect(sales?.children.some((c) => c.title === "Customer / Checkout helpers")).toBe(false);
-    expect(sales?.children.some((c) => c.title === "New Sale")).toBe(false);
+    expect(sales?.children.some((c) => c.title === "New Sale" && c.path === "/pos")).toBe(false);
+    expect(sales?.children.some((c) => c.title === "Hold / Resume" && c.path === "/held-sales")).toBe(true);
+    expect(sales?.children.some((c) => c.path === "/pos/new")).toBe(false);
+    expect(sales?.children.some((c) => c.path === "/pos/salesmen")).toBe(false);
+    expect(sales?.children.some((c) => c.path === "/pos/references")).toBe(false);
+    expect(sales?.children.some((c) => c.path === "/pos/installments")).toBe(false);
     expect(sales?.children.some((c) => c.title === "POS")).toBe(false);
+    expect(sales?.children.some((c) => c.title === "Customer / Checkout helpers")).toBe(false);
+    const printing = ERP_SIDEBAR_SECTIONS.find((s) => s.id === "33");
+    expect(printing?.children.map((c) => c.title)).toEqual([]);
     for (const section of ERP_SIDEBAR_SECTIONS) {
       const titles = section.children.map((child) => child.title);
       expect(new Set(titles).size).toBe(titles.length);
@@ -472,7 +501,19 @@ describe("nav structure", () => {
     expect(EXTRA_APP_PATHS).toContain("/pos/new");
     expect(router.routes.length).toBeGreaterThan(0);
     const serialized = JSON.stringify(router.routes);
-    for (const path of ["/pos", "/held-sales", "/customers", "/products", "/credit", "/salesman"]) {
+    for (const path of [
+      "/pos",
+      "/pos/new",
+      "/held-sales",
+      "/invoices",
+      "/returns",
+      "/exchange",
+      "/payments",
+      "/customers",
+      "/products",
+      "/credit",
+      "/salesman",
+    ]) {
       expect(serialized).toContain(path.replace(/^\//, ""));
     }
     expect(serialized).toContain("*");
@@ -503,9 +544,17 @@ describe("nav structure", () => {
       </MemoryRouter>,
     );
     expect(screen.getByLabelText("ERP modules")).toBeInTheDocument();
-    expect(screen.getByRole("link", { name: "Customers" })).toHaveAttribute("href", "/customers");
-    expect(screen.getByRole("link", { name: "Products" })).toHaveAttribute("title", "Product Management");
-    expect(screen.getByRole("link", { name: "Industry" })).toHaveAttribute("href", "/industry-engine");
+    expect(
+      screen.getAllByRole("link", { name: "Customers" }).some((link) => link.getAttribute("href") === "/customers"),
+    ).toBe(true);
+    expect(screen.getByRole("link", { name: "Product Management" })).toHaveAttribute(
+      "title",
+      "Product Management",
+    );
+    expect(screen.getByRole("link", { name: "Industry Engine" })).toHaveAttribute(
+      "href",
+      "/industry-engine",
+    );
     rerender(
       <MemoryRouter initialEntries={["/customers"]}>
         <SidebarNav query="" onNavigate={() => undefined} collapsed />
@@ -521,7 +570,256 @@ describe("nav structure", () => {
         <SidebarNav query="Product Management" onNavigate={() => undefined} />
       </MemoryRouter>,
     );
-    expect(view.getByRole("link", { name: "Products" })).toBeInTheDocument();
+    expect(view.getByRole("link", { name: "Product Management" })).toBeInTheDocument();
     expect(view.queryByRole("link", { name: "Customers" })).not.toBeInTheDocument();
+  });
+
+  it("renders all 39 official master names as sidebar parents", () => {
+    render(
+      <MemoryRouter initialEntries={["/"]}>
+        <SidebarNav query="" onNavigate={() => undefined} />
+      </MemoryRouter>,
+    );
+    for (const section of ERP_NAV_SECTIONS) {
+      const matches = screen
+        .getAllByRole("link", { name: section.masterTitle })
+        .filter((link) => link.getAttribute("href") === section.path);
+      expect(matches.length).toBeGreaterThan(0);
+    }
+  });
+
+  it("keeps Salesmen as module 20 and hides the POS alias from the sidebar", () => {
+    expect(ERP_MODULES.some((m) => m.path === "/pos/salesmen")).toBe(true);
+    expect(ERP_SIDEBAR_SECTIONS.find((s) => s.id === "05")?.children.some((c) => c.path === "/pos/salesmen")).toBe(
+      false,
+    );
+    render(
+      <MemoryRouter initialEntries={["/pos"]}>
+        <SidebarNav query="" onNavigate={() => undefined} />
+      </MemoryRouter>,
+    );
+    expect(screen.queryByRole("link", { name: "Salesmen" })).not.toBeInTheDocument();
+    expect(screen.getByRole("link", { name: "POS / Sales" })).toHaveAttribute("href", "/pos");
+    expect(screen.getByRole("link", { name: "Salesman / Field Sales" })).toHaveAttribute(
+      "href",
+      "/salesman",
+    );
+  });
+
+  it("resolves the ERP header from the official module tree", () => {
+    expect(resolveShellHeader("/pos")).toEqual({
+      moduleTitle: "POS / Sales",
+      pageTitle: "New Sale",
+    });
+    expect(resolveShellHeader("/pos/new")).toEqual({
+      moduleTitle: "POS / Sales",
+      pageTitle: "New Sale",
+    });
+    expect(resolveShellHeader("/held-sales")).toEqual({
+      moduleTitle: "POS / Sales",
+      pageTitle: "Hold / Resume",
+    });
+    expect(resolveShellHeader("/invoices")).toEqual({
+      moduleTitle: "POS / Sales",
+      pageTitle: "Invoices",
+    });
+    expect(resolveShellHeader("/returns")).toEqual({
+      moduleTitle: "POS / Sales",
+      pageTitle: "Returns",
+    });
+    expect(resolveShellHeader("/exchange")).toEqual({
+      moduleTitle: "POS / Sales",
+      pageTitle: "Exchange",
+    });
+    expect(resolveShellHeader("/payments")).toEqual({
+      moduleTitle: "POS / Sales",
+      pageTitle: "Payments",
+    });
+    expect(resolveShellHeader("/products")).toEqual({
+      moduleTitle: "Product Management",
+      pageTitle: "Products",
+    });
+    expect(resolveShellHeader("/settings")).toEqual({
+      moduleTitle: "System Administration",
+      pageTitle: "Overview",
+    });
+    expect(resolveShellHeader("/security")).toEqual({
+      moduleTitle: "System Administration",
+      pageTitle: "Security",
+    });
+    expect(resolveShellHeader("/settings/numbering")).toEqual({
+      moduleTitle: "System Administration",
+      pageTitle: "Date & Numbering",
+    });
+  });
+
+  it("expands the active parent and shows its children", () => {
+    render(
+      <MemoryRouter initialEntries={["/invoices"]}>
+        <SidebarNav query="" onNavigate={() => undefined} />
+      </MemoryRouter>,
+    );
+    expect(screen.getByRole("link", { name: "Hold / Resume" })).toHaveAttribute("href", "/held-sales");
+    expect(screen.getByRole("link", { name: "Invoices" })).toHaveAttribute("href", "/invoices");
+    expect(screen.getByRole("link", { name: "POS / Sales" })).toHaveAttribute("href", "/pos");
+    expect(screen.queryByRole("link", { name: "New Sale" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("link", { name: "Exchange" })).not.toBeInTheDocument();
+  });
+
+  it("keeps the POS terminal on module 05 instead of a separate nav tree", () => {
+    render(
+      <MemoryRouter initialEntries={["/pos"]}>
+        <SidebarNav query="" onNavigate={() => undefined} />
+      </MemoryRouter>,
+    );
+    expect(screen.getByRole("link", { name: "POS / Sales" })).toHaveAttribute("href", "/pos");
+    expect(screen.queryByRole("link", { name: "New Sale" })).not.toBeInTheDocument();
+    expect(screen.getByRole("link", { name: "Hold / Resume" })).toHaveAttribute("href", "/held-sales");
+    const returnsLinks = screen.getAllByRole("link", { name: "Returns" });
+    expect(returnsLinks.some((link) => link.getAttribute("href") === "/returns")).toBe(true);
+    expect(screen.queryByRole("link", { name: "Exchange" })).not.toBeInTheDocument();
+    expect(screen.getByRole("link", { name: "Payments" })).toHaveAttribute("href", "/payments");
+    expect(screen.getByRole("link", { name: "Dashboard" })).toHaveAttribute("href", "/");
+  });
+
+  it("keeps System Administration as module 39 with a control-center workspace", () => {
+    expect(ERP_NAV_SECTIONS[38]?.id).toBe("39");
+    expect(ERP_NAV_SECTIONS[38]?.masterTitle).toBe("System Administration");
+    expect(ERP_MODULES.find((m) => m.path === "/settings")?.status).toBe("implemented");
+    expect(isSystemAdminPath("/settings")).toBe(true);
+    expect(isSystemAdminPath("/security")).toBe(true);
+    expect(isSystemAdminPath("/integrations")).toBe(true);
+    expect(isSystemAdminPath("/online-store")).toBe(true);
+    expect(isSystemAdminPath("/hr")).toBe(true);
+    expect(isSystemAdminPath("/mobile")).toBe(true);
+    expect(isSystemAdminPath("/settings/company")).toBe(true);
+    expect(isSystemAdminPath("/pos")).toBe(false);
+
+    expect(isValidElement(IMPLEMENTED_ROUTES["/security"])).toBe(true);
+    expect(isValidElement(IMPLEMENTED_ROUTES["/integrations"])).toBe(true);
+    expect(isValidElement(IMPLEMENTED_ROUTES["/online-store"])).toBe(true);
+    expect(isValidElement(IMPLEMENTED_ROUTES["/hr"])).toBe(true);
+    expect(isValidElement(IMPLEMENTED_ROUTES["/settings"])).toBe(true);
+
+    render(
+      <MemoryRouter initialEntries={["/security"]}>
+        <SystemAdminLayout>
+          <div>Security workspace</div>
+        </SystemAdminLayout>
+      </MemoryRouter>,
+    );
+    expect(screen.getByRole("navigation", { name: "System Administration" })).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: "Overview" })).toHaveAttribute("href", "/settings");
+    expect(screen.getByRole("link", { name: "Security" })).toHaveAttribute("href", "/security");
+    expect(screen.getByRole("link", { name: "HR" })).toHaveAttribute("href", "/hr");
+    expect(screen.getByText("Organization")).toBeInTheDocument();
+    expect(screen.getByText("Operations")).toBeInTheDocument();
+    expect(screen.getByText("Access & channels")).toBeInTheDocument();
+    expect(screen.getByText("Security workspace")).toBeInTheDocument();
+    expect(screen.queryByRole("navigation", { name: "ERP modules" })).not.toBeInTheDocument();
+    expect(screen.getByRole("navigation", { name: "System Administration" }).innerHTML).not.toContain(
+      "overflow-x-auto",
+    );
+
+    cleanup();
+    render(
+      <MemoryRouter>
+        <SystemAdminHome />
+      </MemoryRouter>,
+    );
+    expect(screen.getByText("Organization")).toBeInTheDocument();
+    expect(screen.getByText(/Coming Soon/i)).toBeInTheDocument();
+    expect(screen.getAllByText("Live").length).toBeGreaterThanOrEqual(4);
+  });
+
+  it("wraps official parent labels and shows module numbers 01–39", () => {
+    render(
+      <MemoryRouter initialEntries={["/"]}>
+        <SidebarNav query="" onNavigate={() => undefined} />
+      </MemoryRouter>,
+    );
+    expect(document.querySelectorAll("[data-erp-module]")).toHaveLength(39);
+    for (const name of [
+      "AI Camera Product Recognition",
+      "Tax & Pakistan Compliance",
+      "Backup & Disaster Recovery",
+      "Users & Role Management",
+      "Rules / Automation Engine",
+      "System Administration",
+    ]) {
+      const link = screen.getByRole("link", { name });
+      const label = link.querySelector("[data-erp-label]");
+      expect(label?.textContent).toBe(name);
+      expect(label?.className).not.toContain("truncate");
+    }
+    expect(document.querySelector('[data-erp-module="01"]')?.textContent).toContain("01");
+    expect(document.querySelector('[data-erp-module="39"]')?.textContent).toContain("39");
+  });
+
+  it("closes the shared drawer callback when a child is opened", () => {
+    const onNavigate = vi.fn();
+    render(
+      <MemoryRouter initialEntries={["/invoices"]}>
+        <SidebarNav query="" onNavigate={onNavigate} />
+      </MemoryRouter>,
+    );
+    fireEvent.click(screen.getByRole("link", { name: "Hold / Resume" }));
+    expect(onNavigate).toHaveBeenCalled();
+  });
+
+  it("expands and highlights the parent for deep-linked children", () => {
+    const { unmount } = render(
+      <MemoryRouter initialEntries={["/security"]}>
+        <SidebarNav query="" onNavigate={() => undefined} />
+      </MemoryRouter>,
+    );
+    expect(screen.getByRole("link", { name: "System Administration" }).className).toContain(
+      "erp-brand-soft",
+    );
+    unmount();
+
+    render(
+      <MemoryRouter initialEntries={["/exchange"]}>
+        <SidebarNav query="" onNavigate={() => undefined} />
+      </MemoryRouter>,
+    );
+    expect(screen.getByRole("link", { name: "POS / Sales" }).className).toContain("erp-brand-soft");
+  });
+});
+
+describe("responsive ERP shell", () => {
+  function renderShell(path = "/") {
+    return render(
+      <MemoryRouter initialEntries={[path]}>
+        <AuthProvider>
+          <Routes>
+            <Route element={<AppShell />}>
+              <Route path="*" element={<div>workspace</div>} />
+            </Route>
+          </Routes>
+        </AuthProvider>
+      </MemoryRouter>,
+    );
+  }
+
+  it("uses one 39-module nav as the mobile drawer, not a second menu", () => {
+    const { container } = renderShell("/pos");
+    const shell = container.firstElementChild as HTMLElement;
+    expect(shell.className).toContain("md:grid");
+    expect(shell.className).toContain("overflow-x-hidden");
+    expect(screen.getByRole("button", { name: "Menu" }).className).toContain("md:hidden");
+    expect(screen.getByRole("button", { name: "Collapse sidebar" }).className).toContain("md:inline-flex");
+    fireEvent.click(screen.getByRole("button", { name: "Menu" }));
+    expect(screen.getByRole("button", { name: "Close navigation" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Close" })).toBeInTheDocument();
+    expect(screen.getAllByLabelText("ERP modules")).toHaveLength(1);
+    for (const section of ERP_NAV_SECTIONS) {
+      const matches = screen
+        .getAllByRole("link", { name: section.masterTitle })
+        .filter((link) => link.getAttribute("href") === section.path);
+      expect(matches.length).toBeGreaterThan(0);
+    }
+    fireEvent.click(screen.getByRole("link", { name: "Hold / Resume" }));
+    expect(screen.queryByRole("button", { name: "Close navigation" })).not.toBeInTheDocument();
   });
 });

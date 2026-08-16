@@ -114,7 +114,7 @@ export function PosPage({ entry = "sale" }: { entry?: "sale" | "holds" }) {
   const toast = useToast();
   const { pathname } = useLocation();
   const holdEntry = entry === "holds" || pathname === "/held-sales";
-  const { branchId, branches, setBranchId, user, hasPermission, organizationId } = useAuth();
+  const { branchId, branches, setBranchId, hasPermission, organizationId } = useAuth();
   const session = usePosSession();
   const {
     cart,
@@ -152,8 +152,6 @@ export function PosPage({ entry = "sale" }: { entry?: "sale" | "holds" }) {
   const [online, setOnline] = useState(
     typeof navigator !== "undefined" ? navigator.onLine : true,
   );
-  const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
-  const [mobileNav, setMobileNav] = useState(false);
   const [mode, setMode] = useState<PosMode>("easy");
   const [locale, setLocale] = useState<LocaleMode>("en");
   const [q, setQ] = useState("");
@@ -202,7 +200,6 @@ export function PosPage({ entry = "sale" }: { entry?: "sale" | "holds" }) {
   const [lastInvoice, setLastInvoice] = useState<string | null>(null);
   const [receipt, setReceipt] = useState<InvoicePreview | null>(null);
   const [receiptFormat, setReceiptFormat] = useState<"80mm" | "58mm" | "a4">("80mm");
-  const [clock, setClock] = useState(() => new Date());
   const [showHolds, setShowHolds] = useState(holdEntry);
   const [creatingCustomer, setCreatingCustomer] = useState(false);
 
@@ -229,11 +226,6 @@ export function PosPage({ entry = "sale" }: { entry?: "sale" | "holds" }) {
     cashier: hasPermission("pos.discount_cashier"),
   });
   const advanced = mode === "advanced";
-
-  useEffect(() => {
-    const t = window.setInterval(() => setClock(new Date()), 1000);
-    return () => window.clearInterval(t);
-  }, []);
 
   useEffect(() => {
     const on = () => setOnline(true);
@@ -367,6 +359,38 @@ export function PosPage({ entry = "sale" }: { entry?: "sale" | "holds" }) {
       /* ignore */
     }
   }
+
+  const toggleShift = useCallback(() => {
+    void (async () => {
+      if (!branchId) return;
+      if (!shift) {
+        try {
+          const opened = await posApi.openShift({ branchId, openingFloat: 0 });
+          setShift(opened as Record<string, unknown>);
+          toast.push({ title: "Shift opened", tone: "success" });
+        } catch (err) {
+          toast.push({
+            title: "Open shift failed",
+            description: err instanceof Error ? err.message : "Apply migration pos_cash_shifts",
+            tone: "danger",
+          });
+        }
+        return;
+      }
+      try {
+        const counted = Number(shift.expected_cash ?? shift.opening_float ?? 0);
+        await posApi.closeShift(String(shift.id), { closingCounted: counted });
+        setShift(null);
+        toast.push({ title: "Shift closed", tone: "success" });
+      } catch (err) {
+        toast.push({
+          title: "Close shift failed",
+          description: err instanceof Error ? err.message : "Error",
+          tone: "danger",
+        });
+      }
+    })();
+  }, [branchId, shift, toast]);
 
   useEffect(() => {
     if (tab !== "categories") return;
@@ -1225,98 +1249,41 @@ export function PosPage({ entry = "sale" }: { entry?: "sale" | "holds" }) {
   }, [totals.grand]);
 
   return (
-    <div dir={locale === "ur" ? "rtl" : "ltr"}>
+    <div className="flex h-full min-h-0 min-w-0 flex-1 flex-col overflow-x-hidden" dir={locale === "ur" ? "rtl" : "ltr"}>
       <POSLayout
-        sidebar={
-          <PosSidebar
-            collapsed={sidebarCollapsed}
-            onToggle={() => setSidebarCollapsed((v) => !v)}
-            holdCount={holds.length}
-            drawerSummary={
-              shift
-                ? {
-                    opening: Number(shift.opening_float ?? 0).toFixed(2),
-                    inHand: Number(shift.expected_cash ?? shift.opening_float ?? 0).toFixed(2),
-                    sales: Number(shift.sales_total ?? 0).toFixed(2),
-                    expenses: Number(shift.expense_total ?? 0).toFixed(2),
-                    expected: Number(shift.expected_cash ?? 0).toFixed(2),
-                  }
-                : undefined
-            }
-            onCloseShift={() => {
-              void (async () => {
-                if (!branchId) return;
-                if (!shift) {
-                  try {
-                    const opened = await posApi.openShift({ branchId, openingFloat: 0 });
-                    setShift(opened as Record<string, unknown>);
-                    toast.push({ title: "Shift opened", tone: "success" });
-                  } catch (err) {
-                    toast.push({
-                      title: "Open shift failed",
-                      description: err instanceof Error ? err.message : "Apply migration pos_cash_shifts",
-                      tone: "danger",
-                    });
-                  }
-                  return;
-                }
-                try {
-                  const counted = Number(shift.expected_cash ?? shift.opening_float ?? 0);
-                  await posApi.closeShift(String(shift.id), { closingCounted: counted });
-                  setShift(null);
-                  toast.push({ title: "Shift closed", tone: "success" });
-                } catch (err) {
-                  toast.push({
-                    title: "Close shift failed",
-                    description: err instanceof Error ? err.message : "Error",
-                    tone: "danger",
-                  });
-                }
-              })();
-            }}
-          />
-        }
-        mobileSidebar={
-          mobileNav ? (
-            <div className="fixed inset-0 z-40 flex lg:hidden">
-              <PosSidebar
-                collapsed={false}
-                onToggle={() => setMobileNav(false)}
-                holdCount={holds.length}
-              />
-              <button
-                type="button"
-                className="flex-1 bg-black/40"
-                onClick={() => setMobileNav(false)}
-                aria-label="Close menu"
-              />
-            </div>
-          ) : null
-        }
         topbar={
-          <PosHeader
-            branchId={branchId}
-            branches={branches}
-            onBranchChange={setBranchId}
-            cashierName={user?.fullName ?? "Cashier"}
-            online={online}
-            holdCount={holds.length}
-            mode={mode}
-            locale={locale}
-            onModeChange={setMode}
-            onLocaleChange={setLocale}
-            onMenu={() => setMobileNav(true)}
-            clock={clock}
-            shiftOpen={Boolean(shift)}
-            onHeldSales={() => setShowHolds(true)}
-            onNotifications={() =>
-              toast.push({
-                title: "Notifications",
-                description: "Notification feed not connected yet — integration point ready",
-                tone: "info",
-              })
-            }
-          />
+          <>
+            <PosHeader
+              branchId={branchId}
+              branches={branches}
+              onBranchChange={setBranchId}
+              online={online}
+              holdCount={holds.length}
+              mode={mode}
+              locale={locale}
+              onModeChange={setMode}
+              onLocaleChange={setLocale}
+              shiftOpen={Boolean(shift)}
+              onHeldSales={() => setShowHolds(true)}
+              onShiftToggle={toggleShift}
+            />
+            <PosSidebar
+              collapsed={false}
+              onToggle={() => undefined}
+              holdCount={holds.length}
+              drawerSummary={
+                shift
+                  ? {
+                      opening: Number(shift.opening_float ?? 0).toFixed(2),
+                      inHand: Number(shift.expected_cash ?? shift.opening_float ?? 0).toFixed(2),
+                      sales: Number(shift.sales_total ?? 0).toFixed(2),
+                      expenses: Number(shift.expense_total ?? 0).toFixed(2),
+                      expected: Number(shift.expected_cash ?? 0).toFixed(2),
+                    }
+                  : undefined
+              }
+            />
+          </>
         }
       >
         <div className="flex min-h-0 flex-1 flex-col">
@@ -1329,7 +1296,7 @@ export function PosPage({ entry = "sale" }: { entry?: "sale" | "holds" }) {
               <span className="mt-0.5 block opacity-90">{INTERNET_REQUIRED_MESSAGE}</span>
             </div>
           ) : null}
-          <div className="grid min-h-0 flex-1 gap-3 p-3 xl:grid-cols-[minmax(0,1.4fr)_minmax(340px,0.95fr)]">
+          <div className="grid min-h-0 min-w-0 flex-1 gap-3 overflow-x-hidden p-3 xl:grid-cols-[minmax(0,1.4fr)_minmax(0,0.95fr)]">
             <div className="flex min-h-0 flex-col gap-3">
               <div className="flex flex-wrap items-center gap-2">
                 {warehouseId ? (

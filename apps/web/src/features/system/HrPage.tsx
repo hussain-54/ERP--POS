@@ -36,7 +36,7 @@ export function HrPage() {
   }, [toast]);
 
   return (
-    <div className="space-y-4 p-4">
+    <div className="space-y-4">
       <h1 className="text-xl font-semibold">HR & employees</h1>
       <p className="text-sm opacity-70">
         Employees, attendance, salary, commission (linked to POS sales), incentives, and performance.

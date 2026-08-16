@@ -29,10 +29,17 @@ export function DevicesPage() {
       .listEvents()
       .then((r) => setEvents(r.items))
       .catch(() => setEvents([]));
-    const t = setInterval(refresh, 5_000);
+    const t = setInterval(() => {
+      if (!document.hidden) refresh();
+    }, 15_000);
+    const onVis = () => {
+      if (!document.hidden) refresh();
+    };
+    document.addEventListener("visibilitychange", onVis);
     return () => {
       unsub();
       clearInterval(t);
+      document.removeEventListener("visibilitychange", onVis);
     };
   }, []);
 

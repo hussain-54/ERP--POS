@@ -46,6 +46,8 @@ export interface NavItemOptions {
   /** Hide from sidebar but keep the route. Default true. */
   sidebar?: boolean;
   availableOn?: string;
+  /** Child is a shortcut into another master module — not a second parent. */
+  shortcutToModuleId?: string;
 }
 
 export interface ErpModuleRoute {
@@ -68,6 +70,7 @@ export interface ErpNavChild {
   availableOn?: string;
   sidebar?: boolean;
   permission?: string;
+  shortcutToModuleId?: string;
 }
 
 export interface ErpNavSection {
@@ -91,6 +94,7 @@ function live(path: string, title: string, description: string, opts?: NavItemOp
     permission: opts?.permission,
     sidebar: opts?.sidebar,
     availableOn: opts?.availableOn,
+    shortcutToModuleId: opts?.shortcutToModuleId,
   };
 }
 
@@ -127,7 +131,8 @@ export function isComingSoonEngineSection(section: Pick<ErpNavSection, "id">): b
 
 /**
  * Locked 39-module ERP navigation (FINAL 39-MODULE ALIGNMENT REPORT).
- * `title` is the short sidebar label — do not expand it to `masterTitle`.
+ * `masterTitle` is the official name shown in the ERP sidebar.
+ * `title` is the short alias used by tests and command grouping — do not rename or reorder parents.
  * Keep all children, duplicate routes, and Coming Soon status for 36–38.
  * Do not add or remove top-level parents.
  */
@@ -143,7 +148,6 @@ export const ERP_NAV_SECTIONS: ErpNavSection[] = [
     children: [
       live("/", "Dashboard", "Operational overview and alerts.", {
         permission: "dashboard.view",
-        sidebar: false,
       }),
     ],
   },
@@ -156,9 +160,9 @@ export const ERP_NAV_SECTIONS: ErpNavSection[] = [
     description: "Product master, taxonomy, units, and pricing.",
     permission: "products.read",
     children: [
-      live("/products", "Product Management", "Product master list.", {
+      live("/products", "Products", "Product master list.", { permission: "products.read" }),
+      live("/products/new", "New Product", "Create a product on the existing product form.", {
         permission: "products.read",
-        sidebar: false,
       }),
       live("/categories", "Categories", "Category taxonomy.", { permission: "catalog_taxonomy.manage" }),
       live("/subcategories", "Subcategories", "Subcategory taxonomy.", {
@@ -199,7 +203,6 @@ export const ERP_NAV_SECTIONS: ErpNavSection[] = [
     children: [
       live("/barcodes", "Barcodes", "Generate and list barcodes.", {
         permission: "barcodes.manage",
-        sidebar: false,
       }),
       live("/qr", "QR", "QR generation (same barcode tools).", { permission: "barcodes.manage" }),
     ],
@@ -215,7 +218,6 @@ export const ERP_NAV_SECTIONS: ErpNavSection[] = [
     children: [
       live("/ai-camera", "AI Camera", "Camera-assisted product match.", {
         permission: "ai.recognize",
-        sidebar: false,
       }),
     ],
   },
@@ -228,7 +230,7 @@ export const ERP_NAV_SECTIONS: ErpNavSection[] = [
     description: "Point of sale terminal and sales documents.",
     permission: "pos.sell",
     children: [
-      live("/pos", "POS", "POS terminal.", { permission: "pos.sell", sidebar: false }),
+      live("/pos", "New Sale", "POS terminal.", { permission: "pos.sell" }),
       live("/held-sales", "Hold / Resume", "Parked POS carts (same terminal; opens the holds drawer).", {
         permission: "pos.hold",
       }),
@@ -244,12 +246,15 @@ export const ERP_NAV_SECTIONS: ErpNavSection[] = [
       }),
       live("/pos/references", "References", "Outside references (same salesman screen).", {
         permission: "hr.view",
+        shortcutToModuleId: "20",
       }),
       live("/pos/salesmen", "Salesmen", "Salesman profiles and commissions (same module 20 screen).", {
         permission: "hr.view",
+        shortcutToModuleId: "20",
       }),
       live("/pos/installments", "Installments", "Installment plans (same module 22 /credit screen).", {
         permission: "installments.manage",
+        shortcutToModuleId: "22",
       }),
     ],
   },
@@ -264,7 +269,6 @@ export const ERP_NAV_SECTIONS: ErpNavSection[] = [
     children: [
       live("/quotations", "Quotations", "Quotes and conversion.", {
         permission: "quotations.read",
-        sidebar: false,
       }),
     ],
   },
@@ -279,7 +283,6 @@ export const ERP_NAV_SECTIONS: ErpNavSection[] = [
     children: [
       live("/orders", "Orders", "Order list (shared with quotations screen).", {
         permission: "orders.read",
-        sidebar: false,
       }),
       live("/b2b", "B2B", "Wholesale portal orders.", { permission: "b2b.manage" }),
     ],
@@ -295,7 +298,6 @@ export const ERP_NAV_SECTIONS: ErpNavSection[] = [
     children: [
       live("/deliveries", "Delivery", "Delivery notes and tracking.", {
         permission: "deliveries.view",
-        sidebar: false,
       }),
     ],
   },
@@ -310,7 +312,6 @@ export const ERP_NAV_SECTIONS: ErpNavSection[] = [
     children: [
       live("/purchases", "Purchases", "Purchases and supplier prices.", {
         permission: "purchases.read",
-        sidebar: false,
       }),
       live("/purchase-returns", "Returns", "Purchase return posting.", {
         permission: "purchases.return",
@@ -331,7 +332,6 @@ export const ERP_NAV_SECTIONS: ErpNavSection[] = [
     children: [
       live("/inventory", "Inventory", "Stock balances and movement ledger.", {
         permission: "inventory.view",
-        sidebar: false,
       }),
       live("/stock-ops", "Movements", "Manual movements, adjustments, counts.", {
         permission: "inventory.adjust",
@@ -363,10 +363,7 @@ export const ERP_NAV_SECTIONS: ErpNavSection[] = [
     description: "Warehouses, locations, and transfers.",
     permission: "warehouses.manage",
     children: [
-      live("/warehouses", "Warehouses", "Warehouse master.", {
-        permission: "warehouses.manage",
-        sidebar: false,
-      }),
+      live("/warehouses", "Warehouses", "Warehouse master.", { permission: "warehouses.manage" }),
       live("/warehouses/racks", "Racks", "Racks on the warehouses screen.", { permission: "warehouses.manage" }),
       live("/warehouses/shelves", "Shelves", "Shelves on the warehouses screen.", {
         permission: "warehouses.manage",
@@ -392,7 +389,7 @@ export const ERP_NAV_SECTIONS: ErpNavSection[] = [
     description: "Customer master, ledger, and credit.",
     permission: "customers.read",
     children: [
-      live("/customers", "Customers", "Customer master.", { permission: "customers.read", sidebar: false }),
+      live("/customers", "Customers", "Customer master.", { permission: "customers.read" }),
       live("/customers/ledger", "Ledger", "Customer ledger on the customer screen.", {
         permission: "ledgers.view",
       }),
@@ -400,7 +397,10 @@ export const ERP_NAV_SECTIONS: ErpNavSection[] = [
         availableOn: "/reports",
         permission: "reports.view",
       }),
-      live("/credit", "Credit", "Credit / udhaar approvals.", { permission: "credit.manage" }),
+      live("/credit", "Credit", "Credit / udhaar approvals.", {
+        permission: "credit.manage",
+        shortcutToModuleId: "22",
+      }),
       live("/customers/payment-history", "History", "Payment history on the customer screen.", {
         permission: "customers.read",
       }),
@@ -415,7 +415,7 @@ export const ERP_NAV_SECTIONS: ErpNavSection[] = [
     description: "Supplier master, ledger, and prices.",
     permission: "suppliers.read",
     children: [
-      live("/suppliers", "Suppliers", "Supplier master.", { permission: "suppliers.read", sidebar: false }),
+      live("/suppliers", "Suppliers", "Supplier master.", { permission: "suppliers.read" }),
       live("/suppliers/ledger", "Ledger", "Supplier ledger on the supplier screen.", {
         permission: "ledgers.view",
       }),
@@ -425,6 +425,7 @@ export const ERP_NAV_SECTIONS: ErpNavSection[] = [
       }),
       live("/suppliers/price-lists", "Price Lists", "Supplier prices on Purchases.", {
         permission: "purchases.prices",
+        shortcutToModuleId: "09",
       }),
       soon("/suppliers/performance", "Performance", "Supplier performance analytics are not implemented yet.", {
         permission: "suppliers.read",
@@ -440,7 +441,7 @@ export const ERP_NAV_SECTIONS: ErpNavSection[] = [
     description: "Job cards, technicians, and repairs.",
     permission: "service.manage",
     children: [
-      live("/service", "Service", "Service jobs.", { permission: "service.manage", sidebar: false }),
+      live("/service", "Service", "Service jobs.", { permission: "service.manage" }),
       live("/service/complaints", "Complaints", "Complaint capture on the service screen.", {
         permission: "service.manage",
       }),
@@ -464,7 +465,7 @@ export const ERP_NAV_SECTIONS: ErpNavSection[] = [
     description: "Warranty claims and replacements.",
     permission: "warranty.manage",
     children: [
-      live("/warranty", "Warranty", "Warranty claims.", { permission: "warranty.manage", sidebar: false }),
+      live("/warranty", "Warranty", "Warranty claims.", { permission: "warranty.manage" }),
       live("/warranty/replacements", "Replacements", "Warranty replacements.", {
         permission: "warranty.manage",
       }),
@@ -482,7 +483,6 @@ export const ERP_NAV_SECTIONS: ErpNavSection[] = [
     children: [
       live("/accounts", "Accounts", "Chart of accounts, journals, and vouchers.", {
         permission: "accounts.read",
-        sidebar: false,
       }),
       soon("/accounts/cash", "Cash", "Cash book reports live under Reports.", {
         availableOn: "/reports",
@@ -505,10 +505,7 @@ export const ERP_NAV_SECTIONS: ErpNavSection[] = [
     description: "Bank books and reconciliation.",
     permission: "banking.manage",
     children: [
-      live("/banking", "Banking", "Bank books and reconciliation.", {
-        permission: "banking.manage",
-        sidebar: false,
-      }),
+      live("/banking", "Banking", "Bank books and reconciliation.", { permission: "banking.manage" }),
     ],
   },
   {
@@ -520,7 +517,7 @@ export const ERP_NAV_SECTIONS: ErpNavSection[] = [
     description: "Segments, campaigns, and engagement.",
     permission: "crm.view",
     children: [
-      live("/crm", "CRM", "CRM segments.", { permission: "crm.view", sidebar: false }),
+      live("/crm", "CRM", "CRM segments.", { permission: "crm.view" }),
       live("/crm/campaigns", "Campaigns", "Campaigns including SMS and WhatsApp.", { permission: "crm.manage" }),
       live("/crm/sms", "SMS", "SMS channel campaigns.", { permission: "crm.manage" }),
       live("/crm/whatsapp", "WhatsApp", "WhatsApp channel campaigns.", { permission: "crm.manage" }),
@@ -539,7 +536,7 @@ export const ERP_NAV_SECTIONS: ErpNavSection[] = [
     description: "Operational reports, BI, and AI insights.",
     permission: "reports.view",
     children: [
-      live("/reports", "Reports", "Operational report hub.", { permission: "reports.view", sidebar: false }),
+      live("/reports", "Reports", "Operational report hub.", { permission: "reports.view" }),
       live("/bi", "BI", "KPI dashboards.", { permission: "bi.view" }),
       live("/ai-insights", "AI Insights", "AI business insights.", { permission: "ai.insights" }),
     ],
@@ -553,10 +550,7 @@ export const ERP_NAV_SECTIONS: ErpNavSection[] = [
     description: "Salesmen, references, and commissions.",
     permission: "hr.view",
     children: [
-      live("/salesman", "Salesmen", "Salesmen, references, and commissions.", {
-        permission: "hr.view",
-        sidebar: false,
-      }),
+      live("/salesman", "Salesmen", "Salesmen, references, and commissions.", { permission: "hr.view" }),
       live("/salesman/references", "References", "Outside references (same salesman screen).", {
         permission: "hr.view",
       }),
@@ -574,9 +568,9 @@ export const ERP_NAV_SECTIONS: ErpNavSection[] = [
     description: "Expense entry.",
     permission: "expenses.manage",
     children: [
-      live("/expenses", "Expenses", "Expense entry.", {
+      live("/expenses", "Expenses", "Expense entry.", { permission: "expenses.manage" }),
+      live("/expenses/period", "Period Reports", "Expense period totals on the expenses screen.", {
         permission: "expenses.manage",
-        sidebar: false,
       }),
     ],
   },
@@ -591,7 +585,6 @@ export const ERP_NAV_SECTIONS: ErpNavSection[] = [
     children: [
       live("/installments", "Installments", "Installment plans and dues.", {
         permission: "installments.manage",
-        sidebar: false,
       }),
     ],
   },
@@ -604,10 +597,9 @@ export const ERP_NAV_SECTIONS: ErpNavSection[] = [
     description: "Points, tiers, and rewards.",
     permission: "loyalty.view",
     children: [
-      live("/loyalty", "Loyalty", "Points, tiers, and rewards.", {
-        permission: "loyalty.view",
-        sidebar: false,
-      }),
+      live("/loyalty", "Loyalty", "Points, tiers, and rewards.", { permission: "loyalty.view" }),
+      live("/loyalty/offers", "Offers", "Loyalty offers on the loyalty screen.", { permission: "loyalty.view" }),
+      live("/loyalty/redeem", "Redeem", "Point redemption on the loyalty screen.", { permission: "loyalty.view" }),
     ],
   },
   {
@@ -619,10 +611,7 @@ export const ERP_NAV_SECTIONS: ErpNavSection[] = [
     description: "Attachments and files.",
     permission: "documents.view",
     children: [
-      live("/documents", "Documents", "Attachments and files.", {
-        permission: "documents.view",
-        sidebar: false,
-      }),
+      live("/documents", "Documents", "Attachments and files.", { permission: "documents.view" }),
     ],
   },
   {
@@ -634,10 +623,7 @@ export const ERP_NAV_SECTIONS: ErpNavSection[] = [
     description: "Approval inbox.",
     permission: "approvals.act",
     children: [
-      live("/approvals", "Approvals", "Approval inbox.", {
-        permission: "approvals.act",
-        sidebar: false,
-      }),
+      live("/approvals", "Approvals", "Approval inbox.", { permission: "approvals.act" }),
     ],
   },
   {
@@ -649,10 +635,8 @@ export const ERP_NAV_SECTIONS: ErpNavSection[] = [
     description: "User and role administration.",
     permission: "users.manage",
     children: [
-      live("/users", "Users / Roles", "User and role administration.", {
-        permission: "users.manage",
-        sidebar: false,
-      }),
+      live("/users", "Users", "User administration.", { permission: "users.manage" }),
+      live("/users/roles", "Roles", "Role assignment on the users screen.", { permission: "users.manage" }),
     ],
   },
   {
@@ -664,9 +648,9 @@ export const ERP_NAV_SECTIONS: ErpNavSection[] = [
     description: "Permission matrix.",
     permission: "permissions.manage",
     children: [
-      live("/permissions", "Permissions", "Permission matrix.", {
+      live("/permissions", "Permissions", "Permission matrix.", { permission: "permissions.manage" }),
+      live("/permissions/overrides", "User Overrides", "User permission overrides on the permissions screen.", {
         permission: "permissions.manage",
-        sidebar: false,
       }),
     ],
   },
@@ -679,10 +663,7 @@ export const ERP_NAV_SECTIONS: ErpNavSection[] = [
     description: "Immutable audit log.",
     permission: "audit.view",
     children: [
-      live("/audit", "Audit Trail", "Immutable audit log.", {
-        permission: "audit.view",
-        sidebar: false,
-      }),
+      live("/audit", "Audit", "Immutable audit log.", { permission: "audit.view" }),
     ],
   },
   {
@@ -694,10 +675,7 @@ export const ERP_NAV_SECTIONS: ErpNavSection[] = [
     description: "Notification center.",
     permission: "notifications.view",
     children: [
-      live("/notifications", "Notifications", "Notification center.", {
-        permission: "notifications.view",
-        sidebar: false,
-      }),
+      live("/notifications", "Notifications", "Notification center.", { permission: "notifications.view" }),
     ],
   },
   {
@@ -709,9 +687,9 @@ export const ERP_NAV_SECTIONS: ErpNavSection[] = [
     description: "Branch administration.",
     permission: "branches.manage",
     children: [
-      live("/branches", "Branches", "Branch administration.", {
+      live("/branches", "Branches", "Branch administration.", { permission: "branches.manage" }),
+      live("/branches/membership", "Membership", "Branch membership on the branches screen.", {
         permission: "branches.manage",
-        sidebar: false,
       }),
     ],
   },
@@ -724,11 +702,8 @@ export const ERP_NAV_SECTIONS: ErpNavSection[] = [
     description: "Tax profile, rates, and FBR readiness.",
     permission: "tax.view",
     children: [
-      live("/tax", "Tax Profile", "NTN, STRN, and legal name.", {
-        permission: "tax.view",
-        sidebar: false,
-      }),
-      live("/tax/rates", "Tax Rates", "Sales tax rates (same tax screen).", { permission: "tax.view" }),
+      live("/tax", "Tax", "NTN, STRN, and legal name.", { permission: "tax.view" }),
+      live("/tax/rates", "Rates", "Sales tax rates (same tax screen).", { permission: "tax.view" }),
       live("/tax/reports", "Tax Reports", "Tax report on the tax screen.", { permission: "tax.view" }),
     ],
   },
@@ -741,10 +716,7 @@ export const ERP_NAV_SECTIONS: ErpNavSection[] = [
     description: "Data import and export.",
     permission: "import.execute",
     children: [
-      live("/import-export", "Import", "CSV/Excel import.", {
-        permission: "import.execute",
-        sidebar: false,
-      }),
+      live("/import-export", "Import", "CSV/Excel import.", { permission: "import.execute" }),
       live("/import-export/export", "Export", "Product export (same import/export screen).", {
         permission: "import.execute",
       }),
@@ -762,15 +734,14 @@ export const ERP_NAV_SECTIONS: ErpNavSection[] = [
     description: "Print jobs and templates.",
     permission: "printing.manage",
     children: [
-      live("/printing", "Printing", "Print jobs and templates.", {
+      live("/printing", "Printing", "Print jobs and templates.", { permission: "printing.manage" }),
+      live("/printing/queue", "Print Queue", "Queued print jobs (same printing screen).", {
         permission: "printing.manage",
         sidebar: false,
       }),
-      live("/printing/queue", "Print Queue", "Queued print jobs (same printing screen).", {
-        permission: "printing.manage",
-      }),
       live("/printing/preview", "Preview", "Local print preview (same printing screen).", {
         permission: "printing.manage",
+        sidebar: false,
       }),
     ],
   },
@@ -783,10 +754,7 @@ export const ERP_NAV_SECTIONS: ErpNavSection[] = [
     description: "Backup jobs and restore points.",
     permission: "backup.view",
     children: [
-      live("/backup", "Backup", "Backup jobs.", {
-        permission: "backup.view",
-        sidebar: false,
-      }),
+      live("/backup", "Backup", "Backup jobs.", { permission: "backup.view" }),
       live("/backup/restore-points", "Restore Points", "Restore points (same backup screen).", {
         permission: "backup.view",
       }),
@@ -801,11 +769,8 @@ export const ERP_NAV_SECTIONS: ErpNavSection[] = [
     description: "Registered devices and hardware events.",
     permission: "devices.manage",
     children: [
-      live("/devices", "Devices", "Registered devices and hardware events.", {
-        permission: "devices.manage",
-        sidebar: false,
-      }),
-      live("/devices/drawer", "Drawer", "Cash drawer open (same devices screen).", {
+      live("/devices", "Devices", "Registered devices and hardware events.", { permission: "devices.manage" }),
+      live("/devices/drawer", "Cash Drawer", "Cash drawer open (same devices screen).", {
         permission: "devices.manage",
       }),
       live("/devices/events", "Device Events", "Hardware events (same devices screen).", {
@@ -824,7 +789,6 @@ export const ERP_NAV_SECTIONS: ErpNavSection[] = [
     children: [
       soon("/industry-engine", "Coming Soon", "Industry-specific configuration is not implemented yet.", {
         permission: "settings.manage",
-        sidebar: false,
       }),
     ],
   },
@@ -839,7 +803,6 @@ export const ERP_NAV_SECTIONS: ErpNavSection[] = [
     children: [
       soon("/customization-engine", "Coming Soon", "UI and field customization is not implemented yet.", {
         permission: "settings.manage",
-        sidebar: false,
       }),
     ],
   },
@@ -852,13 +815,13 @@ export const ERP_NAV_SECTIONS: ErpNavSection[] = [
     description: "Automation rules and linked documents.",
     permission: "settings.manage",
     children: [
-      soon("/rules-engine/rules", "Rules", "Automation engine is not implemented yet.", {
+      soon("/rules-engine", "Automation", "Automation engine is not implemented yet.", {
         permission: "settings.manage",
       }),
       soon("/transaction-linking", "Transaction Linking", "Automatic document linking is not implemented yet.", {
         permission: "settings.manage",
       }),
-      soon("/rules-engine", "Coming Soon", "Automation engine is not implemented yet.", {
+      soon("/rules-engine/rules", "Rules", "Automation engine is not implemented yet.", {
         permission: "settings.manage",
         sidebar: false,
       }),
@@ -870,7 +833,7 @@ export const ERP_NAV_SECTIONS: ErpNavSection[] = [
     title: "System",
     icon: "admin",
     path: "/settings",
-    description: "Organization settings, security, and channels.",
+    description: "System administration control center.",
     permission: "settings.manage",
     children: [
       soon("/settings/company", "Company", "Dedicated company profile screen is not implemented yet.", {
@@ -885,11 +848,12 @@ export const ERP_NAV_SECTIONS: ErpNavSection[] = [
       soon("/settings/language", "Language", "Language settings are not implemented yet.", {
         permission: "settings.manage",
       }),
-      soon("/settings/datetime", "Date", "Date and time settings are not implemented yet.", {
+      soon("/settings/datetime", "Date & Numbering", "Date, time, and document numbering are not implemented yet.", {
         permission: "settings.manage",
       }),
       soon("/settings/numbering", "Numbering", "Document numbering is not implemented yet.", {
         permission: "settings.manage",
+        sidebar: false,
       }),
       soon("/settings/invoice-templates", "Templates", "Invoice template designer is not implemented yet.", {
         permission: "settings.manage",
@@ -987,13 +951,33 @@ export const DUPLICATE_ROUTE_PAIRS: Array<{
   { canonical: "/backup", duplicate: "/backup/restore-points", note: "Same BackupPage; restore-points alias" },
   { canonical: "/devices", duplicate: "/devices/drawer", note: "Same DevicesPage; drawer alias" },
   { canonical: "/devices", duplicate: "/devices/events", note: "Same DevicesPage; events alias" },
+  { canonical: "/expenses", duplicate: "/expenses/period", note: "Same ExpensesPage; period report section" },
+  { canonical: "/loyalty", duplicate: "/loyalty/offers", note: "Same LoyaltyPage; offers section" },
+  { canonical: "/loyalty", duplicate: "/loyalty/redeem", note: "Same LoyaltyPage; redeem section" },
+  { canonical: "/users", duplicate: "/users/roles", note: "Same UsersRolesPage; roles section" },
+  { canonical: "/permissions", duplicate: "/permissions/overrides", note: "Same PermissionsPage; overrides section" },
+  { canonical: "/branches", duplicate: "/branches/membership", note: "Same BranchesPage; membership section" },
+  { canonical: "/products", duplicate: "/products/new", note: "Product form; New Product child", sameComponent: false },
 ];
 
-/** Paths that render the POS terminal chrome (no ERP sidebar). Do not use startsWith("/pos/"). */
+/** Dense POS terminal inside the ERP shell (module 05). Do not use startsWith("/pos/"). */
 export const POS_TERMINAL_PATHS = new Set(["/pos", "/held-sales", "/pos/new"]);
 
 export function isPosTerminalPath(pathname: string): boolean {
   return POS_TERMINAL_PATHS.has(pathname);
+}
+
+/** Module 39 workspace (ERP chrome stays; this is not a second product). */
+export function isSystemAdminPath(pathname: string): boolean {
+  return (
+    pathname === "/settings" ||
+    pathname.startsWith("/settings/") ||
+    pathname === "/security" ||
+    pathname === "/integrations" ||
+    pathname === "/online-store" ||
+    pathname === "/mobile" ||
+    pathname === "/hr"
+  );
 }
 
 const LEGACY_ROUTES: ErpModuleRoute[] = [];
@@ -1004,15 +988,14 @@ function flattenSections(): ErpModuleRoute[] {
     rows.push({
       path: section.path,
       title: section.title,
-      group: section.title,
+      group: section.masterTitle,
       description: section.description,
       permission: section.permission,
       status: section.children.some((c) => c.path === section.path)
         ? section.children.find((c) => c.path === section.path)?.status
         : section.path === "/industry-engine" ||
             section.path === "/customization-engine" ||
-            section.path === "/rules-engine" ||
-            section.path === "/settings"
+            section.path === "/rules-engine"
           ? "placeholder"
           : "implemented",
       sidebar: true,
@@ -1021,7 +1004,7 @@ function flattenSections(): ErpModuleRoute[] {
       rows.push({
         path: child.path,
         title: child.title,
-        group: section.title,
+        group: section.masterTitle,
         description: child.description,
         status: child.status,
         availableOn: child.availableOn,
@@ -1050,9 +1033,41 @@ function uniqueByPath(items: ErpModuleRoute[]): ErpModuleRoute[] {
  */
 export const ERP_MODULES: ErpModuleRoute[] = uniqueByPath([...flattenSections(), ...LEGACY_ROUTES]);
 
+/**
+ * Compatibility URLs that stay registered but must not appear as extra sidebar rows.
+ * /held-sales remains the Hold / Resume child; /orders remains master module 07.
+ */
+export const COMPAT_ALIAS_PATHS = new Set([
+  "/pos/new",
+  "/qr",
+  "/exchange",
+  "/credit",
+  "/pos/installments",
+  "/pos/salesmen",
+  "/pos/references",
+  "/settings/numbering",
+]);
+
+export function isSidebarNavChild(section: ErpNavSection, child: ErpNavChild): boolean {
+  if (child.sidebar === false) return false;
+  if (child.path === section.path) return false;
+  if (child.shortcutToModuleId) return false;
+  if (COMPAT_ALIAS_PATHS.has(child.path)) return false;
+  if (section.id === "39") return false;
+  return true;
+}
+
+export function isCommandPaletteChild(section: ErpNavSection, child: ErpNavChild): boolean {
+  if (child.path === section.path) return false;
+  if (child.shortcutToModuleId) return false;
+  if (COMPAT_ALIAS_PATHS.has(child.path)) return false;
+  if (child.sidebar === false && section.id !== "39") return false;
+  return true;
+}
+
 export const ERP_SIDEBAR_SECTIONS: ErpNavSection[] = ERP_NAV_SECTIONS.map((section) => ({
   ...section,
-  children: section.children.filter((child) => child.sidebar !== false),
+  children: section.children.filter((child) => isSidebarNavChild(section, child)),
 }));
 
 export const EXTRA_APP_PATHS = ["/products/new", "/pos/new"] as const;
@@ -1122,4 +1137,47 @@ export function requiredPermissionForPath(pathname: string): string | undefined 
   const item = findModuleByPath(pathname);
   if (item?.permission) return item.permission;
   return findSectionForPath(pathname)?.permission;
+}
+
+/** Subtle sidebar spacing only — not extra top-level modules. */
+export const NAV_VISUAL_BREAK_BEFORE = new Set(["16", "26", "36"]);
+
+export function masterTitleById(id: string): string | undefined {
+  return ERP_NAV_SECTIONS.find((section) => section.id === id)?.masterTitle;
+}
+
+export function isNavChildActive(child: Pick<ErpNavChild, "path">, pathname: string): boolean {
+  if (child.path === pathname) return true;
+  if (child.path === "/pos" && (pathname === "/pos" || pathname === "/pos/new")) return true;
+  if (child.path === "/settings/datetime" && pathname === "/settings/numbering") return true;
+  return false;
+}
+
+/** Header labels for the single ERP chrome. */
+export function resolveShellHeader(pathname: string): { moduleTitle: string; pageTitle: string | null } {
+  if (pathname === "/products/new") {
+    return { moduleTitle: "Product Management", pageTitle: "New Product" };
+  }
+  if (pathname.startsWith("/products/") && pathname !== "/products") {
+    return { moduleTitle: "Product Management", pageTitle: "Product" };
+  }
+  const section = findSectionForPath(pathname);
+  if (!section) return { moduleTitle: "Electronic ERP", pageTitle: null };
+  if (pathname === "/held-sales") {
+    return { moduleTitle: section.masterTitle, pageTitle: "Hold / Resume" };
+  }
+  if (isPosTerminalPath(pathname)) {
+    return { moduleTitle: section.masterTitle, pageTitle: "New Sale" };
+  }
+  if (pathname === "/settings") {
+    return { moduleTitle: section.masterTitle, pageTitle: "Overview" };
+  }
+  if (pathname === "/settings/numbering") {
+    return { moduleTitle: section.masterTitle, pageTitle: "Date & Numbering" };
+  }
+  const child = section.children.find((item) => item.path === pathname);
+  if (child) {
+    return { moduleTitle: section.masterTitle, pageTitle: child.title };
+  }
+  return { moduleTitle: section.masterTitle, pageTitle: null };
 }

@@ -40,7 +40,7 @@ export function OnlineStorePage() {
   }
 
   return (
-    <div className="space-y-4 p-4">
+    <div className="space-y-4">
       <h1 className="text-xl font-semibold">{storeName}</h1>
       <p className="text-sm opacity-70">
         Home → Category → Brand → Product → Variant → Cart → Checkout → ERP order. Uses the same

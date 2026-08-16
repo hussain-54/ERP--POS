@@ -46,7 +46,7 @@ export function SecurityPage() {
   }, [toast]);
 
   return (
-    <div className="space-y-4 p-4">
+    <div className="space-y-4">
       <h1 className="text-xl font-semibold">Security</h1>
       <p className="text-sm opacity-70">
         Password policy, optional 2FA architecture, sessions, login history, activity logs, device

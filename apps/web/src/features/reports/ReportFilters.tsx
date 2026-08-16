@@ -16,11 +16,11 @@ export function ReportFilters(props: {
 }) {
   const { value, onChange } = props;
   return (
-    <div className="grid gap-2 md:grid-cols-3 lg:grid-cols-4">
-      <label className="flex flex-col gap-1 text-sm">
-        <span className="opacity-70">Period</span>
+    <div className="grid gap-3 md:grid-cols-3 lg:grid-cols-4">
+      <label className="flex flex-col gap-1.5 text-sm">
+        <span className="font-medium text-[var(--erp-ink)]">Period</span>
         <select
-          className="rounded border border-[var(--erp-border)] bg-transparent px-2 py-2"
+          className="h-10 rounded-xl border border-[var(--erp-border)] bg-white px-3 text-sm text-[var(--erp-ink)] outline-none focus:ring-2 focus:ring-[var(--erp-ring)]"
           value={value.period ?? "month"}
           onChange={(e) => onChange({ ...value, period: e.target.value })}
         >
