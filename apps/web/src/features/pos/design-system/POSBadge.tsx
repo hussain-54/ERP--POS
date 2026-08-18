@@ -24,7 +24,7 @@ export function POSBadge({
   return (
     <span
       className={posCn(
-        "inline-flex items-center rounded-full px-2 py-0.5 text-[11px] font-semibold tracking-wide",
+        "inline-flex items-center rounded-[var(--pos-radius-sm)] px-1.5 py-0.5 text-[11px] font-semibold",
         tones[tone],
         className,
       )}

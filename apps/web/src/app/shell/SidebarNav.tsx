@@ -118,7 +118,7 @@ export function SidebarNav({
             <div className="flex items-stretch gap-0.5">
               <NavLink
                 to={section.path}
-                end={section.path === "/"}
+                end={section.path === "/" || section.path === "/pos"}
                 onClick={onNavigate}
                 title={section.masterTitle}
                 className={() =>

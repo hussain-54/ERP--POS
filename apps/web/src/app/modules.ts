@@ -1,3 +1,5 @@
+import { POS_ENVIRONMENT_PATHS as POS_ENVIRONMENT_PATH_LIST } from "@/features/pos/pos-ownership";
+
 export type NavStatus = "implemented" | "placeholder" | "legacy";
 
 export type NavIconName =
@@ -227,34 +229,34 @@ export const ERP_NAV_SECTIONS: ErpNavSection[] = [
     title: "Sales",
     icon: "pos",
     path: "/pos",
-    description: "Point of sale terminal and sales documents.",
+    description: "Dedicated POS terminal. Parent click opens /pos, not a generic sales list.",
     permission: "pos.sell",
     children: [
       live("/pos", "New Sale", "POS terminal.", { permission: "pos.sell" }),
-      live("/held-sales", "Hold / Resume", "Parked POS carts (same terminal; opens the holds drawer).", {
+      live("/held-sales", "Hold / Resume", "Parked POS carts: resume, edit, transfer, or cancel holds.", {
         permission: "pos.hold",
       }),
       live("/invoices", "Invoices", "Invoice register and reprints.", { permission: "pos.view_invoices" }),
-      live("/sales-management", "Register", "Sales register, filters, and KPIs.", {
+      live("/sales-management", "Register", "Cashier shift, drawer totals, and close-out.", {
         permission: "pos.view_invoices",
       }),
-      live("/returns", "Returns", "Sales returns.", { permission: "pos.return" }),
-      live("/exchange", "Exchange", "Exchanges (same returns screen).", { permission: "pos.return" }),
-      live("/payments", "Payments", "Tender and receipts.", { permission: "payments.receive" }),
-      soon("/discounts", "Discounts", "Discount policies. POS already enforces discount caps.", {
+      live("/returns", "Returns", "Find invoice, return qty, refund, and restock.", { permission: "pos.return" }),
+      live("/exchange", "Exchange", "Return items and post a replacement sale.", { permission: "pos.return" }),
+      live("/payments", "Payments", "Receipt register and on-account collects.", { permission: "payments.receive" }),
+      live("/discounts", "Discounts", "Discount policy, caps, and approval workflow.", {
         permission: "pos.sell",
       }),
-      live("/pos/references", "References", "Outside references (same salesman screen).", {
+      live("/pos/references", "References", "Sale references register from real records.", {
         permission: "hr.view",
-        shortcutToModuleId: "20",
       }),
-      live("/pos/salesmen", "Salesmen", "Salesman profiles and commissions (same module 20 screen).", {
+      live("/pos/salesmen", "Salesmen", "Salesman roster and New Sale assignment.", {
         permission: "hr.view",
-        shortcutToModuleId: "20",
       }),
-      live("/pos/installments", "Installments", "Installment plans (same module 22 /credit screen).", {
+      live("/pos/installments", "Installments", "Installment plan register and schedule details.", {
         permission: "installments.manage",
-        shortcutToModuleId: "22",
+      }),
+      live("/pos/settings", "Settings", "POS terminal, receipt, tax, and related live configuration.", {
+        permission: "pos.configure",
       }),
     ],
   },
@@ -900,8 +902,16 @@ export const ERP_NAV_SECTIONS: ErpNavSection[] = [
  *
  * Canonical owners:
  *   /pos → PosPage
+ *   /held-sales → HeldSalesPage
  *   /quotations → QuotationsPage
  *   /returns → ReturnsPage
+ *   /exchange → ExchangePage
+ *   /payments → PaymentsPage
+ *   /discounts → DiscountsPage
+ *   /pos/salesmen → SalesmenPage
+ *   /pos/references → ReferencesPage
+ *   /pos/installments → InstallmentsPage
+ *   /pos/settings → SettingsPage
  *   /barcodes → BarcodesPage
  *   /installments → CreditInstallmentsPage
  *   /salesman → SalesmanPage
@@ -915,19 +925,40 @@ export const DUPLICATE_ROUTE_PAIRS: Array<{
   note: string;
   sameComponent?: boolean;
 }> = [
-  { canonical: "/pos", duplicate: "/held-sales", note: "Same PosPage; /held-sales opens the holds drawer" },
+  {
+    canonical: "/pos",
+    duplicate: "/held-sales",
+    note: "Related POS screens: New Sale vs Hold / Resume. Both stay registered; do not redirect.",
+    sameComponent: false,
+  },
   { canonical: "/pos", duplicate: "/pos/new", note: "Same PosPage; naming alias only" },
   { canonical: "/quotations", duplicate: "/orders", note: "Same QuotationsPage (orders section)" },
-  { canonical: "/returns", duplicate: "/exchange", note: "Same ReturnsPage" },
+  {
+    canonical: "/returns",
+    duplicate: "/exchange",
+    note: "Related POS screens: Returns vs Exchange. Both stay registered; do not redirect.",
+    sameComponent: false,
+  },
   { canonical: "/barcodes", duplicate: "/qr", note: "Same BarcodesPage" },
   { canonical: "/installments", duplicate: "/credit", note: "Same CreditInstallmentsPage; credit stays under Customers" },
   {
     canonical: "/installments",
     duplicate: "/pos/installments",
-    note: "Same CreditInstallmentsPage; POS child alias (module 22 kept)",
+    note: "Related screens: CreditInstallmentsPage vs POS InstallmentsPage. Module 22 kept.",
+    sameComponent: false,
   },
-  { canonical: "/salesman", duplicate: "/pos/salesmen", note: "Same SalesmanPage; POS child alias (module 20 kept)" },
-  { canonical: "/salesman", duplicate: "/pos/references", note: "Same SalesmanPage; POS References child" },
+  {
+    canonical: "/salesman",
+    duplicate: "/pos/salesmen",
+    note: "Related screens: SalesmanPage vs POS SalesmenPage. Module 20 kept.",
+    sameComponent: false,
+  },
+  {
+    canonical: "/salesman",
+    duplicate: "/pos/references",
+    note: "Related screens: SalesmanPage vs POS ReferencesPage.",
+    sameComponent: false,
+  },
   { canonical: "/salesman", duplicate: "/salesman/references", note: "Same SalesmanPage; module 20 References child" },
   { canonical: "/salesman", duplicate: "/salesman/commissions", note: "Same SalesmanPage; module 20 Commissions child" },
   {
@@ -960,7 +991,17 @@ export const DUPLICATE_ROUTE_PAIRS: Array<{
   { canonical: "/products", duplicate: "/products/new", note: "Product form; New Product child", sameComponent: false },
 ];
 
-/** Dense POS terminal inside the ERP shell (module 05). Do not use startsWith("/pos/"). */
+/**
+ * POS environment (module 05). Clicking Sales / these URLs enters the POS shell.
+ * Do not use startsWith("/pos/") — /salesman, /installments, /credit, /settings/pos stay ERP chrome.
+ */
+export const POS_ENVIRONMENT_PATHS = new Set<string>(POS_ENVIRONMENT_PATH_LIST);
+
+export function isPosEnvironmentPath(pathname: string): boolean {
+  return POS_ENVIRONMENT_PATHS.has(pathname);
+}
+
+/** Dense New Sale / Hold terminal inside the POS shell. */
 export const POS_TERMINAL_PATHS = new Set(["/pos", "/held-sales", "/pos/new"]);
 
 export function isPosTerminalPath(pathname: string): boolean {
@@ -1070,7 +1111,7 @@ export const ERP_SIDEBAR_SECTIONS: ErpNavSection[] = ERP_NAV_SECTIONS.map((secti
   children: section.children.filter((child) => isSidebarNavChild(section, child)),
 }));
 
-export const EXTRA_APP_PATHS = ["/products/new", "/pos/new"] as const;
+export const EXTRA_APP_PATHS = ["/products/new", "/pos/new", "/pos/customers", "/pos/products", "/pos/reports"] as const;
 
 /**
  * Frontend feature folders under apps/web/src/features.

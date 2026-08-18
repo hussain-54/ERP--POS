@@ -6,6 +6,7 @@ import {
   type InvoiceAction,
 } from "@electronic-erp/domain";
 import { Badge, Button, Card } from "@electronic-erp/ui";
+import { useEffect } from "react";
 import { posHardware } from "../hardware";
 
 export type InvoicePreview = {
@@ -55,6 +56,8 @@ interface Props {
   format: Format;
   onFormatChange: (f: Format) => void;
   onClose?: () => void;
+  /** Run a supported invoice action once after open (print / download). */
+  autoAction?: InvoiceAction;
 }
 
 function money(n: number | string | undefined) {
@@ -106,7 +109,7 @@ function downloadText(filename: string, text: string, mime: string) {
   URL.revokeObjectURL(url);
 }
 
-export function ReceiptPreview({ invoice, format, onFormatChange, onClose }: Props) {
+export function ReceiptPreview({ invoice, format, onFormatChange, onClose, autoAction }: Props) {
   const s = invoice.sale;
   const doc = toDocument(invoice);
   const text = renderSaleInvoiceText(doc, format);
@@ -164,6 +167,13 @@ export function ReceiptPreview({ invoice, format, onFormatChange, onClose }: Pro
       window.location.href = `mailto:${to}?subject=${subject}&body=${body}`;
     }
   }
+
+  useEffect(() => {
+    if (!autoAction) return;
+    void runAction(autoAction);
+    // Open-once: print/download after the invoice payload is on screen.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [autoAction, s.id]);
 
   return (
     <Card className="space-y-3" title={`Invoice ${s.invoiceNumber}`}>

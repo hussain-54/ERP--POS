@@ -17,7 +17,7 @@ export function POSPageHeader({
   return (
     <div
       className={posCn(
-        "flex flex-wrap items-start justify-between gap-3 border-b border-[var(--pos-border)] bg-[var(--pos-workspace)] px-3 py-2.5",
+        "flex flex-wrap items-start justify-between gap-2",
         className,
       )}
     >

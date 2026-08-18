@@ -11,8 +11,16 @@ import {
   TransferHeldSaleSchema,
   type ApproverRole,
 } from "@electronic-erp/contracts";
-import { PosRepository } from "@electronic-erp/db";
-import { AuthorizationService, ForbiddenDomainError } from "@electronic-erp/domain";
+import { PosRepository, PartiesRepository } from "@electronic-erp/db";
+import {
+  AuthorizationService,
+  ForbiddenDomainError,
+  assertPosCreditRemainderAllowed,
+  assertPosInstallmentSaleAllowed,
+  estimatePostedSaleRemaining,
+  evaluateCustomerCreditForRemainder,
+  posDiscountRoleFromPermissions,
+} from "@electronic-erp/domain";
 import { createUserClient } from "../lib/supabase.js";
 import { requireAuth, type AuthedRequest } from "../middleware/auth.js";
 
@@ -36,14 +44,13 @@ function userId(req: AuthedRequest): string | null {
   return req.authz?.userId ?? null;
 }
 
+function parties(req: AuthedRequest): PartiesRepository {
+  return new PartiesRepository(createUserClient(req.accessToken!));
+}
+
 /** Server-derived discount ceiling — never trust client approverRole alone. */
 function discountRoleFromAuthz(z: AuthorizationService): ApproverRole | null {
-  if (z.can("pos.discount_special")) return "special";
-  if (z.can("pos.discount_owner")) return "owner";
-  if (z.can("pos.discount_manager")) return "manager";
-  if (z.can("pos.discount_supervisor")) return "supervisor";
-  if (z.can("pos.discount_cashier")) return "cashier";
-  return null;
+  return posDiscountRoleFromPermissions(z.context.permissions);
 }
 
 function saleHasDiscount(input: {
@@ -71,6 +78,28 @@ posRouter.post("/sales", async (req: AuthedRequest, res, next) => {
     const z = authz(req);
     z.assert("pos.sell");
     let input = CreateSaleSchema.parse({ ...req.body, organizationId: orgId(req) });
+
+    assertPosInstallmentSaleAllowed(z.can("installments.manage"), Boolean(input.createInstallment));
+
+    const remaining = estimatePostedSaleRemaining(input);
+    if (remaining > 0.009 && input.customerId) {
+      const customer = await parties(req).getCustomer(input.customerId);
+      const credit = customer
+        ? evaluateCustomerCreditForRemainder({
+            creditLimit: customer.creditLimit,
+            outstanding: customer.outstanding,
+            creditDays: customer.creditDays,
+            isBlocked: customer.isBlocked,
+            remaining,
+          })
+        : null;
+      assertPosCreditRemainderAllowed({
+        remaining,
+        customerId: input.customerId,
+        credit,
+        canApproveOverLimit: z.can("credit.approve"),
+      });
+    }
 
     if (saleHasDiscount(input)) {
       const role = discountRoleFromAuthz(z);
@@ -126,6 +155,7 @@ posRouter.get("/sales/management", async (req: AuthedRequest, res, next) => {
       salesmanUserId: req.query.salesmanUserId || undefined,
       paymentMethodId: req.query.paymentMethodId || undefined,
       invoiceNumber: req.query.invoiceNumber || undefined,
+      deviceId: req.query.deviceId || undefined,
       status: req.query.status || undefined,
       paymentStatus: req.query.paymentStatus || undefined,
       limit: req.query.limit,
@@ -153,6 +183,7 @@ posRouter.get("/sales/management/export", async (req: AuthedRequest, res, next) 
       salesmanUserId: req.query.salesmanUserId || undefined,
       paymentMethodId: req.query.paymentMethodId || undefined,
       invoiceNumber: req.query.invoiceNumber || undefined,
+      deviceId: req.query.deviceId || undefined,
       status: req.query.status || undefined,
       paymentStatus: req.query.paymentStatus || undefined,
       limit: 5000,

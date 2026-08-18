@@ -131,3 +131,81 @@ export function markOverdueSchedule(
     return item;
   });
 }
+
+export type InstallmentLineProgress = {
+  sequenceNo: number;
+  dueDate: string;
+  amount: string;
+  paid: string;
+  remaining: string;
+  status: string;
+};
+
+/** Paid / remaining / next due from stored plan + schedule. Does not post payments. */
+export function installmentPlanProgress(input: {
+  totalAmount: string;
+  downPayment: string;
+  planStatus: string;
+  schedule: Array<{
+    sequenceNo: number;
+    dueDate: string;
+    amount: string;
+    paidAmount?: string;
+    status: string;
+  }>;
+  asOfDate: string;
+}): {
+  paid: string;
+  remaining: string;
+  nextDueDate: string | null;
+  status: string;
+  lines: InstallmentLineProgress[];
+} {
+  const total = String(roundMoney(Math.max(0, finiteMoney(input.totalAmount))));
+  const down = String(roundMoney(Math.max(0, finiteMoney(input.downPayment))));
+  const lines: InstallmentLineProgress[] = input.schedule
+    .slice()
+    .sort((a, b) => a.sequenceNo - b.sequenceNo)
+    .map((item) => {
+      const amount = String(roundMoney(Math.max(0, finiteMoney(item.amount))));
+      const paidAmt = String(roundMoney(Math.max(0, finiteMoney(item.paidAmount, 0))));
+      const remaining = subtractDecimal(amount, paidAmt);
+      const remainingNum = Number(remaining);
+      let status = item.status;
+      if (remainingNum <= 1e-9) status = "paid";
+      else if (item.status === "paid") status = Number(paidAmt) > 0 ? "partial" : "pending";
+      if ((status === "pending" || status === "partial" || status === "overdue") && item.dueDate < input.asOfDate) {
+        status = "overdue";
+      }
+      return {
+        sequenceNo: item.sequenceNo,
+        dueDate: item.dueDate,
+        amount,
+        paid: paidAmt,
+        remaining: remainingNum < 0 ? "0" : remaining,
+        status,
+      };
+    });
+
+  const schedulePaid = lines.reduce((sum, line) => addDecimal(sum, line.paid), "0");
+  const paid = addDecimal(down, schedulePaid);
+  const remainingRaw = subtractDecimal(total, paid);
+  const remaining = Number(remainingRaw) < 0 ? "0" : remainingRaw;
+  const nextOpen = lines.find((line) => line.status !== "paid" && line.status !== "waived");
+  const closed = ["completed", "cancelled", "defaulted"].includes(input.planStatus);
+  const status = closed
+    ? input.planStatus
+    : Number(remaining) <= 1e-9
+      ? "completed"
+      : lines.some((line) => line.status === "overdue")
+        ? "overdue"
+        : input.planStatus || "active";
+
+  return {
+    paid,
+    remaining,
+    nextDueDate: nextOpen?.dueDate ?? null,
+    status,
+    lines,
+  };
+}

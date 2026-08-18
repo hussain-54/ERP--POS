@@ -1,7 +1,9 @@
-import type { ReactNode } from "react";
+import { useRef, type ReactNode } from "react";
 import { createPortal } from "react-dom";
 import { POSIconButton } from "./POSIconButton";
 import { posCn } from "./posCn";
+import { useEscapeToClose } from "./useEscapeToClose";
+import { usePosDialogFocus } from "./usePosDialogFocus";
 
 export function POSModal({
   open,
@@ -18,6 +20,10 @@ export function POSModal({
   footer?: ReactNode;
   size?: "sm" | "md" | "lg";
 }) {
+  const panelRef = useRef<HTMLDivElement>(null);
+  useEscapeToClose(open, onClose);
+  usePosDialogFocus(open, panelRef);
+
   if (!open || typeof document === "undefined") return null;
 
   const width =
@@ -30,11 +36,13 @@ export function POSModal({
       onClick={onClose}
     >
       <div
+        ref={panelRef}
         role="dialog"
         aria-modal="true"
         aria-labelledby="pos-modal-title"
+        tabIndex={-1}
         className={posCn(
-          "pos-surface flex w-full flex-col shadow-[var(--pos-shadow-md)]",
+          "pos-terminal pos-surface flex w-full flex-col shadow-[var(--pos-shadow-md)] outline-none",
           width,
           "max-h-[90vh]",
         )}

@@ -399,6 +399,7 @@ export const SaleListFilterSchema = z.object({
   salesmanUserId: UuidSchema.optional(),
   paymentMethodId: UuidSchema.optional(),
   invoiceNumber: z.string().max(64).optional(),
+  deviceId: z.string().max(128).optional(),
   status: SaleStatusSchema.optional(),
   paymentStatus: PaymentStatusSchema.optional(),
   limit: z.coerce.number().int().min(1).max(100).default(25),
@@ -422,6 +423,7 @@ export const SaleListRowSchema = SaleSchema.extend({
   cashierId: UuidSchema.nullable().optional(),
   cashierName: z.string().nullable().optional(),
   salesmanName: z.string().nullable().optional(),
+  referenceId: UuidSchema.nullable().optional(),
   itemCount: z.number().int().min(0).default(0),
   paymentMethods: z.string().nullable().optional(),
 });

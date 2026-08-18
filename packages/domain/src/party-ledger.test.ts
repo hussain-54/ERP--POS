@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import { applyCustomerLedgerEffect, applySupplierLedgerEffect } from "./party-ledger.js";
 import { evaluateCredit, assertCreditAllowed, isOverdue } from "./credit.js";
 import { assertSplitMatchesBill, creditPortion, sumSplits } from "./split-payment.js";
-import { buildInstallmentPlan, markOverdueSchedule } from "./installments.js";
+import { buildInstallmentPlan, installmentPlanProgress, markOverdueSchedule } from "./installments.js";
 
 describe("party ledger balances", () => {
   it("tracks customer sale/payment/return/discount/adjustment", () => {
@@ -85,5 +85,25 @@ describe("installment schedules", () => {
     });
     const marked = markOverdueSchedule(plan.schedule, "2026-02-15");
     expect(marked[0]?.status).toBe("overdue");
+  });
+
+  it("summarizes paid, remaining, and next due from stored schedule amounts", () => {
+    const progress = installmentPlanProgress({
+      totalAmount: "120000",
+      downPayment: "20000",
+      planStatus: "active",
+      asOfDate: "2026-03-01",
+      schedule: [
+        { sequenceNo: 1, dueDate: "2026-01-15", amount: "25000", paidAmount: "25000", status: "paid" },
+        { sequenceNo: 2, dueDate: "2026-02-15", amount: "25000", paidAmount: "0", status: "pending" },
+        { sequenceNo: 3, dueDate: "2026-03-15", amount: "25000", paidAmount: "0", status: "pending" },
+        { sequenceNo: 4, dueDate: "2026-04-15", amount: "25000", paidAmount: "0", status: "pending" },
+      ],
+    });
+    expect(progress.paid).toBe("45000");
+    expect(progress.remaining).toBe("75000");
+    expect(progress.nextDueDate).toBe("2026-02-15");
+    expect(progress.status).toBe("overdue");
+    expect(progress.lines[1]?.status).toBe("overdue");
   });
 });

@@ -1,11 +1,12 @@
-import { useState } from "react";
+import { memo, useEffect, useState } from "react";
 import type { CustomerSearchHit } from "@electronic-erp/contracts";
 import type { PosCustomerProfile } from "@electronic-erp/domain";
 import type { PriceLevel } from "../pos-types";
+import { POS_SEARCH_FLUSH_MS } from "../pos-catalog-load";
+import { suggestPosCustomerCode } from "../pos-quotation";
 import {
   POSBadge,
   POSButton,
-  POSCard,
   POSDrawer,
   POSInput,
   POSModal,
@@ -55,7 +56,7 @@ interface Props {
 }
 
 const emptyForm = (): PosCustomerFormInput => ({
-  code: "",
+  code: suggestPosCustomerCode(),
   name: "",
   mobile: "",
   email: "",
@@ -64,7 +65,40 @@ const emptyForm = (): PosCustomerFormInput => ({
   customerType: "retail",
 });
 
-export function PosCustomerPanel({
+function moneyLabel(value: string | null | undefined): string {
+  if (value == null || value === "") return "—";
+  const n = Number(value);
+  return Number.isFinite(n) ? n.toFixed(2) : "—";
+}
+
+function priceTierLabel(level: string | null | undefined): string {
+  if (!level) return "—";
+  if (level === "retail") return "Retail";
+  if (level === "wholesale") return "Wholesale";
+  if (level === "dealer") return "Dealer";
+  return level;
+}
+
+function CustomerStat({
+  label,
+  value,
+  hint,
+}: {
+  label: string;
+  value: string;
+  hint?: string;
+}) {
+  return (
+    <div className="rounded-[var(--pos-radius-sm)] bg-[var(--pos-muted-bg)] px-2 py-1.5" title={hint}>
+      <div className="text-[10px] font-medium uppercase tracking-wide text-[var(--pos-muted)]">
+        {label}
+      </div>
+      <div className="mt-0.5 text-sm font-semibold tabular-nums text-[var(--pos-ink)]">{value}</div>
+    </div>
+  );
+}
+
+export const PosCustomerPanel = memo(function PosCustomerPanel({
   customer,
   walkIn,
   customers,
@@ -101,6 +135,15 @@ export function PosCustomerPanel({
     Array<{ id: string; entryType: string; amount: string; occurredAt: string; description?: string | null }>
   >([]);
   const [historyLoading, setHistoryLoading] = useState(false);
+  const [queryDraft, setQueryDraft] = useState(customerQuery);
+  useEffect(() => {
+    setQueryDraft(customerQuery);
+  }, [customerQuery]);
+  useEffect(() => {
+    if (queryDraft === customerQuery) return;
+    const handle = window.setTimeout(() => onCustomerQuery(queryDraft), POS_SEARCH_FLUSH_MS);
+    return () => window.clearTimeout(handle);
+  }, [queryDraft, customerQuery, onCustomerQuery]);
 
   function openNew() {
     setForm(emptyForm());
@@ -168,6 +211,7 @@ export function PosCustomerPanel({
         value={form.code}
         onChange={(e) => setForm((f) => ({ ...f, code: e.target.value }))}
         disabled={editOpen}
+        hint={editOpen ? undefined : "Generated for you — change if your store uses another code"}
       />
       <POSInput
         label="Name"
@@ -215,12 +259,35 @@ export function PosCustomerPanel({
     </div>
   );
 
+  const loyaltyValue =
+    walkIn || !customer
+      ? "—"
+      : customer.loyaltyPoints == null
+        ? "—"
+        : String(customer.loyaltyPoints);
+
   return (
     <>
-      <POSCard padding="sm">
-        <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
-          <h3 className="text-sm font-semibold text-[var(--pos-ink)]">Customer</h3>
-          <div className="flex flex-wrap gap-1">
+      <section className="pos-tx-customer px-3 py-2">
+        <div className="flex flex-wrap items-end gap-2">
+          <div className="min-w-0 flex-1">
+            <POSInput
+              ref={customerRef as React.RefObject<HTMLInputElement>}
+              label="Customer"
+              placeholder={canRead ? "Name, mobile, or code…" : "No customers.read permission"}
+              value={queryDraft}
+              onChange={(e) => setQueryDraft(e.target.value)}
+              disabled={walkIn || !canRead}
+              onKeyDown={(e) => {
+                if (e.key !== "Enter") return;
+                e.preventDefault();
+                if (queryDraft !== customerQuery) onCustomerQuery(queryDraft);
+                const first = customers[0];
+                if (first) onSelectCustomer(first.id);
+              }}
+            />
+          </div>
+          <div className="flex shrink-0 gap-1 pb-px">
             <POSButton size="sm" variant={walkIn ? "primary" : "ghost"} onClick={onWalkIn}>
               Walk-in
             </POSButton>
@@ -231,19 +298,10 @@ export function PosCustomerPanel({
               disabled={!canCreate || !onCreateCustomer}
               title={canCreate ? "Create customer" : "Requires customers.write"}
             >
-              New
+              New Customer
             </POSButton>
           </div>
         </div>
-
-        <POSInput
-          ref={customerRef as React.RefObject<HTMLInputElement>}
-          label="Search customer (F3)"
-          placeholder={canRead ? "Name, mobile, or code…" : "No customers.read permission"}
-          value={customerQuery}
-          onChange={(e) => onCustomerQuery(e.target.value)}
-          disabled={walkIn || !canRead}
-        />
 
         {!walkIn && customers.length > 0 ? (
           <ul className="mt-2 max-h-28 overflow-auto rounded-[var(--pos-radius-sm)] border border-[var(--pos-border)] text-sm">
@@ -267,7 +325,7 @@ export function PosCustomerPanel({
           </ul>
         ) : null}
 
-        <div className="mt-2 rounded-[var(--pos-radius-sm)] bg-[var(--pos-muted-bg)] px-2.5 py-2 text-xs">
+        <div className="mt-2 rounded-[var(--pos-radius-sm)] border border-[var(--pos-border)] px-2.5 py-2 text-xs">
           {walkIn ? (
             <div className="flex items-center gap-2">
               <POSBadge tone="neutral">Walk-in</POSBadge>
@@ -278,10 +336,10 @@ export function PosCustomerPanel({
               <div className="flex flex-wrap items-start justify-between gap-2">
                 <div>
                   <div className="font-semibold text-[var(--pos-ink)]">{customer.name}</div>
-                  <div className="text-[var(--pos-muted)]">{customer.mobile ?? "No mobile"}</div>
-                  {customer.email ? (
-                    <div className="text-[var(--pos-muted)]">{customer.email}</div>
-                  ) : null}
+                  <div className="text-[var(--pos-muted)]">
+                    {customer.code}
+                    {customer.mobile ? ` · ${customer.mobile}` : ""}
+                  </div>
                 </div>
                 <div className="flex gap-1">
                   {canEdit && onUpdateCustomer ? (
@@ -296,28 +354,35 @@ export function PosCustomerPanel({
                   ) : null}
                 </div>
               </div>
-              {customer.address ? (
-                <div className="text-[var(--pos-muted)]">{customer.address}</div>
-              ) : null}
-              {customer.cnicMasked ? (
-                <div className="text-[var(--pos-muted)]">CNIC {customer.cnicMasked}</div>
-              ) : null}
-              <div className="flex flex-wrap gap-1 pt-0.5">
-                <POSBadge tone="primary">{customer.customerType}</POSBadge>
-                <POSBadge tone="neutral">Limit {customer.creditLimit}</POSBadge>
-                <POSBadge tone="warning">Due {customer.outstanding}</POSBadge>
-                {customer.loyaltyPoints != null ? (
-                  <POSBadge tone="success">Pts {customer.loyaltyPoints}</POSBadge>
-                ) : null}
-                {customer.isBlocked ? <POSBadge tone="danger">Blocked</POSBadge> : null}
-              </div>
+              {customer.isBlocked ? <POSBadge tone="danger">Blocked</POSBadge> : null}
               {creditHint ? (
                 <p className="pt-1 text-[11px] text-[var(--pos-warning)]">{creditHint}</p>
               ) : null}
             </div>
           ) : (
-            <div className="text-[var(--pos-muted)]">Select a customer or use Walk-in</div>
+            <div className="text-[var(--pos-muted)]">Search by name, mobile, or code — or use Walk-in</div>
           )}
+        </div>
+
+        <div className="mt-2 grid grid-cols-2 gap-1.5 sm:grid-cols-4">
+          <CustomerStat label="Price Tier" value={priceTierLabel(priceLevel)} />
+          <CustomerStat
+            label="Credit Limit"
+            value={walkIn || !customer ? "—" : moneyLabel(customer.creditLimit)}
+          />
+          <CustomerStat
+            label="Outstanding"
+            value={walkIn || !customer ? "—" : moneyLabel(customer.outstanding)}
+          />
+          <CustomerStat
+            label="Loyalty Points"
+            value={loyaltyValue}
+            hint={
+              customer && customer.loyaltyPoints == null
+                ? "Shown when loyalty.view is granted and the loyalty account loads"
+                : undefined
+            }
+          />
         </div>
 
         <div className="mt-3 grid gap-2 sm:grid-cols-2">
@@ -360,12 +425,15 @@ export function PosCustomerPanel({
           />
           Delivery required
         </label>
+        <p className="mt-1 text-[11px] text-[var(--pos-muted)]">
+          Flags the sale for a delivery note. POS does not add a delivery fee.
+        </p>
         {advanced ? (
           <p className="mt-1 text-[11px] text-[var(--pos-muted)]">
             Advanced: credit / installments available after customer select
           </p>
         ) : null}
-      </POSCard>
+      </section>
 
       <POSModal
         open={newOpen}
@@ -442,4 +510,4 @@ export function PosCustomerPanel({
       </POSDrawer>
     </>
   );
-}
+});

@@ -1,3 +1,4 @@
+import { useEffect } from "react";
 import { POSButton } from "./POSButton";
 import { POSModal } from "./POSModal";
 
@@ -23,11 +24,28 @@ export function POSConfirmDialog({
   onConfirm: () => void;
   onCancel: () => void;
 }) {
+  useEffect(() => {
+    if (!open) return;
+    function onKey(event: KeyboardEvent) {
+      if (event.key !== "Enter" || event.shiftKey) return;
+      if (event.target instanceof HTMLTextAreaElement) return;
+      if (event.target instanceof HTMLButtonElement) return;
+      if (loading) return;
+      event.preventDefault();
+      event.stopPropagation();
+      onConfirm();
+    }
+    window.addEventListener("keydown", onKey, true);
+    return () => window.removeEventListener("keydown", onKey, true);
+  }, [open, loading, onConfirm]);
+
   return (
     <POSModal
       open={open}
       title={title}
-      onClose={onCancel}
+      onClose={() => {
+        if (!loading) onCancel();
+      }}
       size="sm"
       footer={
         <>

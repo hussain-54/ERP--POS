@@ -13,10 +13,12 @@ import {
   ERP_SIDEBAR_SECTIONS,
   EXTRA_APP_PATHS,
   isComingSoonEngineSection,
+  isPosEnvironmentPath,
   isPosTerminalPath,
   isSystemAdminPath,
   resolveShellHeader,
 } from "@/app/modules";
+import { POS_IA_TITLES, POS_SHELL_NAV, POS_SHELL_NAV_TITLES } from "@/features/pos/pos-ownership";
 import { AppShell } from "@/app/shell/AppShell";
 import { SidebarNav } from "@/app/shell/SidebarNav";
 import { AuthProvider } from "@/features/auth/AuthContext";
@@ -61,6 +63,7 @@ describe("web foundation", () => {
       "References",
       "Salesmen",
       "Installments",
+      "Settings",
     ]);
     expect(ERP_MODULES.some((m) => m.path === "/held-sales")).toBe(true);
     expect(ERP_MODULES.some((m) => m.path === "/pos/salesmen")).toBe(true);
@@ -74,6 +77,15 @@ describe("web foundation", () => {
     expect(isPosTerminalPath("/pos/salesmen")).toBe(false);
     expect(isPosTerminalPath("/pos/installments")).toBe(false);
     expect(isPosTerminalPath("/invoices")).toBe(false);
+    expect(isPosEnvironmentPath("/pos")).toBe(true);
+    expect(isPosEnvironmentPath("/invoices")).toBe(true);
+    expect(isPosEnvironmentPath("/sales-management")).toBe(true);
+    expect(isPosEnvironmentPath("/pos/salesmen")).toBe(true);
+    expect(isPosEnvironmentPath("/pos/settings")).toBe(true);
+    expect(isPosEnvironmentPath("/salesman")).toBe(false);
+    expect(isPosEnvironmentPath("/installments")).toBe(false);
+    expect(isPosEnvironmentPath("/credit")).toBe(false);
+    expect(isPosEnvironmentPath("/settings/pos")).toBe(false);
     expect(ERP_MODULES.some((m) => m.path === "/hr")).toBe(true);
     expect(ERP_MODULES.some((m) => m.path === "/orders")).toBe(true);
     expect(ERP_MODULES.some((m) => /offline|sqlite|sync center|sync queue/i.test(m.title))).toBe(
@@ -196,6 +208,7 @@ describe("39-module navigation lock", () => {
       "References",
       "Salesmen",
       "Installments",
+      "Settings",
     ]);
     expect(titles("06")).toEqual(["Quotations"]);
     expect(titles("07")).toEqual(["Orders", "B2B"]);
@@ -370,6 +383,7 @@ describe("nav structure", () => {
       "Returns",
       "Payments",
       "Discounts",
+      "Settings",
     ]);
     expect(visible("07")).toEqual(["B2B"]);
     expect(visible("09")).toEqual(["Returns", "Automation"]);
@@ -420,8 +434,10 @@ describe("nav structure", () => {
     expect(child("16", "P&L")?.path).toBe("/accounts/profit-loss");
     expect(child("13", "Price Lists")?.path).toBe("/suppliers/price-lists");
 
+    expect(child("05", "Discounts")?.status).toBe("implemented");
+    expect(child("05", "Discounts")?.path).toBe("/discounts");
+
     for (const [id, title] of [
-      ["05", "Discounts"],
       ["09", "Automation"],
       ["11", "Receiving"],
       ["11", "Dispatch"],
@@ -483,14 +499,16 @@ describe("nav structure", () => {
       }
     }
 
-    expect(pageType("/pos")).toBe(pageType("/held-sales"));
+    expect(pageType("/pos")).not.toBe(pageType("/held-sales"));
+    expect(pageType("/invoices")).not.toBe(pageType("/sales-management"));
     expect(pageType("/quotations")).toBe(pageType("/orders"));
-    expect(pageType("/returns")).toBe(pageType("/exchange"));
+    expect(pageType("/returns")).not.toBe(pageType("/exchange"));
     expect(pageType("/barcodes")).toBe(pageType("/qr"));
     expect(pageType("/installments")).toBe(pageType("/credit"));
-    expect(pageType("/installments")).toBe(pageType("/pos/installments"));
-    expect(pageType("/salesman")).toBe(pageType("/pos/salesmen"));
-    expect(pageType("/salesman")).toBe(pageType("/pos/references"));
+    expect(pageType("/installments")).not.toBe(pageType("/pos/installments"));
+    expect(pageType("/salesman")).not.toBe(pageType("/pos/salesmen"));
+    expect(pageType("/salesman")).not.toBe(pageType("/pos/references"));
+    expect(pageType("/pos/salesmen")).not.toBe(pageType("/pos/references"));
     expect(pageType("/categories")).toBe(pageType("/subcategories"));
     expect(pageType("/stock-ops")).toBe(pageType("/inventory/adjustments"));
     expect(pageType("/inventory")).not.toBe(pageType("/stock-ops"));
@@ -509,6 +527,7 @@ describe("nav structure", () => {
       "/returns",
       "/exchange",
       "/payments",
+      "/discounts",
       "/customers",
       "/products",
       "/credit",
@@ -586,7 +605,7 @@ describe("nav structure", () => {
         .filter((link) => link.getAttribute("href") === section.path);
       expect(matches.length).toBeGreaterThan(0);
     }
-  });
+  }, 15_000);
 
   it("keeps Salesmen as module 20 and hides the POS alias from the sidebar", () => {
     expect(ERP_MODULES.some((m) => m.path === "/pos/salesmen")).toBe(true);
@@ -634,6 +653,10 @@ describe("nav structure", () => {
     expect(resolveShellHeader("/payments")).toEqual({
       moduleTitle: "POS / Sales",
       pageTitle: "Payments",
+    });
+    expect(resolveShellHeader("/discounts")).toEqual({
+      moduleTitle: "POS / Sales",
+      pageTitle: "Discounts",
     });
     expect(resolveShellHeader("/products")).toEqual({
       moduleTitle: "Product Management",
@@ -803,7 +826,7 @@ describe("responsive ERP shell", () => {
   }
 
   it("uses one 39-module nav as the mobile drawer, not a second menu", () => {
-    const { container } = renderShell("/pos");
+    const { container } = renderShell("/");
     const shell = container.firstElementChild as HTMLElement;
     expect(shell.className).toContain("md:grid");
     expect(shell.className).toContain("overflow-x-hidden");
@@ -819,7 +842,56 @@ describe("responsive ERP shell", () => {
         .filter((link) => link.getAttribute("href") === section.path);
       expect(matches.length).toBeGreaterThan(0);
     }
-    fireEvent.click(screen.getByRole("link", { name: "Hold / Resume" }));
+    fireEvent.click(screen.getByRole("link", { name: "POS / Sales" }));
     expect(screen.queryByRole("button", { name: "Close navigation" })).not.toBeInTheDocument();
-  });
+  }, 15_000);
+
+  it("opens a single POS environment for POS operational routes", () => {
+    const { unmount } = renderShell("/pos");
+    expect(screen.queryByLabelText("ERP modules")).not.toBeInTheDocument();
+    expect(screen.getAllByRole("link", { name: "ERP Home" }).every((link) => link.getAttribute("href") === "/")).toBe(
+      true,
+    );
+    expect(screen.getByText("POS Terminal")).toBeInTheDocument();
+    expect(screen.getByLabelText("Cashier")).toBeInTheDocument();
+    expect(screen.getByLabelText("Shift Status")).toBeInTheDocument();
+    expect(screen.getByLabelText("Date / Time")).toBeInTheDocument();
+    expect(screen.getByLabelText("Branch")).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: "Held Sales" })).toHaveAttribute("href", "/held-sales");
+    expect(screen.getByRole("link", { name: "Notifications" })).toHaveAttribute("href", "/notifications");
+    expect(screen.getByRole("button", { name: "User" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Menu" })).toBeInTheDocument();
+    const nav = screen.getByRole("navigation", { name: "POS navigation" });
+    const hrefs = [...nav.querySelectorAll("a")].map((link) => link.getAttribute("href"));
+    expect(hrefs).toEqual(POS_SHELL_NAV.map((item) => item.path));
+    expect(screen.getByRole("link", { name: "POS" }).className).toContain("pos-nav-active");
+    expect(POS_SHELL_NAV_TITLES).toEqual([
+      "POS",
+      "Hold / Resume",
+      "Customers",
+      "Products",
+      "Price & Discount",
+      "Reports",
+      "Settings",
+    ]);
+    expect(POS_IA_TITLES).toHaveLength(12);
+    unmount();
+
+    renderShell("/invoices");
+    expect(screen.getByRole("navigation", { name: "POS navigation" })).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: "Reports" }).className).toContain("pos-nav-active");
+    expect(screen.queryByLabelText("ERP modules")).not.toBeInTheDocument();
+    cleanup();
+
+    renderShell("/pos/salesmen");
+    expect(screen.getByRole("link", { name: "Reports" }).className).toContain("pos-nav-active");
+    expect(screen.getAllByRole("link", { name: "ERP Home" }).every((link) => link.getAttribute("href") === "/")).toBe(
+      true,
+    );
+    cleanup();
+
+    renderShell("/salesman");
+    expect(screen.getByLabelText("ERP modules")).toBeInTheDocument();
+    expect(screen.queryByRole("navigation", { name: "POS navigation" })).not.toBeInTheDocument();
+  }, 20_000);
 });

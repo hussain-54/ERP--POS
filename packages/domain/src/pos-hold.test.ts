@@ -145,5 +145,14 @@ describe("pos hold lifecycle", () => {
     expect(() =>
       assertHoldActionAllowed(base, "cancel", { actorUserId: base.heldBy, now }),
     ).not.toThrow();
+    expect(() =>
+      assertHoldActionAllowed(base, "cancel", { actorUserId: "other", now }),
+    ).toThrow(/another cashier/i);
+    expect(() =>
+      assertHoldActionAllowed(base, "discard", { actorUserId: "other", now }),
+    ).toThrow(/another cashier/i);
+    expect(() =>
+      assertHoldActionAllowed(base, "cancel", { actorUserId: "other", resumeAny: true, now }),
+    ).not.toThrow();
   });
 });

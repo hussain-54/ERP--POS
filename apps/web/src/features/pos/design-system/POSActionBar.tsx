@@ -15,13 +15,13 @@ export function POSActionBar({
   return (
     <div
       className={posCn(
-        "flex flex-wrap items-center justify-between gap-2 border-t border-[var(--pos-border)] bg-[var(--pos-workspace)] px-3 py-2",
+        "flex flex-nowrap items-center justify-between gap-2 overflow-x-auto border-t border-[var(--pos-border)] bg-[var(--pos-workspace)] px-3 py-2",
         sticky && "sticky bottom-0 z-10",
         className,
       )}
     >
-      <div className="flex flex-wrap items-center gap-2">{left}</div>
-      <div className="ml-auto flex flex-wrap items-center gap-2">{right}</div>
+      <div className="flex shrink-0 flex-nowrap items-center gap-2">{left}</div>
+      <div className="ml-auto flex shrink-0 flex-nowrap items-center gap-2">{right}</div>
     </div>
   );
 }

@@ -1449,22 +1449,64 @@ export class PosRepository {
     if (input.invoiceNumber?.trim()) {
       q = q.ilike("invoice_number", `%${input.invoiceNumber.trim()}%`);
     }
+    if (input.deviceId?.trim()) q = q.eq("device_id", input.deviceId.trim());
     if (input.dateFrom) q = q.gte("created_at", input.dateFrom);
     if (input.dateTo) q = q.lte("created_at", `${input.dateTo}T23:59:59.999Z`);
     return q;
   }
 
-  private filterRowsByCustomerQuery<T extends Row>(rows: T[], customerQuery?: string): T[] {
+  private async saleIdsMatchingSku(organizationId: string, query: string): Promise<Set<string>> {
+    const needle = query.trim();
+    const ids = new Set<string>();
+    if (!needle) return ids;
+    try {
+      const { data: products } = await this.db
+        .from("products")
+        .select("id")
+        .eq("organization_id", organizationId)
+        .ilike("sku", `%${needle}%`)
+        .limit(200);
+      const productIds = (products ?? []).map((p) => String(p.id));
+      if (productIds.length) {
+        const { data: items } = await this.db
+          .from("sale_items")
+          .select("sale_id")
+          .eq("organization_id", organizationId)
+          .in("product_id", productIds);
+        for (const row of items ?? []) ids.add(String(row.sale_id));
+      }
+      const { data: manuals } = await this.db
+        .from("sale_items")
+        .select("sale_id")
+        .eq("organization_id", organizationId)
+        .ilike("manual_item_code", `%${needle}%`)
+        .limit(500);
+      for (const row of manuals ?? []) ids.add(String(row.sale_id));
+    } catch {
+      /* SKU lookup is best-effort; customer/invoice search still runs */
+    }
+    return ids;
+  }
+
+  private filterRowsByCustomerQuery<T extends Row>(
+    rows: T[],
+    customerQuery?: string,
+    skuSaleIds?: Set<string>,
+  ): T[] {
     const cq = customerQuery?.trim().toLowerCase();
     if (!cq) return rows;
+    const digits = cq.replace(/\D/g, "");
     return rows.filter((r) => {
+      if (skuSaleIds?.has(String(r.id))) return true;
+      const invoice = String(r.invoice_number ?? "").toLowerCase();
       const c = r.customers as { name?: string; mobile?: string } | null;
       const name = String(c?.name ?? "").toLowerCase();
       const mobile = String(c?.mobile ?? "").toLowerCase();
       return (
+        invoice.includes(cq) ||
         name.includes(cq) ||
         mobile.includes(cq) ||
-        mobile.replace(/\D/g, "").includes(cq.replace(/\D/g, ""))
+        (digits.length > 0 && mobile.replace(/\D/g, "").includes(digits))
       );
     });
   }
@@ -1490,15 +1532,22 @@ export class PosRepository {
     const limit = input.limit ?? 25;
     const offset = input.offset ?? 0;
     const hasCustomerQuery = Boolean(input.customerQuery?.trim());
+    const skuSaleIds = hasCustomerQuery
+      ? await this.saleIdsMatchingSku(input.organizationId, String(input.customerQuery))
+      : undefined;
 
     let summaryQuery = this.buildSalesManagementQuery(
       input,
-      "grand_total,subtotal,discount_total,tax_total,remaining_total,status,payment_status,customer_id,customers(name,mobile)",
+      "id,invoice_number,grand_total,subtotal,discount_total,tax_total,remaining_total,status,payment_status,customer_id,customers(name,mobile)",
     );
     if (paymentSaleIds) summaryQuery = summaryQuery.in("id", paymentSaleIds);
     const { data: summaryRowsRaw, error: summaryErr } = await summaryQuery.limit(5000);
     if (summaryErr) throw summaryErr;
-    const summaryRows = this.filterRowsByCustomerQuery((summaryRowsRaw ?? []) as Row[], input.customerQuery);
+    const summaryRows = this.filterRowsByCustomerQuery(
+      (summaryRowsRaw ?? []) as Row[],
+      input.customerQuery,
+      skuSaleIds,
+    );
     const summary = summarizeSaleManagement(
       summaryRows.map((r) => ({
         status: r.status as Sale["status"],
@@ -1522,7 +1571,11 @@ export class PosRepository {
     if (hasCustomerQuery) {
       const { data: allRows, error: listErr } = await listQuery.limit(5000);
       if (listErr) throw listErr;
-      const filtered = this.filterRowsByCustomerQuery((allRows ?? []) as Row[], input.customerQuery);
+      const filtered = this.filterRowsByCustomerQuery(
+        (allRows ?? []) as Row[],
+        input.customerQuery,
+        skuSaleIds,
+      );
       total = filtered.length;
       rows = filtered.slice(offset, offset + limit);
     } else {
@@ -1599,6 +1652,7 @@ export class PosRepository {
         cashierId,
         cashierName: cashierId ? (profiles.get(cashierId) ?? cashierId) : null,
         salesmanName: salesmanId ? (profiles.get(salesmanId) ?? salesmanId) : null,
+        referenceId: r.reference_id ? String(r.reference_id) : null,
         itemCount: itemCounts.get(mapped.id) ?? 0,
         paymentMethods: paymentLabels.get(mapped.id) ?? null,
       };
@@ -1681,12 +1735,42 @@ export class PosRepository {
             (prices ?? [])[0];
           if (match) customerPrice = Number(match.amount);
         }
+        // Same source as New Sale: org default/active tax_rates. Missing taxRate here
+        // would re-price posted lines with tax=0 and drop the cashier's session tax.
+        let taxRate: {
+          id: string;
+          name: string;
+          ratePercent: number;
+          pricingMode: "inclusive" | "exclusive";
+          isExempt: boolean;
+          kind: "exempt" | "gst" | "sales_tax";
+        } | null = null;
+        const { data: rates } = await db
+          .from("tax_rates")
+          .select("id,name,code,rate_percent,is_exempt,pricing_mode,is_default,is_active")
+          .eq("organization_id", context.organizationId)
+          .eq("is_active", true)
+          .limit(50);
+        const preferred =
+          (rates ?? []).find((row) => Boolean(row.is_default)) ?? (rates ?? [])[0];
+        if (preferred) {
+          const code = String(preferred.code ?? preferred.name ?? "").toLowerCase();
+          taxRate = {
+            id: String(preferred.id),
+            name: String(preferred.name ?? ""),
+            ratePercent: Number(preferred.rate_percent ?? 0),
+            pricingMode: preferred.pricing_mode === "inclusive" ? "inclusive" : "exclusive",
+            isExempt: Boolean(preferred.is_exempt),
+            kind: Boolean(preferred.is_exempt) ? "exempt" : code.includes("gst") ? "gst" : "sales_tax",
+          };
+        }
         return {
           retailPrice: Number(product.retail_price ?? 0),
           wholesalePrice: Number(product.wholesale_price ?? 0),
           dealerPrice: Number(product.dealer_price ?? 0),
           customerPrice,
           unitId: context.unitId,
+          taxRate,
         };
       },
       async postSaleRecord(payload: Record<string, unknown>) {

@@ -196,7 +196,12 @@ export function assertHoldActionAllowed(
     throw new ValidationDomainError("Hold has expired — discard or duplicate instead");
   }
   if (
-    (action === "resume" || action === "resume_and_checkout" || action === "edit" || action === "transfer") &&
+    (action === "resume" ||
+      action === "resume_and_checkout" ||
+      action === "edit" ||
+      action === "transfer" ||
+      action === "cancel" ||
+      action === "discard") &&
     hold.heldBy &&
     opts.actorUserId &&
     hold.heldBy !== opts.actorUserId &&

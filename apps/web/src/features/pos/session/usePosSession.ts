@@ -3,8 +3,8 @@
  * Cart mutations go through domain pos-cart (stock / qty / money-safe).
  * Pricing, discount, and tax math live in domain — not in React.
  */
+import { addDecimal, type ProductSearchResult } from "@electronic-erp/contracts";
 import { useCallback, useMemo, useState } from "react";
-import type { ProductSearchResult } from "@electronic-erp/contracts";
 import {
   addOrIncrementProduct,
   applyCartLineDiscountInput,
@@ -61,7 +61,11 @@ export function usePosSession() {
   }, []);
 
   const addProduct = useCallback(
-    (p: ProductSearchResult, unitOptions?: PosUnitOption[]): { ok: boolean; error?: string } => {
+    (
+      p: ProductSearchResult,
+      unitOptions?: PosUnitOption[],
+      addQty?: string,
+    ): { ok: boolean; error?: string; key?: string } => {
       let unitPrice: number;
       try {
         const resolved = resolvePosUnitPrice({
@@ -97,6 +101,7 @@ export function usePosSession() {
         unitPrice,
         warrantyDays: p.warrantyDays,
         stock: p.stockAvailable,
+        imageUrl: (p as ProductSearchResult & { imageUrl?: string | null }).imageUrl ?? null,
         unitOptions:
           unitOptions ??
           [
@@ -119,13 +124,38 @@ export function usePosSession() {
         promotionPrice: p.promotionPrice != null ? Number(p.promotionPrice) : null,
         priceLevel,
       });
-      let outcome: { ok: boolean; error?: string } = { ok: true };
+      let outcome: { ok: boolean; error?: string; key?: string } = { ok: true };
       setCartState((prev) => {
         const result = addOrIncrementProduct(prev, line, taxRate);
         if (result.ok) {
+          const added =
+            result.cart.find((x) => x.productId === line.productId && !x.isManual) ??
+            result.cart[result.cart.length - 1];
+          const key = added?.key;
+          let nextCart = result.cart;
+          const qty = addQty?.trim();
+          if (qty && qty !== "1" && key) {
+            const prior = prev.find((x) => x.productId === line.productId && !x.isManual);
+            let desired = qty;
+            if (prior) {
+              try {
+                desired = addDecimal(prior.qty, qty);
+              } catch {
+                desired = qty;
+              }
+            }
+            const updated = updateCartLineQty(nextCart, key, desired, taxRate);
+            if (!updated.ok) {
+              const error = updated.error ?? "Invalid quantity";
+              setLastCartError(error);
+              outcome = { ok: false, error };
+              return prev;
+            }
+            nextCart = updated.cart;
+          }
           setLastCartError(null);
-          outcome = { ok: true };
-          return result.cart;
+          outcome = { ok: true, key };
+          return nextCart;
         }
         const error = result.error ?? "Cannot add product";
         setLastCartError(error);
@@ -304,6 +334,10 @@ export function usePosSession() {
     setCartState((prev) => repriceCartForPriceLevel(prev, "retail", taxRate));
   }, [taxRate]);
 
+  const recalculate = useCallback(() => {
+    setCartState((prev) => recalculateCart(prev, taxRate));
+  }, [taxRate]);
+
   const applyCustomer = useCallback((c: PosSessionCustomer) => {
     setWalkIn(false);
     setCustomerId(c.id);
@@ -350,6 +384,7 @@ export function usePosSession() {
     clearCart,
     selectWalkIn,
     applyCustomer,
+    recalculate,
     setCustomerId,
     setCustomer,
     setWalkIn,

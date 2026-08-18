@@ -13,9 +13,9 @@ export interface POSButtonProps extends ButtonHTMLAttributes<HTMLButtonElement> 
 
 const variants: Record<Variant, string> = {
   primary:
-    "bg-[var(--pos-primary)] text-white hover:bg-[var(--pos-primary-strong)] active:brightness-95",
+    "pos-cta hover:bg-[var(--pos-hover)] active:bg-[var(--pos-active)]",
   secondary:
-    "bg-[var(--pos-secondary-soft)] text-[var(--pos-secondary)] border border-[var(--pos-secondary)]/20 hover:bg-[var(--pos-secondary)]/10",
+    "bg-[var(--pos-workspace)] text-[var(--pos-primary)] border border-[var(--pos-border)] hover:bg-[var(--pos-light)] hover:border-[var(--pos-primary)]",
   ghost: "bg-transparent text-[var(--pos-ink)] hover:bg-[var(--pos-muted-bg)]",
   danger: "bg-[var(--pos-danger)] text-white hover:brightness-95",
   success: "bg-[var(--pos-success)] text-white hover:brightness-95",
@@ -43,7 +43,7 @@ export function POSButton({
     <button
       type={type}
       className={posCn(
-        "inline-flex items-center justify-center rounded-[var(--pos-radius-sm)] font-medium transition",
+        "inline-flex items-center justify-center rounded-[var(--pos-radius-sm)] font-medium",
         "focus-visible:outline-none focus-visible:shadow-[var(--pos-focus)] disabled:cursor-not-allowed disabled:opacity-50",
         variants[variant],
         sizes[size],

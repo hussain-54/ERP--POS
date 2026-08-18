@@ -226,6 +226,50 @@ partiesRouter.post("/payment-methods", async (req: AuthedRequest, res, next) => 
   }
 });
 
+partiesRouter.get("/payments", async (req: AuthedRequest, res, next) => {
+  try {
+    authz(req).assert("payments.receive");
+    const q = (key: string) => (typeof req.query[key] === "string" ? String(req.query[key]) : undefined);
+    res.json(
+      await repo(req).searchPayments({
+        organizationId: orgId(req),
+        branchId: q("branchId"),
+        customerId: q("customerId"),
+        paymentMethodId: q("paymentMethodId"),
+        cashierUserId: q("cashierUserId"),
+        deviceId: q("deviceId"),
+        status: q("status"),
+        syncState: q("syncState"),
+        dateFrom: q("dateFrom"),
+        dateTo: q("dateTo"),
+        receiptNumber: q("receiptNumber"),
+        invoiceNumber: q("invoiceNumber"),
+        direction: q("direction") || "receive",
+        query: q("query"),
+        view: q("view"),
+        limit: Number(req.query.limit) > 0 ? Math.min(200, Number(req.query.limit)) : 50,
+        offset: Number(req.query.offset) >= 0 ? Number(req.query.offset) : 0,
+      }),
+    );
+  } catch (err) {
+    next(err);
+  }
+});
+
+partiesRouter.get("/payments/:id", async (req: AuthedRequest, res, next) => {
+  try {
+    authz(req).assert("payments.receive");
+    const item = await repo(req).getPaymentDetail(orgId(req), req.params.id);
+    if (!item) {
+      res.status(404).json({ error: "Not found" });
+      return;
+    }
+    res.json({ item });
+  } catch (err) {
+    next(err);
+  }
+});
+
 // 05 POS / Sales — split payments
 partiesRouter.post("/payments", async (req: AuthedRequest, res, next) => {
   try {
@@ -278,6 +322,24 @@ partiesRouter.post("/credit/reminders/generate", async (req: AuthedRequest, res,
 });
 
 // 22 Installments
+partiesRouter.get("/installments", async (req: AuthedRequest, res, next) => {
+  try {
+    authz(req).assert("installments.manage");
+    res.json(
+      await repo(req).searchInstallmentPlans({
+        organizationId: orgId(req),
+        branchId: typeof req.query.branchId === "string" ? req.query.branchId : undefined,
+        customerId: typeof req.query.customerId === "string" ? req.query.customerId : undefined,
+        query: typeof req.query.q === "string" ? req.query.q : undefined,
+        limit: req.query.limit != null ? Number(req.query.limit) : 50,
+        offset: req.query.offset != null ? Number(req.query.offset) : 0,
+      }),
+    );
+  } catch (err) {
+    next(err);
+  }
+});
+
 partiesRouter.post("/installments", async (req: AuthedRequest, res, next) => {
   try {
     authz(req).assert("installments.manage");
