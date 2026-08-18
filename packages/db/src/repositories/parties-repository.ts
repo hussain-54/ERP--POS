@@ -18,6 +18,9 @@ import {
   buildInstallmentPlan,
   creditPortion,
   evaluateCredit,
+  emptyPaymentSummary,
+  matchesPaymentRegister,
+  summarizePaymentRegister,
   ValidationDomainError,
 } from "@electronic-erp/domain";
 import type { DatabaseClient } from "../client.js";
@@ -622,6 +625,83 @@ export class PartiesRepository {
     return data ?? [];
   }
 
+  /**
+   * Installment register read. Does not create or collect installment payments.
+   */
+  async searchInstallmentPlans(input: {
+    organizationId: string;
+    branchId?: string;
+    customerId?: string;
+    query?: string;
+    limit?: number;
+    offset?: number;
+  }) {
+    const limit = input.limit ?? 50;
+    const offset = input.offset ?? 0;
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    let q: any = this.db
+      .from("installment_plans")
+      .select("*, customers(name, mobile), installment_schedule(*)")
+      .eq("organization_id", input.organizationId)
+      .order("created_at", { ascending: false });
+    if (input.branchId) q = q.eq("branch_id", input.branchId);
+    if (input.customerId) q = q.eq("customer_id", input.customerId);
+    const { data, error } = await q.limit(500);
+    if (error) throw error;
+    const rows = (data ?? []) as Row[];
+    const saleIds = [
+      ...new Set(
+        rows
+          .filter((row) => String(row.source_type ?? "") === "sale" && row.source_id)
+          .map((row) => String(row.source_id)),
+      ),
+    ];
+    const invoices = new Map<string, string>();
+    if (saleIds.length) {
+      const { data: sales, error: saleErr } = await this.db
+        .from("sales")
+        .select("id, invoice_number")
+        .in("id", saleIds);
+      if (saleErr) throw saleErr;
+      for (const sale of sales ?? []) {
+        invoices.set(String(sale.id), String(sale.invoice_number ?? ""));
+      }
+    }
+    const needle = input.query?.trim().toLowerCase() ?? "";
+    const mapped = rows.map((row) => {
+      const customer = row.customers as { name?: string; mobile?: string } | null;
+      const schedule = Array.isArray(row.installment_schedule) ? row.installment_schedule : [];
+      const item: Row = {
+        ...row,
+        customerName: customer?.name ?? null,
+        customerMobile: customer?.mobile ?? null,
+        invoiceNumber: invoices.get(String(row.source_id ?? "")) ?? null,
+        schedule,
+      };
+      return item;
+    });
+    const filtered = needle
+      ? mapped.filter((row) => {
+          const hay = [
+            String(row.id ?? ""),
+            String(row.customerName ?? ""),
+            String(row.customerMobile ?? ""),
+            String(row.invoiceNumber ?? ""),
+            String(row.status ?? ""),
+          ]
+            .join(" ")
+            .toLowerCase();
+          return hay.includes(needle);
+        })
+      : mapped;
+    return {
+      items: filtered.slice(offset, offset + limit),
+      total: filtered.length,
+      limit,
+      offset,
+    };
+  }
+
   async listPayments(organizationId: string, customerId?: string, supplierId?: string) {
     let q = this.db
       .from("payments")
@@ -633,6 +713,185 @@ export class PartiesRepository {
     const { data, error } = await q;
     if (error) throw error;
     return (data ?? []).map(mapPayment);
+  }
+
+  /**
+   * Payment register read. Does not post, void, or reverse payments.
+   */
+  async searchPayments(input: {
+    organizationId: string;
+    branchId?: string;
+    customerId?: string;
+    paymentMethodId?: string;
+    cashierUserId?: string;
+    deviceId?: string;
+    status?: string;
+    syncState?: string;
+    dateFrom?: string;
+    dateTo?: string;
+    receiptNumber?: string;
+    invoiceNumber?: string;
+    direction?: string;
+    query?: string;
+    view?: string;
+    limit?: number;
+    offset?: number;
+  }) {
+    const limit = input.limit ?? 50;
+    const offset = input.offset ?? 0;
+    let methodPaymentIds: string[] | null = null;
+    if (input.paymentMethodId) {
+      const { data: splitRows, error: splitErr } = await this.db
+        .from("payment_splits")
+        .select("payment_id")
+        .eq("organization_id", input.organizationId)
+        .eq("payment_method_id", input.paymentMethodId);
+      if (splitErr) throw splitErr;
+      methodPaymentIds = [...new Set((splitRows ?? []).map((r) => String(r.payment_id)))];
+      if (!methodPaymentIds.length) {
+        return { items: [], total: 0, limit, offset, summary: emptyPaymentSummary() };
+      }
+    }
+
+    let invoiceSaleIds: string[] | null = null;
+    if (input.invoiceNumber?.trim()) {
+      const { data: sales, error: saleErr } = await this.db
+        .from("sales")
+        .select("id")
+        .eq("organization_id", input.organizationId)
+        .ilike("invoice_number", `%${input.invoiceNumber.trim()}%`)
+        .limit(200);
+      if (saleErr) throw saleErr;
+      invoiceSaleIds = (sales ?? []).map((s) => String(s.id));
+      if (!invoiceSaleIds.length) {
+        return { items: [], total: 0, limit, offset, summary: emptyPaymentSummary() };
+      }
+    }
+
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    let q: any = this.db
+      .from("payments")
+      .select("*")
+      .eq("organization_id", input.organizationId)
+      .order("occurred_at", { ascending: false });
+    if (input.branchId) q = q.eq("branch_id", input.branchId);
+    if (input.customerId) q = q.eq("customer_id", input.customerId);
+    if (input.cashierUserId) q = q.eq("created_by", input.cashierUserId);
+    if (input.deviceId?.trim()) q = q.eq("device_id", input.deviceId.trim());
+    if (input.status) q = q.eq("status", input.status);
+    if (input.syncState) q = q.eq("sync_state", input.syncState);
+    if (input.direction) q = q.eq("direction", input.direction);
+    if (input.receiptNumber?.trim()) {
+      q = q.ilike("receipt_number", `%${input.receiptNumber.trim()}%`);
+    }
+    if (input.dateFrom) q = q.gte("occurred_at", input.dateFrom);
+    if (input.dateTo) q = q.lte("occurred_at", `${input.dateTo}T23:59:59.999Z`);
+    if (methodPaymentIds) q = q.in("id", methodPaymentIds);
+    if (invoiceSaleIds) q = q.in("source_id", invoiceSaleIds);
+
+    const { data, error } = await q.limit(2000);
+    if (error) throw error;
+    const enriched = await this.enrichPaymentRows((data ?? []) as Row[]);
+    const filtered = enriched.filter((row) => matchesPaymentRegister(row, input.query, input.view));
+    return {
+      items: filtered.slice(offset, offset + limit),
+      total: filtered.length,
+      limit,
+      offset,
+      summary: summarizePaymentRegister(filtered),
+    };
+  }
+
+  async getPaymentDetail(organizationId: string, id: string) {
+    const { data, error } = await this.db
+      .from("payments")
+      .select("*")
+      .eq("organization_id", organizationId)
+      .eq("id", id)
+      .maybeSingle();
+    if (error) throw error;
+    if (!data) return null;
+    const items = await this.enrichPaymentRows([data as Row]);
+    return items[0] ?? null;
+  }
+
+  private async enrichPaymentRows(rows: Row[]) {
+    if (!rows.length) return [];
+    const paymentIds = rows.map((r) => String(r.id));
+    const customerIds = [...new Set(rows.map((r) => r.customer_id).filter(Boolean).map(String))];
+    const cashierIds = [...new Set(rows.map((r) => r.created_by).filter(Boolean).map(String))];
+    const saleIds = [
+      ...new Set(
+        rows
+          .filter((r) => String(r.source_type ?? "") === "sale" && r.source_id)
+          .map((r) => String(r.source_id)),
+      ),
+    ];
+
+    const splitsByPayment = new Map<string, Array<Record<string, unknown>>>();
+    const { data: splitRows } = await this.db
+      .from("payment_splits")
+      .select("payment_id,amount,reference,payment_method_id,payment_methods(name,kind,code)")
+      .in("payment_id", paymentIds);
+    for (const split of splitRows ?? []) {
+      const paymentId = String(split.payment_id);
+      const nested = split.payment_methods as unknown;
+      const methodRow = (Array.isArray(nested) ? nested[0] : nested) as Row | null | undefined;
+      const method = methodRow ?? {};
+      const list = splitsByPayment.get(paymentId) ?? [];
+      list.push({
+        amount: Number(split.amount ?? 0),
+        reference: (split.reference as string | null) ?? null,
+        paymentMethodId: String(split.payment_method_id ?? ""),
+        methodName: String(method.name ?? method.code ?? "Payment"),
+        methodKind: String(method.kind ?? ""),
+      });
+      splitsByPayment.set(paymentId, list);
+    }
+
+    const customerNames = new Map<string, string>();
+    if (customerIds.length) {
+      const { data: customers } = await this.db.from("customers").select("id,name").in("id", customerIds);
+      for (const c of customers ?? []) customerNames.set(String(c.id), String(c.name ?? "Customer"));
+    }
+
+    const cashierNames = new Map<string, string>();
+    if (cashierIds.length) {
+      const { data: profiles } = await this.db
+        .from("user_profiles")
+        .select("id,full_name,email")
+        .in("id", cashierIds);
+      for (const p of profiles ?? []) {
+        cashierNames.set(String(p.id), String(p.full_name ?? p.email ?? "Cashier"));
+      }
+    }
+
+    const invoices = new Map<string, string>();
+    if (saleIds.length) {
+      const { data: sales } = await this.db.from("sales").select("id,invoice_number").in("id", saleIds);
+      for (const s of sales ?? []) invoices.set(String(s.id), String(s.invoice_number ?? ""));
+    }
+
+    return rows.map((row) => {
+      const id = String(row.id);
+      const splits = splitsByPayment.get(id) ?? [];
+      const sourceId = row.source_id ? String(row.source_id) : null;
+      const customerId = row.customer_id ? String(row.customer_id) : null;
+      const cashierId = row.created_by ? String(row.created_by) : null;
+      return {
+        ...mapPayment(row),
+        notes: (row.notes as string | null) ?? null,
+        sourceType: (row.source_type as string | null) ?? null,
+        sourceId,
+        createdBy: cashierId,
+        deviceId: (row.device_id as string | null) ?? null,
+        customerName: customerId ? (customerNames.get(customerId) ?? null) : null,
+        cashierName: cashierId ? (cashierNames.get(cashierId) ?? null) : null,
+        invoiceNumber: sourceId ? (invoices.get(sourceId) ?? null) : null,
+        paymentMethods: splits.map((s) => String(s.methodName)).filter(Boolean).join(", ") || null,
+        splits,
+      };
+    });
   }
 }
 

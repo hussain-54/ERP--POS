@@ -19,7 +19,9 @@ export class UsbKeyboardWedgeScanner implements BarcodeScannerPort {
 
   constructor(
     private readonly host: {
-      addKeyListener: (fn: (key: string) => void) => () => void;
+      addKeyListener: (
+        fn: (key: string, event?: { preventDefault(): void; stopPropagation(): void }) => void,
+      ) => () => void;
     },
     private readonly gapMs = 50,
   ) {}
@@ -40,7 +42,7 @@ export class UsbKeyboardWedgeScanner implements BarcodeScannerPort {
     this.handler = handler;
     if (!this.connected) return () => undefined;
     try {
-      this.detach = this.host.addKeyListener((key) => this.onKey(key));
+      this.detach = this.host.addKeyListener((key, event) => this.onKey(key, event));
     } catch {
       this.connected = false;
       return () => undefined;
@@ -67,7 +69,7 @@ export class UsbKeyboardWedgeScanner implements BarcodeScannerPort {
     });
   }
 
-  private onKey(key: string) {
+  private onKey(key: string, event?: { preventDefault(): void; stopPropagation(): void }) {
     if (!this.connected || !this.handler) return;
     const now = Date.now();
     // Inter-key gap: wedge scanners fire faster than typing; reset buffer on slow keys.
@@ -77,6 +79,8 @@ export class UsbKeyboardWedgeScanner implements BarcodeScannerPort {
       const code = this.buffer.trim();
       this.buffer = "";
       if (!code) return;
+      event?.preventDefault();
+      event?.stopPropagation();
       const format = code.includes("http") || code.length > 32 ? "qr" : "barcode";
       try {
         this.handler({
@@ -90,7 +94,13 @@ export class UsbKeyboardWedgeScanner implements BarcodeScannerPort {
       }
       return;
     }
-    if (key.length === 1) this.buffer += key;
+    if (key.length === 1) {
+      if (this.buffer.length > 0) {
+        event?.preventDefault();
+        event?.stopPropagation();
+      }
+      this.buffer += key;
+    }
   }
 }
 

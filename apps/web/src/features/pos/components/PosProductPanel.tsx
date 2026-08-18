@@ -1,7 +1,15 @@
-import { useEffect, useMemo, useState } from "react";
+import { memo, useEffect, useMemo, useState } from "react";
 import type { ProductSearchResult } from "@electronic-erp/contracts";
-import { pickExactProductMatch } from "@electronic-erp/domain";
-import type { ProductTab } from "../pos-types";
+import { pickExactProductMatch, pickPriceLevel, resolvePosUnitPrice } from "@electronic-erp/domain";
+import {
+  canViewMoreProducts,
+  POS_PRODUCT_PAGE_SIZE,
+  POS_PRODUCT_SEARCH_PLACEHOLDER,
+  POS_SEARCH_FLUSH_MS,
+  productImageUrl,
+  visibleProductSlice,
+} from "../pos-catalog-load";
+import type { PriceLevel, ProductTab } from "../pos-types";
 import {
   POSBadge,
   POSButton,
@@ -9,7 +17,9 @@ import {
   POSEmptyState,
   POSLoadingState,
   POSSearch,
+  POSTabs,
 } from "../design-system";
+import { PosDiscoveryTools } from "./PosDiscoveryTools";
 
 interface CategoryOption {
   id: string;
@@ -31,13 +41,23 @@ interface Props {
   tab: ProductTab;
   onTabChange: (t: ProductTab) => void;
   locale: "en" | "ur" | "en_ur";
+  priceLevel: PriceLevel;
   onAdd: (p: ProductSearchResult) => boolean | void;
+  onCommitSearch?: (query: string, highlighted: ProductSearchResult | null) => void;
   searchRef: React.RefObject<HTMLInputElement | null>;
   onCamera?: () => void;
   onBarcodeScanHint?: () => void;
   onQrScan?: () => void;
   onManualEntry?: () => void;
+  hasMore?: boolean;
+  onLoadMore?: () => void;
 }
+
+const DISCOVERY_TABS: { id: ProductTab; label: string }[] = [
+  { id: "recent", label: "Recent" },
+  { id: "favorites", label: "Favorites" },
+  { id: "categories", label: "Categories" },
+];
 
 function productTitle(p: ProductSearchResult, locale: Props["locale"]) {
   if (locale === "ur" && p.nameUr) return p.nameUr;
@@ -45,9 +65,26 @@ function productTitle(p: ProductSearchResult, locale: Props["locale"]) {
   return p.name;
 }
 
-function ProductCard({
+function sellingPrice(p: ProductSearchResult, priceLevel: PriceLevel): number {
+  try {
+    return resolvePosUnitPrice({
+      retailPrice: Number(p.retailPrice),
+      wholesalePrice: Number(p.wholesalePrice),
+      dealerPrice: Number(p.dealerPrice),
+      customerPrice: p.customerPrice != null ? Number(p.customerPrice) : null,
+      promotionPrice: p.promotionPrice != null ? Number(p.promotionPrice) : null,
+      priceLevel,
+      qty: 1,
+    }).unitPrice;
+  } catch {
+    return pickPriceLevel(p, priceLevel);
+  }
+}
+
+const ProductCard = memo(function ProductCard({
   p,
   locale,
+  priceLevel,
   onAdd,
   favorited,
   onToggleFavorite,
@@ -55,6 +92,7 @@ function ProductCard({
 }: {
   p: ProductSearchResult;
   locale: Props["locale"];
+  priceLevel: PriceLevel;
   onAdd: (p: ProductSearchResult) => void;
   favorited: boolean;
   onToggleFavorite: (p: ProductSearchResult) => void;
@@ -62,22 +100,26 @@ function ProductCard({
 }) {
   const title = productTitle(p, locale);
   const stock = p.stockAvailable != null ? Number(p.stockAvailable) : null;
-  const low = stock != null && stock <= 0;
-  const meta = [p.brand, p.model, p.category].filter(Boolean).join(" · ");
+  const outOfStock = stock != null && stock <= 0;
+  const lowStock = stock != null && stock > 0 && stock <= 5;
   const initial = (title.trim()[0] ?? "?").toUpperCase();
+  const price = useMemo(() => sellingPrice(p, priceLevel), [p, priceLevel]);
+  const photo = productImageUrl(p);
+  const [photoFailed, setPhotoFailed] = useState(false);
+  const showPhoto = Boolean(photo) && !photoFailed;
 
   return (
     <div
-      className={`group relative flex flex-col overflow-hidden rounded-[var(--pos-radius)] border bg-[var(--pos-card)] text-left shadow-[var(--pos-shadow)] transition ${
+      className={`pos-product-card group relative flex flex-col overflow-hidden rounded-[var(--pos-radius-sm)] border bg-[var(--pos-card)] text-left ${
         highlighted
-          ? "border-[var(--pos-primary)] ring-2 ring-[var(--pos-ring)]"
-          : "border-[var(--pos-border)] hover:border-[var(--pos-primary)] hover:shadow-[var(--pos-shadow-md)]"
+          ? "border-[var(--pos-primary)] ring-1 ring-[var(--pos-ring)]"
+          : "border-[var(--pos-border)] hover:border-[var(--pos-primary)]"
       }`}
       data-product-id={p.productId}
     >
       <button
         type="button"
-        className="absolute right-2 top-2 z-10"
+        className="absolute right-1.5 top-1.5 z-10"
         title={favorited ? "Remove favorite" : "Add favorite"}
         aria-label={favorited ? "Remove favorite" : "Add favorite"}
         onClick={(e) => {
@@ -85,7 +127,10 @@ function ProductCard({
           onToggleFavorite(p);
         }}
       >
-        <span className="inline-flex h-7 w-7 items-center justify-center rounded-[var(--pos-radius-sm)] bg-[var(--pos-workspace)]/95 text-sm shadow-[var(--pos-shadow)]">
+        <span
+          className="inline-flex h-6 w-6 items-center justify-center rounded-[var(--pos-radius-sm)] border border-[var(--pos-border)] bg-[var(--pos-workspace)] text-xs"
+          aria-hidden
+        >
           {favorited ? "★" : "☆"}
         </span>
       </button>
@@ -94,36 +139,52 @@ function ProductCard({
         onClick={() => onAdd(p)}
         className="flex flex-1 flex-col text-left focus:outline-none focus-visible:shadow-[var(--pos-focus)]"
       >
-        <div className="relative flex aspect-[4/3] items-center justify-center bg-gradient-to-br from-[var(--pos-muted-bg)] to-[var(--pos-border)] px-3">
-          <span
-            className="flex h-14 w-14 items-center justify-center rounded-full bg-[var(--pos-workspace)] text-xl font-bold text-[var(--pos-primary)] shadow-[var(--pos-shadow)]"
-            aria-hidden
-          >
-            {initial}
-          </span>
-          {low ? (
-            <span className="absolute left-2 top-2 rounded bg-[var(--pos-danger)] px-1.5 py-0.5 text-[10px] font-semibold text-white">
-              Out of stock
+        <div
+          className="relative flex h-14 items-center justify-center bg-[var(--pos-muted-bg)]"
+          title={showPhoto ? title : "Product photos are not included in POS search"}
+        >
+          {showPhoto ? (
+            <img
+              src={photo ?? undefined}
+              alt=""
+              loading="lazy"
+              className="h-full w-full object-contain p-1"
+              onError={() => setPhotoFailed(true)}
+            />
+          ) : (
+            <span
+              className="flex h-8 w-8 items-center justify-center rounded-[var(--pos-radius-sm)] bg-[var(--pos-workspace)] text-xs font-semibold text-[var(--pos-primary)]"
+              aria-hidden
+            >
+              {initial}
+            </span>
+          )}
+          {outOfStock ? (
+            <span className="absolute left-1.5 top-1.5 rounded-[var(--pos-radius-sm)] bg-[var(--pos-danger)] px-1 py-0.5 text-[10px] font-semibold text-white">
+              Out
+            </span>
+          ) : lowStock ? (
+            <span className="absolute left-1.5 top-1.5 rounded-[var(--pos-radius-sm)] bg-[var(--pos-warning)] px-1 py-0.5 text-[10px] font-semibold text-white">
+              Low
             </span>
           ) : null}
         </div>
-        <div className="flex flex-1 flex-col gap-1 p-2.5">
-          <div className="line-clamp-2 text-sm font-medium leading-snug text-[var(--pos-ink)]">{title}</div>
-          <div className="text-[11px] text-[var(--pos-muted)]">SKU {p.sku || "—"}</div>
-          {p.barcode ? (
-            <div className="truncate text-[10px] text-[var(--pos-muted)]">BC {p.barcode}</div>
+        <div className="flex flex-1 flex-col gap-0.5 p-1.5">
+          <div className="line-clamp-2 text-[12px] font-medium leading-snug text-[var(--pos-ink)]">{title}</div>
+          {p.brand?.trim() ? (
+            <div className="truncate text-[10px] text-[var(--pos-muted)]">{p.brand}</div>
           ) : null}
-          {meta ? <div className="line-clamp-1 text-[10px] text-[var(--pos-muted)]">{meta}</div> : null}
-          <div className="mt-auto flex items-end justify-between gap-2 pt-1">
+          <div className="text-[10px] text-[var(--pos-muted)]">SKU {p.sku || "—"}</div>
+          <div className="mt-auto flex items-end justify-between gap-1 pt-0.5">
             <div>
-              <div className="text-base font-semibold tabular-nums text-[var(--pos-ink)]">
-                Rs {Number(p.retailPrice).toFixed(0)}
+              <div className="text-[13px] font-semibold tabular-nums text-[var(--pos-ink)]">
+                Rs {price.toFixed(2)}
               </div>
               <div className="text-[10px] text-[var(--pos-muted)]">
                 {stock != null ? `Stock ${p.stockAvailable}` : "Stock —"}
               </div>
             </div>
-            <span className="rounded-[var(--pos-radius-sm)] bg-[var(--pos-primary)] px-2 py-1 text-xs font-medium text-white opacity-90 group-hover:opacity-100">
+            <span className="rounded-[var(--pos-radius-sm)] bg-[var(--pos-primary)] px-1.5 py-0.5 text-[10px] font-medium text-white">
               Add
             </span>
           </div>
@@ -131,9 +192,9 @@ function ProductCard({
       </button>
     </div>
   );
-}
+});
 
-export function PosProductPanel({
+export const PosProductPanel = memo(function PosProductPanel({
   query,
   onQueryChange,
   searching,
@@ -148,26 +209,48 @@ export function PosProductPanel({
   tab,
   onTabChange,
   locale,
+  priceLevel,
   onAdd,
+  onCommitSearch,
   searchRef,
   onCamera,
   onBarcodeScanHint,
   onQrScan,
   onManualEntry,
+  hasMore = false,
+  onLoadMore,
 }: Props) {
-  const list = useMemo(
-    () =>
-      tab === "favorites"
-        ? favorites
-        : tab === "categories"
-          ? products
-          : tab === "recent"
-            ? recent
-            : products.length
-              ? products
-              : recent,
-    [tab, favorites, products, recent],
+  const searchingCatalog = query.trim().length > 0;
+  const [draft, setDraft] = useState(query);
+  const [visibleCount, setVisibleCount] = useState(POS_PRODUCT_PAGE_SIZE);
+
+  useEffect(() => {
+    setDraft(query);
+  }, [query]);
+  useEffect(() => {
+    if (draft === query) return;
+    const handle = window.setTimeout(() => onQueryChange(draft), POS_SEARCH_FLUSH_MS);
+    return () => window.clearTimeout(handle);
+  }, [draft, query, onQueryChange]);
+
+  const visibleTab: ProductTab =
+    tab === "favorites" || tab === "categories" ? tab : "recent";
+  const list = useMemo(() => {
+    if (searchingCatalog) return products;
+    if (visibleTab === "favorites") return favorites;
+    if (visibleTab === "categories") return products;
+    return recent;
+  }, [searchingCatalog, products, visibleTab, favorites, recent]);
+
+  useEffect(() => {
+    setVisibleCount(POS_PRODUCT_PAGE_SIZE);
+  }, [query, visibleTab, selectedCategoryId]);
+
+  const visible = useMemo(
+    () => visibleProductSlice(list, visibleCount),
+    [list, visibleCount],
   );
+  const showViewMore = canViewMoreProducts(list.length, visibleCount, hasMore);
 
   const [highlight, setHighlight] = useState(0);
 
@@ -175,145 +258,149 @@ export function PosProductPanel({
     setHighlight(0);
   }, [list, query, tab]);
 
-  const tabs: { id: ProductTab; label: string }[] = [
-    { id: "recent", label: "Recent" },
-    { id: "favorites", label: "Favorites" },
-    { id: "categories", label: "Categories" },
-    { id: "results", label: "Search" },
-  ];
+  useEffect(() => {
+    const id = visible[highlight]?.productId;
+    if (!id) return;
+    const node = document.querySelector(`[data-product-id="${id}"]`);
+    node?.scrollIntoView?.({ block: "nearest" });
+  }, [highlight, visible]);
 
   function addHighlightedOrExact() {
     const exact = pickExactProductMatch(list, query);
-    const target = exact ?? list[highlight] ?? list[0];
+    const target = exact ?? visible[highlight] ?? visible[0];
     if (target) onAdd(target);
   }
 
+  function viewMore() {
+    setVisibleCount((count) => count + POS_PRODUCT_PAGE_SIZE);
+    if (visibleCount >= list.length) onLoadMore?.();
+  }
+
+  const emptyTitle = searchingCatalog
+    ? "No catalog match"
+    : visibleTab === "favorites"
+      ? "No favorites yet"
+      : visibleTab === "categories"
+        ? "No products in this category"
+        : "No recent products";
+  const emptyDescription = searchingCatalog
+    ? "Try name, barcode, SKU, brand, model, or category. Only live catalog items are shown."
+    : visibleTab === "favorites"
+      ? "Tap ★ on a product card to keep it here for fast add."
+      : visibleTab === "categories"
+        ? "Choose a category or search by name, barcode, SKU, brand, or model."
+        : "Add a catalog product and it will appear here. Nothing is pre-loaded.";
+
   return (
-    <section className="flex min-h-0 flex-1 flex-col gap-3">
-      <POSCard padding="sm">
-        <div className="flex flex-wrap items-end gap-2">
-          <div className="min-w-[220px] flex-1">
-            <POSSearch
-              ref={searchRef as React.RefObject<HTMLInputElement>}
-              label="Global search"
-              placeholder="Name, Urdu, SKU, barcode, brand, model…"
-              value={query}
-              onChange={(e) => {
-                onQueryChange(e.target.value);
-                onTabChange("results");
-              }}
-              onKeyDown={(e) => {
-                if (e.key === "ArrowDown") {
-                  e.preventDefault();
-                  setHighlight((i) => Math.min(i + 1, Math.max(0, list.length - 1)));
-                } else if (e.key === "ArrowUp") {
-                  e.preventDefault();
-                  setHighlight((i) => Math.max(0, i - 1));
-                } else if (e.key === "Enter") {
-                  e.preventDefault();
-                  addHighlightedOrExact();
-                }
-              }}
-              autoComplete="off"
-              hint="↑↓ navigate · Enter add · searches name · Urdu · SKU · barcode · brand · model · category"
-            />
-          </div>
+    <section className="pos-product-discovery flex min-h-0 flex-1 flex-col">
+      <div className="shrink-0 space-y-2">
+        <POSSearch
+          ref={searchRef as React.RefObject<HTMLInputElement>}
+          aria-label="Product search"
+          placeholder={POS_PRODUCT_SEARCH_PLACEHOLDER}
+          value={draft}
+          onChange={(e) => setDraft(e.target.value)}
+          onKeyDown={(e) => {
+            if (e.key === "ArrowDown") {
+              e.preventDefault();
+              setHighlight((i) => Math.min(i + 1, Math.max(0, visible.length - 1)));
+            } else if (e.key === "ArrowUp") {
+              e.preventDefault();
+              setHighlight((i) => Math.max(0, i - 1));
+            } else if (e.key === "Enter") {
+              e.preventDefault();
+              if (draft !== query) onQueryChange(draft);
+              const highlighted = visible[highlight] ?? null;
+              if (onCommitSearch) onCommitSearch(draft, highlighted);
+              else addHighlightedOrExact();
+            } else if (e.key === "Escape") {
+              e.preventDefault();
+              setDraft("");
+              onQueryChange("");
+            }
+          }}
+          autoComplete="off"
+          autoFocus
+          title="Type to search · ↑↓ navigate · Enter add · Esc clear"
+        />
+
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <PosDiscoveryTools
+            onBarcodeScan={onBarcodeScanHint}
+            onQrScan={onQrScan}
+            onCamera={onCamera}
+            onManualEntry={onManualEntry}
+          />
           <POSBadge tone={searching ? "warning" : "neutral"}>
             {searching ? "Searching…" : `${list.length} items`}
           </POSBadge>
         </div>
 
-        <div className="mt-3 flex flex-wrap gap-1.5">
-          <POSButton size="sm" variant="secondary" onClick={onCamera} title="Camera recognition">
-            Camera
-          </POSButton>
-          <POSButton size="sm" variant="ghost" onClick={onBarcodeScanHint} title="Barcode scanner">
-            Barcode
-          </POSButton>
-          <POSButton size="sm" variant="ghost" onClick={onQrScan} title="QR / camera scanner">
-            QR
-          </POSButton>
-          <POSButton size="sm" variant="ghost" onClick={onManualEntry} title="Manual cart line">
-            Manual
-          </POSButton>
-          <POSButton
-            size="sm"
-            variant={tab === "recent" ? "primary" : "ghost"}
-            onClick={() => onTabChange("recent")}
-          >
-            Recent
-          </POSButton>
-        </div>
+        <POSTabs items={DISCOVERY_TABS} value={visibleTab} onChange={onTabChange} />
+      </div>
 
-        <div className="mt-3 flex flex-wrap gap-1">
-          {tabs.map((t) => (
+      <div className="mt-2 min-h-0 flex-1 overflow-auto">
+        {visibleTab === "categories" && !searchingCatalog ? (
+          <div className="mb-2 flex flex-wrap gap-1.5">
             <POSButton
-              key={t.id}
               size="sm"
-              variant={tab === t.id ? "primary" : "ghost"}
-              onClick={() => onTabChange(t.id)}
+              variant={!selectedCategoryId ? "primary" : "ghost"}
+              onClick={() => onSelectCategory(null)}
             >
-              {t.label}
+              All
             </POSButton>
-          ))}
-        </div>
-      </POSCard>
+            {categories.map((c) => (
+              <POSButton
+                key={c.id}
+                size="sm"
+                variant={selectedCategoryId === c.id ? "primary" : "ghost"}
+                onClick={() => onSelectCategory(c.id)}
+              >
+                {c.name}
+              </POSButton>
+            ))}
+            {!categories.length ? (
+              <span className="text-sm text-[var(--pos-muted)]">No categories in catalog yet</span>
+            ) : null}
+          </div>
+        ) : null}
 
-      {tab === "categories" ? (
-        <div className="flex flex-wrap gap-2">
-          <POSButton
-            size="sm"
-            variant={!selectedCategoryId ? "primary" : "ghost"}
-            onClick={() => onSelectCategory(null)}
-          >
-            All
-          </POSButton>
-          {categories.map((c) => (
-            <POSButton
-              key={c.id}
-              size="sm"
-              variant={selectedCategoryId === c.id ? "primary" : "ghost"}
-              onClick={() => onSelectCategory(c.id)}
-            >
-              {c.name}
-            </POSButton>
-          ))}
-          {!categories.length ? (
-            <span className="text-sm text-[var(--pos-muted)]">No categories in catalog yet</span>
-          ) : null}
-        </div>
-      ) : null}
+        {searchingCatalog ? (
+          <p className="mb-2 text-[11px] text-[var(--pos-muted)]">Showing catalog search results</p>
+        ) : null}
 
-      <div className="min-h-0 flex-1 overflow-auto">
         {searching && list.length === 0 ? (
           <POSLoadingState label="Searching products…" rows={5} />
         ) : list.length === 0 ? (
           <POSCard className="border-dashed">
-            <POSEmptyState
-              title={tab === "favorites" ? "No favorites yet" : "No products yet"}
-              description={
-                tab === "favorites"
-                  ? "Tap ★ on a product card"
-                  : "Scan a barcode or search by name / Urdu / SKU / brand"
-              }
-            />
+            <POSEmptyState title={emptyTitle} description={emptyDescription} />
           </POSCard>
         ) : (
-          <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-5">
-            {list.map((p, index) => (
-              <ProductCard
-                key={p.productId}
-                p={p}
-                locale={locale}
-                onAdd={onAdd}
-                favorited={favoriteIds.has(p.productId)}
-                onToggleFavorite={onToggleFavorite}
-                highlighted={index === highlight}
-              />
-            ))}
-          </div>
+          <>
+            <div className="pos-product-grid">
+              {visible.map((p, index) => (
+                <ProductCard
+                  key={p.productId}
+                  p={p}
+                  locale={locale}
+                  priceLevel={priceLevel}
+                  onAdd={onAdd}
+                  favorited={favoriteIds.has(p.productId)}
+                  onToggleFavorite={onToggleFavorite}
+                  highlighted={index === highlight}
+                />
+              ))}
+            </div>
+            {showViewMore ? (
+              <div className="mt-3 flex justify-center">
+                <POSButton size="sm" variant="secondary" onClick={viewMore}>
+                  View More Products
+                </POSButton>
+              </div>
+            ) : null}
+          </>
         )}
       </div>
     </section>
   );
-}
+});

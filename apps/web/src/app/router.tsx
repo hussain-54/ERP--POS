@@ -18,9 +18,17 @@ import { BarcodesPage } from "@/features/barcode-qr/BarcodesPage";
 import { AiCameraPage } from "@/features/ai-camera/AiCameraPage";
 import { PosPage } from "@/features/pos/PosPage";
 import { ReturnsPage } from "@/features/pos/ReturnsPage";
+import { ExchangePage } from "@/features/pos/ExchangePage";
 import { InvoicesPage } from "@/features/pos/InvoicesPage";
+import { HeldSalesPage } from "@/features/pos/HeldSalesPage";
 import { SalesManagementPage } from "@/features/pos/SalesManagementPage";
 import { PaymentsPage } from "@/features/pos/PaymentsPage";
+import { DiscountsPage } from "@/features/pos/DiscountsPage";
+import { SalesmenPage } from "@/features/pos/SalesmenPage";
+import { ReferencesPage } from "@/features/pos/ReferencesPage";
+import { InstallmentsPage } from "@/features/pos/InstallmentsPage";
+import { SettingsPage } from "@/features/pos/SettingsPage";
+import { PosCustomersPage, PosProductsPage, PosReportsPage } from "@/features/pos/PosHubPages";
 import { QuotationsPage } from "@/features/quotations/QuotationsPage";
 import { B2bPage } from "@/features/orders/B2bPage";
 import { DeliveriesPage } from "@/features/delivery/DeliveriesPage";
@@ -97,18 +105,28 @@ const implemented: Record<string, ReactNode> = {
   // 04 AI Camera Product Recognition — canonical /ai-camera
   "/ai-camera": <AiCameraPage />,
 
-  // 05 POS / Sales — canonical /pos · aliases /pos/new, /held-sales
+  // 05 POS / Sales — canonical /pos
+  // IA: New Sale, Hold / Resume, Invoices, Register, Returns, Exchange,
+  // Payments, Discounts, References, Salesmen, Installments, Settings (Soon).
+  // /held-sales is the Hold / Resume workspace. Alias /pos/new stays PosPage.
+  // /invoices is the invoice register (canonical sales-management search).
+  // /sales-management is Register (cash shift), not a second sales list.
   "/pos": <PosPage />,
   "/pos/new": <PosPage />,
-  "/held-sales": <PosPage entry="holds" />,
+  "/held-sales": <HeldSalesPage />,
   "/invoices": <InvoicesPage />,
   "/sales-management": <SalesManagementPage />,
   "/returns": <ReturnsPage />,
-  "/exchange": <ReturnsPage />,
+  "/exchange": <ExchangePage />,
   "/payments": <PaymentsPage />,
-  "/pos/references": <SalesmanPage />,
-  "/pos/salesmen": <SalesmanPage />,
-  "/pos/installments": <CreditInstallmentsPage />,
+  "/discounts": <DiscountsPage />,
+  "/pos/references": <ReferencesPage />,
+  "/pos/salesmen": <SalesmenPage />,
+  "/pos/installments": <InstallmentsPage />,
+  "/pos/settings": <SettingsPage />,
+  "/pos/customers": <PosCustomersPage />,
+  "/pos/products": <PosProductsPage />,
+  "/pos/reports": <PosReportsPage />,
 
   // 06 Quotations — canonical /quotations
   "/quotations": <QuotationsPage />,
@@ -194,7 +212,7 @@ const implemented: Record<string, ReactNode> = {
   "/expenses": <ExpensesPage />,
   "/expenses/period": <ExpensesPage />,
 
-  // 22 Installments — canonical /installments · aliases /credit (12), /pos/installments (05)
+  // 22 Installments — canonical /installments · alias /credit (12). POS /pos/installments is dedicated.
   "/installments": <CreditInstallmentsPage />,
 
   // 23 Loyalty — canonical /loyalty
@@ -290,6 +308,9 @@ export const router = createBrowserRouter([
           })),
           { path: "products/:id", element: <ProductFormPage /> },
           { path: "pos/new", element: <PosPage /> },
+          { path: "pos/customers", element: <PosCustomersPage /> },
+          { path: "pos/products", element: <PosProductsPage /> },
+          { path: "pos/reports", element: <PosReportsPage /> },
           { path: "*", element: <NotFoundPage /> },
         ],
       },

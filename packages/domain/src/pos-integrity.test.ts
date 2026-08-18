@@ -419,7 +419,10 @@ describe("Phase 16 POS integrity — online write path", () => {
       expiresAt: "2026-08-18T03:00:00.000Z",
       status: "held",
     };
-    assertHoldActionAllowed(hold, "resume", { actorUserId: salesman });
+    assertHoldActionAllowed(hold, "resume", {
+      actorUserId: salesman,
+      now: new Date("2026-08-17T12:00:00.000Z"),
+    });
     const restored = cartLinesForResume(snapshot);
     expect(restored).toHaveLength(1);
     expect(nextStatusForAction("resume")).toBe("resumed");

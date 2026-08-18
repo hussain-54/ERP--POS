@@ -1,45 +1,68 @@
-import { useMemo } from "react";
+import { memo, useMemo, useState } from "react";
 import {
   buildInstallmentPlan,
   classifyPosPaymentType,
+  evaluatePosCustomerCredit,
   preparePosPayments,
   type InstallmentFrequency,
+  type PosCustomerProfile,
   type PosPaymentConfirmationStatus,
 } from "@electronic-erp/domain";
 import type { PaySplit } from "../pos-types";
-import { POSBadge, POSButton, POSCard, POSInput, POSSelect } from "../design-system";
-
-interface Method {
-  id: string;
-  name: string;
-  code?: string;
-  kind?: string;
-}
+import { confirmationStatusLabel, paymentTypeLabel } from "../pos-quotation";
+import { toPosTransactionSummary } from "../pos-transaction";
+import {
+  isCashPaymentKind,
+  isCreditLikePaymentKind,
+  isInstallmentPaymentKind,
+  paymentMethodKind,
+  paymentMethodLabel,
+  paymentMethodSettlementNote,
+  selectedPaymentMethodId,
+  type PosPaymentMethod,
+} from "../pos-payment-ux";
+import { POSBadge, POSButton, POSInput, POSSelect } from "../design-system";
+import { PosTotals } from "./PosTotals";
+import { PaymentMethodGrid } from "./PaymentMethodGrid";
+import { PaymentSummary } from "./PaymentSummary";
+import { PayNowButton } from "./PayNowButton";
+import { HoldSaleButton } from "./HoldSaleButton";
+import { QuotationButton } from "./QuotationButton";
+import { PaymentConfirmModal } from "./PaymentConfirmModal";
 
 interface Props {
   totals: {
     items: number;
     qty: number;
     subtotal: number;
+    itemDiscount?: number;
+    invoiceDiscount?: number;
     discount: number;
     tax: number;
     grand: number;
+    taxInvoice?: { taxableAmount: number; taxTotal: number } | null;
   };
   invoiceDiscount: string;
   onInvoiceDiscount: (v: string) => void;
   canInvoiceDiscount: boolean;
   discountRef: React.RefObject<HTMLInputElement | null>;
-  methods: Method[];
+  methods: PosPaymentMethod[];
   payments: PaySplit[];
   onPayments: (p: PaySplit[]) => void;
   notes: string;
   onNotes: (v: string) => void;
   busy: boolean;
   canPay: boolean;
+  payBlockedReason?: string | null;
   allowCreditDue: boolean;
+  canHold?: boolean;
+  canInstallment?: boolean;
   onHold: () => void;
   onPay: () => void;
-  onCancel: () => void;
+  onQuotation?: () => void;
+  canQuote?: boolean;
+  quoteReason?: string | null;
+  quoting?: boolean;
   onRetry?: () => void;
   advanced: boolean;
   useInstallment: boolean;
@@ -60,13 +83,12 @@ interface Props {
   onCashReceived: (v: string) => void;
   confirmation?: PosPaymentConfirmationStatus | null;
   confirmationError?: string | null;
+  customer?: PosCustomerProfile | null;
+  walkIn?: boolean;
+  invoiceReference?: string | null;
 }
 
-function methodKind(m: Method | undefined): string {
-  return String(m?.kind ?? m?.code ?? "").toLowerCase();
-}
-
-export function PosPaymentPanel({
+export const PosPaymentPanel = memo(function PosPaymentPanel({
   totals,
   invoiceDiscount,
   onInvoiceDiscount,
@@ -79,10 +101,16 @@ export function PosPaymentPanel({
   onNotes,
   busy,
   canPay,
+  payBlockedReason,
   allowCreditDue,
+  canHold = true,
+  canInstallment = true,
   onHold,
   onPay,
-  onCancel,
+  onQuotation,
+  canQuote,
+  quoteReason,
+  quoting,
   onRetry,
   advanced,
   useInstallment,
@@ -103,17 +131,22 @@ export function PosPaymentPanel({
   onCashReceived,
   confirmation,
   confirmationError,
+  customer = null,
+  walkIn = true,
+  invoiceReference = null,
 }: Props) {
+  const [confirmOpen, setConfirmOpen] = useState(false);
+  const summary = useMemo(() => toPosTransactionSummary(totals), [totals]);
   const kindById = useMemo(() => {
     const map = new Map<string, string>();
-    for (const m of methods) map.set(m.id, methodKind(m));
+    for (const m of methods) map.set(m.id, paymentMethodKind(m));
     return map;
   }, [methods]);
 
   const prep = useMemo(
     () =>
       preparePosPayments({
-        grandTotal: totals.grand,
+        grandTotal: summary.grand,
         lines: payments.map((p) => ({
           paymentMethodId: p.paymentMethodId,
           amount: p.amount,
@@ -130,14 +163,14 @@ export function PosPaymentPanel({
         isAdvance,
         allowRemaining: allowCreditDue || useInstallment,
       }),
-    [totals.grand, payments, kindById, cashReceived, allowCreditDue, useInstallment, isAdvance],
+    [summary.grand, payments, kindById, cashReceived, allowCreditDue, useInstallment, isAdvance],
   );
 
   const installmentPreview = useMemo(() => {
     if (!useInstallment) return null;
     try {
       return buildInstallmentPlan({
-        totalAmount: String(totals.grand),
+        totalAmount: String(summary.grand),
         downPayment: downPayment || "0",
         installmentCount: Math.max(1, Number(installmentCount) || 1),
         startDate: new Date().toISOString().slice(0, 10),
@@ -150,7 +183,7 @@ export function PosPaymentPanel({
     }
   }, [
     useInstallment,
-    totals.grand,
+    summary.grand,
     downPayment,
     installmentCount,
     installmentFrequency,
@@ -164,16 +197,37 @@ export function PosPaymentPanel({
       amount: p.amount,
       kind: kindById.get(p.paymentMethodId),
     })),
-    grandTotal: totals.grand,
+    grandTotal: summary.grand,
     paidTowardBill: prep.paidTowardBill,
     useInstallment,
     isAdvance,
   });
 
+  const selectedId = useInstallment
+    ? (methods.find((m) => isInstallmentPaymentKind(paymentMethodKind(m)))?.id ??
+      selectedPaymentMethodId(payments))
+    : selectedPaymentMethodId(payments);
+  const selectedMethod = methods.find((m) => m.id === selectedId);
+  const selectedKind = paymentMethodKind(selectedMethod) || String(payments[0]?.methodKind ?? "");
+  const methodLabel = selectedMethod ? paymentMethodLabel(selectedMethod) : "None";
+  const settlementNote = paymentMethodSettlementNote(selectedKind);
+  const cashSelected = isCashPaymentKind(selectedKind);
+  const creditSelected = isCreditLikePaymentKind(selectedKind) || useInstallment;
   const defaultMethod = methods[0]?.id ?? "";
-  const creditMethod = methods.find((m) => methodKind(m) === "credit" || /udhaar/i.test(m.name));
   const payBlocked =
-    busy || !canPay || confirmation === "pending" || (prep.remaining > 0.009 && !allowCreditDue);
+    busy ||
+    !canPay ||
+    confirmation === "pending" ||
+    (prep.remaining > 0.009 && !allowCreditDue);
+  const statusLabel = confirmationStatusLabel(confirmation);
+  const customerLabel = walkIn || !customer ? "Walk-in" : customer.name;
+  const credit =
+    customer && !walkIn && prep.remaining > 0.009
+      ? evaluatePosCustomerCredit({ customer, additionalCredit: String(prep.remaining) })
+      : null;
+  const tenderedDisplay = cashSelected
+    ? Number(cashReceived || prep.amountReceived || summary.grand)
+    : prep.amountReceived || null;
 
   function setAmount(id: string, amount: string) {
     onPayments(payments.map((p) => (p.id === id ? { ...p, amount } : p)));
@@ -203,74 +257,77 @@ export function PosPaymentPanel({
     onPayments(payments.filter((p) => p.id !== id));
   }
 
-  function quickPay(methodId: string) {
-    const kind = kindById.get(methodId);
+  function selectMethod(method: PosPaymentMethod) {
+    const kind = paymentMethodKind(method);
+    const lineId = payments[0]?.id ?? crypto.randomUUID();
+    if (isInstallmentPaymentKind(kind)) {
+      onUseInstallment(true);
+      const down = downPayment && Number(downPayment) > 0 ? downPayment : "0";
+      const cash = methods.find((m) => isCashPaymentKind(paymentMethodKind(m)));
+      onPayments([
+        {
+          id: lineId,
+          paymentMethodId: cash?.id ?? method.id,
+          amount: down,
+          methodKind: cash ? "cash" : kind,
+        },
+      ]);
+      return;
+    }
+    if (useInstallment) onUseInstallment(false);
     onPayments([
       {
-        id: crypto.randomUUID(),
-        paymentMethodId: methodId,
-        amount: String(totals.grand),
+        id: lineId,
+        paymentMethodId: method.id,
+        amount: isCreditLikePaymentKind(kind) ? "0" : String(summary.grand),
         methodKind: kind,
       },
     ]);
-    if (kind === "cash") onCashReceived(String(totals.grand));
+    if (isCashPaymentKind(kind) && !cashReceived) onCashReceived(String(summary.grand));
   }
 
-  function chargeToCredit() {
-    if (!creditMethod) return;
-    onPayments([
-      {
-        id: crypto.randomUUID(),
-        paymentMethodId: creditMethod.id,
-        amount: "0",
-        methodKind: "credit",
-      },
-    ]);
+  const payTitle =
+    payBlockedReason ||
+    (!prep.ok ? prep.errors[0] : undefined) ||
+    (prep.remaining > 0.009 && !allowCreditDue
+      ? "Walk-in must be paid in full"
+      : "Review and post this sale");
+
+  function requestPay() {
+    if (payBlocked || !prep.ok || !methods.length) return;
+    setConfirmOpen(true);
+  }
+
+  function confirmPay() {
+    if (busy || confirmation === "pending") return;
+    setConfirmOpen(false);
+    onPay();
   }
 
   return (
-    <POSCard padding="sm">
-      <div className="space-y-1 text-sm">
-        <div className="flex justify-between text-[var(--pos-muted)]">
-          <span>Items / Qty</span>
-          <span className="tabular-nums">
-            {totals.items} / {totals.qty}
-          </span>
-        </div>
-        <div className="flex justify-between">
-          <span>Subtotal</span>
-          <span className="tabular-nums">{totals.subtotal.toFixed(2)}</span>
-        </div>
-        <div className="flex justify-between text-[var(--pos-muted)]">
-          <span>Discount</span>
-          <span className="tabular-nums">−{totals.discount.toFixed(2)}</span>
-        </div>
-        <div className="flex justify-between text-[var(--pos-muted)]">
-          <span>Tax</span>
-          <span className="tabular-nums">{totals.tax.toFixed(2)}</span>
-        </div>
-        <div className="flex items-end justify-between border-t border-[var(--pos-border)] pt-2">
-          <span className="font-semibold">Grand Total</span>
-          <span className="pos-grand tabular-nums">Rs {totals.grand.toFixed(2)}</span>
-        </div>
-      </div>
+    <section className="pos-sale-pay-dock pos-tx-pay px-3 py-3">
+      <PosTotals summary={summary} />
 
       {canInvoiceDiscount ? (
         <div className="mt-3">
           <POSInput
             ref={discountRef as React.RefObject<HTMLInputElement>}
-            label="Invoice discount (F5)"
+            label="Invoice discount"
             type="text"
             placeholder="amount or 10%"
             value={invoiceDiscount}
             onChange={(e) => onInvoiceDiscount(e.target.value)}
           />
         </div>
-      ) : null}
+      ) : (
+        <p className="mt-3 text-[11px] text-[var(--pos-muted)]">
+          Invoice discount requires a POS discount permission
+        </p>
+      )}
 
       <div className="mt-3 flex flex-wrap items-center gap-2">
-        <POSBadge tone="primary">{paymentType}</POSBadge>
-        {confirmation ? (
+        <POSBadge tone="primary">{paymentTypeLabel(paymentType)}</POSBadge>
+        {statusLabel ? (
           <POSBadge
             tone={
               confirmation === "success"
@@ -282,39 +339,31 @@ export function PosPaymentPanel({
                     : "neutral"
             }
           >
-            {confirmation}
+            {statusLabel}
           </POSBadge>
         ) : null}
       </div>
       {confirmationError ? (
-        <p className="mt-1 text-xs text-[var(--pos-danger)]">{confirmationError}</p>
+        <p role="alert" className="mt-1 text-xs text-[var(--pos-danger)]">
+          {confirmationError}
+        </p>
       ) : null}
 
       <div className="mt-3">
         <p className="mb-1.5 text-xs font-medium uppercase tracking-wide text-[var(--pos-muted)]">
-          Payment methods
+          Payment method
         </p>
-        <div className="flex flex-wrap gap-1">
-          {methods.slice(0, 8).map((m) => (
-            <POSButton
-              key={m.id}
-              size="sm"
-              variant="ghost"
-              onClick={() => quickPay(m.id)}
-              disabled={!totals.grand || busy}
-            >
-              {m.name}
-            </POSButton>
-          ))}
-          {allowCreditDue && creditMethod ? (
-            <POSButton size="sm" variant="secondary" onClick={chargeToCredit} disabled={!totals.grand || busy}>
-              Credit / Udhar
-            </POSButton>
-          ) : null}
-        </div>
+        <PaymentMethodGrid
+          methods={methods}
+          selectedId={selectedId}
+          onSelect={selectMethod}
+          disabled={!summary.grand || busy}
+          creditAllowed={allowCreditDue}
+          installmentAllowed={allowCreditDue && canInstallment}
+        />
       </div>
 
-      {payments.some((p) => kindById.get(p.paymentMethodId) === "cash") ? (
+      {cashSelected ? (
         <div className="mt-3">
           <POSInput
             label="Cash amount received"
@@ -325,54 +374,49 @@ export function PosPaymentPanel({
         </div>
       ) : null}
 
-      <div className="mt-3 space-y-2">
-        {payments.map((p) => (
-          <div key={p.id} className="flex gap-2">
-            <div className="min-w-0 flex-1">
-              <POSSelect
-                value={p.paymentMethodId}
-                onChange={(e) => setMethod(p.id, e.target.value)}
-                options={methods.map((m) => ({ value: m.id, label: m.name }))}
-                aria-label="Payment method"
+      {advanced ? (
+        <div className="mt-3 space-y-2">
+          {payments.map((p) => (
+            <div key={p.id} className="flex gap-2">
+              <div className="min-w-0 flex-1">
+                <POSSelect
+                  value={p.paymentMethodId}
+                  onChange={(e) => setMethod(p.id, e.target.value)}
+                  options={methods.map((m) => ({
+                    value: m.id,
+                    label: paymentMethodLabel(m),
+                  }))}
+                  aria-label="Payment method"
+                />
+              </div>
+              <POSInput
+                className="w-28"
+                type="number"
+                value={p.amount}
+                onChange={(e) => setAmount(p.id, e.target.value)}
+                aria-label="Amount"
               />
+              {payments.length > 1 ? (
+                <POSButton size="sm" variant="ghost" onClick={() => removeSplit(p.id)} aria-label="Remove payment">
+                  ✕
+                </POSButton>
+              ) : null}
             </div>
-            <POSInput
-              className="w-28"
-              type="number"
-              value={p.amount}
-              onChange={(e) => setAmount(p.id, e.target.value)}
-              aria-label="Amount"
-            />
-            {payments.length > 1 ? (
-              <POSButton size="sm" variant="ghost" onClick={() => removeSplit(p.id)} aria-label="Remove payment">
-                ✕
-              </POSButton>
-            ) : null}
-          </div>
-        ))}
-        {advanced ? (
-          <POSButton size="sm" variant="ghost" onClick={addSplit}>
+          ))}
+          <POSButton size="sm" variant="ghost" onClick={addSplit} disabled={!methods.length}>
             + Split payment
           </POSButton>
-        ) : null}
-      </div>
+        </div>
+      ) : null}
 
-      <div className="mt-3 grid grid-cols-2 gap-2 text-sm">
-        <div className="rounded-[var(--pos-radius-sm)] bg-[var(--pos-muted-bg)] px-2 py-2">
-          <div className="text-xs text-[var(--pos-muted)]">Paid</div>
-          <div className="font-semibold tabular-nums">{prep.paidTowardBill.toFixed(2)}</div>
-        </div>
-        <div className="rounded-[var(--pos-radius-sm)] bg-[var(--pos-muted-bg)] px-2 py-2">
-          <div className="text-xs text-[var(--pos-muted)]">
-            {prep.change > 0 ? "Change" : "Remaining"}
-          </div>
-          <div
-            className={`font-semibold tabular-nums ${prep.remaining > 0 ? "text-[var(--pos-danger)]" : ""}`}
-          >
-            {(prep.change > 0 ? prep.change : prep.remaining).toFixed(2)}
-          </div>
-        </div>
-      </div>
+      <PaymentSummary
+        methodLabel={methodLabel}
+        settlementNote={settlementNote}
+        paid={prep.paidTowardBill}
+        due={prep.remaining}
+        change={prep.change}
+        tendered={tenderedDisplay}
+      />
 
       {prep.remaining > 0.009 && !allowCreditDue ? (
         <p className="mt-2 text-xs text-[var(--pos-danger)]">
@@ -383,8 +427,14 @@ export function PosPaymentPanel({
         <p className="mt-2 text-xs text-[var(--pos-danger)]">{prep.errors[0]}</p>
       ) : null}
 
-      {advanced && allowCreditDue ? (
+      {allowCreditDue && (creditSelected || advanced) ? (
         <div className="mt-3 space-y-2 rounded-[var(--pos-radius-sm)] border border-[var(--pos-border)] p-2">
+          {customer ? (
+            <p className="text-xs text-[var(--pos-muted)]">
+              Limit {customer.creditLimit} · outstanding {customer.outstanding}
+              {credit?.reason ? ` · ${credit.reason}` : ""}
+            </p>
+          ) : null}
           <label className="flex items-center gap-2 text-sm">
             <input
               type="checkbox"
@@ -398,6 +448,8 @@ export function PosPaymentPanel({
               type="checkbox"
               checked={useInstallment}
               onChange={(e) => onUseInstallment(e.target.checked)}
+              disabled={!canInstallment}
+              title={canInstallment ? "Create installment plan" : "Requires installments.manage"}
             />
             Create installment plan
           </label>
@@ -440,7 +492,7 @@ export function PosPaymentPanel({
               />
               {installmentPreview ? (
                 <div className="col-span-2 text-xs text-[var(--pos-muted)]">
-                  Monthly/period amount {installmentPreview.monthlyAmount} · first due{" "}
+                  Period amount {installmentPreview.monthlyAmount} · first due{" "}
                   {installmentPreview.schedule[0]?.dueDate ?? "—"} · remaining{" "}
                   {installmentPreview.remainingAmount}
                 </div>
@@ -456,28 +508,56 @@ export function PosPaymentPanel({
         </div>
       ) : null}
 
-      <div className="mt-4 grid grid-cols-3 gap-2">
-        <POSButton variant="ghost" onClick={onHold} disabled={busy || !canPay} title="F2 Hold">
-          Hold
-        </POSButton>
+      <div className="mt-4 grid grid-cols-2 gap-2">
+        <HoldSaleButton
+          onClick={onHold}
+          disabled={busy || !canPay || !canHold}
+          title={canHold ? "F2 Hold" : "Requires pos.hold"}
+        />
+        <QuotationButton
+          onClick={onQuotation}
+          disabled={busy || quoting || !canQuote}
+          loading={quoting}
+          title={quoteReason ?? "Save this cart as a quotation"}
+        />
         {confirmation === "failure" && onRetry ? (
-          <POSButton variant="secondary" onClick={onRetry} disabled={busy}>
-            Retry
+          <POSButton variant="secondary" className="col-span-2" onClick={onRetry} disabled={busy}>
+            Retry payment
           </POSButton>
-        ) : (
-          <POSButton variant="ghost" onClick={onCancel} disabled={busy} title="F8 Cancel">
-            Cancel
-          </POSButton>
-        )}
-        <POSButton
-          variant="success"
-          onClick={onPay}
-          disabled={payBlocked || !prep.ok}
+        ) : null}
+        <PayNowButton
+          className="col-span-2"
+          onClick={requestPay}
+          onDoubleClick={(event) => event.preventDefault()}
+          disabled={payBlocked || !prep.ok || !methods.length}
           loading={busy || confirmation === "pending"}
+          title={payTitle}
         >
-          {prep.remaining > 0.009 && allowCreditDue ? "Complete" : "Pay"}
-        </POSButton>
+          {prep.remaining > 0.009 && allowCreditDue ? "PAY NOW (credit remaining)" : "PAY NOW"}
+        </PayNowButton>
       </div>
-    </POSCard>
+
+      <PaymentConfirmModal
+        open={confirmOpen}
+        onClose={() => setConfirmOpen(false)}
+        onConfirm={confirmPay}
+        loading={busy || confirmation === "pending"}
+        disabled={payBlocked || !prep.ok}
+        confirmTitle={payTitle}
+        customerLabel={customerLabel}
+        invoiceReference={invoiceReference?.trim() || "Assigned on post"}
+        summary={summary}
+        methodLabel={methodLabel}
+        settlementNote={settlementNote}
+        tendered={cashSelected ? cashReceived || String(summary.grand) : String(prep.amountReceived || 0)}
+        onTenderedChange={cashSelected ? onCashReceived : undefined}
+        showTendered={cashSelected}
+        paid={prep.paidTowardBill}
+        due={prep.remaining}
+        change={prep.change}
+        customer={!walkIn ? customer : null}
+        credit={credit}
+      />
+    </section>
   );
-}
+});

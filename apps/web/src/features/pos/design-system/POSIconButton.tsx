@@ -33,7 +33,7 @@ export function POSIconButton({
       disabled={disabled || loading}
       aria-busy={loading || undefined}
       className={posCn(
-        "inline-flex h-8 w-8 items-center justify-center rounded-[var(--pos-radius-sm)] text-sm transition",
+        "inline-flex h-8 w-8 items-center justify-center rounded-[var(--pos-radius-sm)] text-sm",
         "focus-visible:outline-none focus-visible:shadow-[var(--pos-focus)] disabled:cursor-not-allowed disabled:opacity-50",
         tones[tone],
         className,

@@ -6,13 +6,14 @@ import {
   canShowNavItem,
   ERP_NAV_SECTIONS,
   isCommandPaletteChild,
-  isPosTerminalPath,
+  isPosEnvironmentPath,
   isSystemAdminPath,
   requiredPermissionForPath,
   resolveShellHeader,
 } from "@/app/modules";
 import { SidebarNav } from "@/app/shell/SidebarNav";
 import { UnauthorizedPage } from "@/features/modules/RouteFallbackPage";
+import { POSShell } from "@/features/pos/design-system/POSShell";
 
 function useViewportMode() {
   const [mode, setMode] = useState<"mobile" | "tablet" | "desktop">("desktop");
@@ -51,9 +52,9 @@ export function AppShell() {
 
   const overlayNav = mode === "mobile";
   const compact = collapsed && !mobileOpen;
-  const isPosTerminal = isPosTerminalPath(location.pathname);
+  const isPosEnvironment = isPosEnvironmentPath(location.pathname);
   const isSystemAdmin = isSystemAdminPath(location.pathname);
-  const fillWorkspace = isPosTerminal || isSystemAdmin;
+  const fillWorkspace = isPosEnvironment || isSystemAdmin;
   const required = requiredPermissionForPath(location.pathname);
   const forbidden =
     Boolean(required) && grantedCount > 0 && !canShowNavItem(required, grantedCount, hasPermission);
@@ -127,6 +128,16 @@ export function AppShell() {
   const palette = (
     <CommandPalette open={commandOpen} items={commandItems} onClose={() => setCommandOpen(false)} />
   );
+
+  // One canonical POS environment. Aliases keep their URLs but render through POSShell.
+  if (isPosEnvironment) {
+    return (
+      <div className="flex h-screen max-w-full flex-col overflow-hidden bg-[var(--erp-bg)]">
+        <POSShell>{forbidden ? <UnauthorizedPage /> : <Outlet />}</POSShell>
+        {palette}
+      </div>
+    );
+  }
 
   return (
     <div
@@ -226,14 +237,6 @@ export function AppShell() {
               {header.pageTitle ?? "Workspace"}
             </div>
           </div>
-          {isPosTerminal ? (
-            <Link
-              to="/"
-              className="inline-flex h-11 items-center rounded-lg border border-[var(--erp-border)] bg-white px-3 text-sm font-medium text-[var(--erp-brand)] hover:bg-[var(--erp-brand-soft)] md:h-9"
-            >
-              ERP Home
-            </Link>
-          ) : null}
           <button
             type="button"
             className="hidden h-9 min-w-[180px] items-center justify-between rounded-lg border border-[var(--erp-border)] bg-[var(--erp-bg)] px-3 text-left text-sm text-[var(--erp-muted)] hover:border-[var(--erp-brand)] md:flex"
@@ -247,20 +250,18 @@ export function AppShell() {
           <Button className="min-h-11 md:hidden" variant="secondary" size="sm" onClick={() => setCommandOpen(true)}>
             Search
           </Button>
-          {isPosTerminal ? null : (
-            <div className="min-w-0 max-w-full sm:w-[9.5rem]">
-              <Select
-                aria-label="Branch"
-                value={branchId ?? ""}
-                onChange={(e) => setBranchId(e.target.value)}
-                options={
-                  branches.length
-                    ? branches.map((id) => ({ value: id, label: `Branch ${id.slice(0, 8)}` }))
-                    : [{ value: "", label: "No branches" }]
-                }
-              />
-            </div>
-          )}
+          <div className="min-w-0 max-w-full sm:w-[9.5rem]">
+            <Select
+              aria-label="Branch"
+              value={branchId ?? ""}
+              onChange={(e) => setBranchId(e.target.value)}
+              options={
+                branches.length
+                  ? branches.map((id) => ({ value: id, label: `Branch ${id.slice(0, 8)}` }))
+                  : [{ value: "", label: "No branches" }]
+              }
+            />
+          </div>
           <Link
             to="/notifications"
             className="inline-flex h-11 items-center rounded-lg border border-[var(--erp-border)] bg-white px-3 text-sm text-[var(--erp-ink)] hover:bg-[var(--erp-bg)] md:h-9"

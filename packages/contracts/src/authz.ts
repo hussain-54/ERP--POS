@@ -50,6 +50,7 @@ export const FOUNDATION_PERMISSIONS = [
   "ledgers.view",
   "pos.sell",
   "pos.hold",
+  "pos.resume_any",
   "pos.return",
   "pos.discount_cashier",
   "pos.discount_supervisor",

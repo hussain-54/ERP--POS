@@ -20,7 +20,7 @@ export function POSEmptyState({
   return (
     <div
       className={posCn(
-        "flex flex-col items-center justify-center gap-2 px-6 py-10 text-center",
+        "flex flex-col items-center justify-center gap-2 px-4 py-6 text-center",
         className,
       )}
       role="status"

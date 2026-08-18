@@ -1,13 +1,13 @@
-import { useCallback, useEffect, useRef, useState } from "react";
-import { useLocation } from "react-router-dom";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useLocation, useNavigate } from "react-router-dom";
 import type { ProductSearchResult } from "@electronic-erp/contracts";
 import {
-  applyDiscount,
   approverRoleFromPermissions,
   buildHoldSnapshot,
   cartLinesForResume,
   evaluateDiscountApproval,
   evaluatePosCustomerCredit,
+  pickExactProductMatch,
   preparePosPayments,
   PaymentAttemptGate,
   validatePosCheckout,
@@ -18,47 +18,79 @@ import type { HeldSaleFilter } from "@electronic-erp/contracts";
 import { useToast } from "@electronic-erp/ui";
 import { useAuth } from "@/features/auth/AuthContext";
 import { posApi } from "./pos-api";
+import { adminApi } from "@/features/users/admin-api";
+import {
+  buildDiscountApprovalCreateBody,
+  discountRequestTitle,
+  evaluateDiscountAgainstPolicy,
+  formatDiscountCap,
+  parseDiscountValueInput,
+  type PendingDiscountRequest,
+} from "./discounts-workspace";
 import { inventoryApi } from "@/features/inventory/inventory-api";
 import { enterpriseApi } from "@/features/system/enterprise-api";
 import { purchasesApi } from "@/features/purchases/purchases-api";
 import { mapSalesmanEmployees, type SalesmanOption } from "@/features/salesman/SalesmanPage";
-import { posHardware } from "./hardware";
+import { cameraScanner, posHardware } from "./hardware";
 import { aiApi } from "@/features/ai-camera/ai-api";
 import "./pos-tokens.css";
-import { PosSidebar } from "./components/PosSidebar";
-import { PosHeader } from "./components/PosHeader";
+import { PosSaleLayout } from "./components/PosSaleLayout";
+import { usePosLayoutMode } from "./usePosLayoutMode";
+import type { PosMobileSheet } from "./pos-layout";
 import { PosProductPanel } from "./components/PosProductPanel";
-import { PosCustomerPanel } from "./components/PosCustomerPanel";
-import { PosCartPanel } from "./components/PosCartPanel";
+import { PosCustomerPanel, type PosCustomerFormInput } from "./components/PosCustomerPanel";
+import { PosCart } from "./components/PosCart";
 import { PosPaymentPanel } from "./components/PosPaymentPanel";
 import { PosApprovalDialog } from "./components/PosApprovalDialog";
 import { ReceiptPreview, type InvoicePreview } from "./components/ReceiptPreview";
 import { PosHoldsPanel, type HeldSaleListItem } from "./components/PosHoldsPanel";
 import { catalogApi } from "@/features/product-management/catalog-api";
+import { afterSalesApi } from "@/features/quotations/after-sales-api";
 import { usePosSession } from "./session/usePosSession";
 import { posCustomerRepository } from "./session/pos-customer-repository";
 import { partiesApi } from "@/features/customers/parties-api";
+import { cartToQuotationItems } from "./pos-quotation";
+import {
+  appendUniqueProducts,
+  isLatestRequest,
+  mergeProductSearches,
+  nextProductSearchLimit,
+  POS_PRODUCT_PAGE_SIZE,
+  POS_PRODUCT_SEARCH_LIMIT,
+} from "./pos-catalog-load";
+import {
+  appendCharToSearchInput,
+  focusLastCartRate,
+  isActionTarget,
+  isPosOverlayOpen,
+  isProductSearchFocusKey,
+  isReservedBrowserChord,
+  isTypingTarget,
+  parseProductSearchCommand,
+  priceOverrideWarning,
+  saleHasUnsavedWork,
+  stockAvailabilityWarning,
+} from "./pos-ux";
+import { posActionFlags } from "./pos-security";
+import { type PosHoldNavigationState } from "./held-sales";
 import type { CustomerSearchHit } from "@electronic-erp/contracts";
 import {
-  POSActionBar,
   POSBadge,
-  POSButton,
-  POSCard,
+  POSConfirmDialog,
   POSDrawer,
-  POSInput,
-  POSLayout,
+  POSSelect,
 } from "./design-system";
 import {
-  POS_SHORTCUTS,
+  POS_SHORTCUT_EVENT,
   uuid,
   type CartLine,
   type LocaleMode,
   type PaySplit,
   type PosMode,
+  type PosShortcutAction,
   type PriceLevel,
   type ProductTab,
 } from "./pos-types";
-import { cameraScanner } from "./hardware";
 import {
   formatOnlineFailure,
   INTERNET_REQUIRED_MESSAGE,
@@ -112,9 +144,10 @@ function saveProducts(key: string, items: ProductSearchResult[]) {
 
 export function PosPage({ entry = "sale" }: { entry?: "sale" | "holds" }) {
   const toast = useToast();
-  const { pathname } = useLocation();
+  const { pathname, state: locationState } = useLocation();
+  const navigate = useNavigate();
   const holdEntry = entry === "holds" || pathname === "/held-sales";
-  const { branchId, branches, setBranchId, hasPermission, organizationId } = useAuth();
+  const { branchId, hasPermission, organizationId } = useAuth();
   const session = usePosSession();
   const {
     cart,
@@ -147,6 +180,8 @@ export function PosPage({ entry = "sale" }: { entry?: "sale" | "holds" }) {
     replaceCart,
     setWalkIn,
     lastCartError,
+    setAllowManualOverride,
+    recalculate,
   } = session;
 
   const [online, setOnline] = useState(
@@ -163,12 +198,21 @@ export function PosPage({ entry = "sale" }: { entry?: "sale" | "holds" }) {
   const [favoriteIds, setFavoriteIds] = useState(() => new Set(loadIds(FAVORITES_KEY)));
   const [categories, setCategories] = useState<Array<{ id: string; name: string }>>([]);
   const [selectedCategoryId, setSelectedCategoryId] = useState<string | null>(null);
+  const [searchLimit, setSearchLimit] = useState(POS_PRODUCT_SEARCH_LIMIT);
+  const [categoryPage, setCategoryPage] = useState(1);
+  const [catalogHasMore, setCatalogHasMore] = useState(false);
   const [warehouseId, setWarehouseId] = useState("");
+  const [warehouses, setWarehouses] = useState<Array<{ id: string; name: string }>>([]);
+  const [quoting, setQuoting] = useState(false);
+  const [confirmAction, setConfirmAction] = useState<
+    { kind: "clear-cart" } | { kind: "cancel-sale" } | { kind: "remove-line"; key: string } | null
+  >(null);
   const [customerQuery, setCustomerQuery] = useState("");
   const [customerHits, setCustomerHits] = useState<CustomerSearchHit[]>([]);
-  const [pendingInvoiceDiscount, setPendingInvoiceDiscount] = useState<string | null>(null);
+  const [pendingDiscount, setPendingDiscount] = useState<PendingDiscountRequest | null>(null);
   const [approvalReason, setApprovalReason] = useState("");
   const [approvalOpen, setApprovalOpen] = useState(false);
+  const [approvalBusy, setApprovalBusy] = useState(false);
   const [payments, setPayments] = useState<PaySplit[]>([]);
   const [salesmanUserId, setSalesmanUserId] = useState("");
   const [salesmen, setSalesmen] = useState<SalesmanOption[]>([]);
@@ -189,7 +233,6 @@ export function PosPage({ entry = "sale" }: { entry?: "sale" | "holds" }) {
   const [paymentConfirmation, setPaymentConfirmation] =
     useState<PosPaymentConfirmationStatus | null>(null);
   const [paymentConfirmationError, setPaymentConfirmationError] = useState<string | null>(null);
-  const [shift, setShift] = useState<Record<string, unknown> | null>(null);
   const [notes, setNotes] = useState("");
   const [methods, setMethods] = useState<Array<{ id: string; name: string; code?: string; kind?: string }>>([]);
   const [holds, setHolds] = useState<HeldSaleListItem[]>([]);
@@ -202,22 +245,64 @@ export function PosPage({ entry = "sale" }: { entry?: "sale" | "holds" }) {
   const [receiptFormat, setReceiptFormat] = useState<"80mm" | "58mm" | "a4">("80mm");
   const [showHolds, setShowHolds] = useState(holdEntry);
   const [creatingCustomer, setCreatingCustomer] = useState(false);
+  const layoutMode = usePosLayoutMode();
+  const [mobileSheet, setMobileSheet] = useState<PosMobileSheet>(null);
 
   const searchRef = useRef<HTMLInputElement>(null);
+  const payingRef = useRef(false);
+  const scanLockRef = useRef(false);
+  const addProductRef = useRef<(p: ProductSearchResult, qty?: string) => boolean>(() => false);
+  const productSearchSeq = useRef(0);
+  const customerSearchSeq = useRef(0);
+  const productHandlersRef = useRef({
+    commit: (_raw: string, _highlighted: ProductSearchResult | null) => undefined as void,
+    camera: () => undefined as void,
+    qr: () => undefined as void,
+    barcode: () => undefined as void,
+    manual: () => undefined as void,
+  });
+  const pageOpsRef = useRef({
+    cartPrice: (_key: string, _unitPrice: number) => undefined as void,
+    cartDiscount: (_key: string, _raw: string) => undefined as void,
+    cartRemove: (_key: string) => undefined as void,
+    cartClear: () => undefined as void,
+    hold: () => undefined as void,
+    pay: () => undefined as void,
+    quotation: () => undefined as void,
+    retryPay: () => undefined as void,
+    selectCustomer: (_id: string) => undefined as void,
+    walkIn: () => undefined as void,
+    salesman: (_id: string) => undefined as void,
+    loadHistory: (_id: string) =>
+      Promise.resolve(
+        [] as Array<{
+          id: string;
+          entryType: string;
+          amount: string;
+          occurredAt: string;
+          description?: string | null;
+        }>,
+      ),
+    createCustomer: async (_input: PosCustomerFormInput) => undefined as void,
+    updateCustomer: async (_id: string, _input: PosCustomerFormInput) => undefined as void,
+    shortcut: (_e: KeyboardEvent) => undefined as void,
+    functionShortcut: (_action: PosShortcutAction) => undefined as void,
+  });
+  const warehouseIdRef = useRef(warehouseId);
+  const customerIdRef = useRef(customerId);
+  const walkInRef = useRef(walkIn);
+  warehouseIdRef.current = warehouseId;
+  customerIdRef.current = customerId;
+  walkInRef.current = walkIn;
   const customerRef = useRef<HTMLInputElement>(null);
   const discountRef = useRef<HTMLInputElement>(null);
   const paymentGateRef = useRef(new PaymentAttemptGate());
 
-  const canDiscount =
-    hasPermission("pos.discount_cashier") ||
-    hasPermission("pos.discount_supervisor") ||
-    hasPermission("pos.discount_manager") ||
-    hasPermission("pos.discount_owner") ||
-    hasPermission("pos.discount_special");
-  const canPriceOverride =
-    hasPermission("pos.discount_manager") ||
-    hasPermission("pos.discount_owner") ||
-    hasPermission("pos.discount_special");
+  const posFlags = posActionFlags(hasPermission);
+  const canDiscount = posFlags.canDiscount;
+  const canPriceOverride = posFlags.canPriceOverride;
+  const canHold = posFlags.canHold;
+  const canInstallment = posFlags.canInstallment;
   const actingDiscountRole = approverRoleFromPermissions({
     special: hasPermission("pos.discount_special"),
     owner: hasPermission("pos.discount_owner"),
@@ -264,7 +349,12 @@ export function PosPage({ entry = "sale" }: { entry?: "sale" | "holds" }) {
       }
     });
     void inventoryApi.listWarehouses().then((r) => {
-      if (r.items[0]) setWarehouseId(String(r.items[0].id));
+      const items = r.items.map((w) => ({
+        id: String(w.id),
+        name: String(w.name ?? w.code ?? "Warehouse"),
+      }));
+      setWarehouses(items);
+      if (items[0]) setWarehouseId(items[0].id);
     });
     void enterpriseApi
       .listEmployees()
@@ -310,6 +400,28 @@ export function PosPage({ entry = "sale" }: { entry?: "sale" | "holds" }) {
         }
       })
       .catch(() => undefined);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  useEffect(() => {
+    if (!branchId || !showHolds) return;
+    void refreshHolds();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [branchId, holdsFilter, showHolds]);
+
+  async function refreshHolds() {
+    if (!branchId) return;
+    try {
+      // listHeldSales already applies expiry — do not call /holds/expire separately.
+      const res = await posApi.listHolds(branchId, holdsFilter);
+      setHolds(res.items as HeldSaleListItem[]);
+    } catch {
+      /* ignore */
+    }
+  }
+
+  useEffect(() => {
+    if (tab !== "categories" || categories.length) return;
     void catalogApi
       .listTaxonomy("categories")
       .then((r) => {
@@ -322,119 +434,65 @@ export function PosPage({ entry = "sale" }: { entry?: "sale" | "holds" }) {
         );
       })
       .catch(() => undefined);
-    return posHardware.subscribeScanner((event) => {
-      setQ(event.code);
-      setTab("results");
-      void posApi
-        .searchProducts({
-          q: event.code,
-          warehouseId: warehouseId || undefined,
-          customerId: walkIn ? undefined : customerId || undefined,
-        })
-        .then((res) => {
-          setResults(res.items);
-          if (res.items[0]) addProduct(res.items[0]);
-        });
-    });
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [tab, categories.length]);
 
   useEffect(() => {
-    if (!branchId) return;
-    void refreshHolds();
-    void posApi
-      .currentShift(branchId)
-      .then((res) => setShift(res.item))
-      .catch(() => setShift(null));
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [branchId, holdsFilter]);
-
-  async function refreshHolds() {
-    if (!branchId) return;
-    try {
-      await posApi.expireHolds(branchId).catch(() => undefined);
-      const res = await posApi.listHolds(branchId, holdsFilter);
-      setHolds(res.items as HeldSaleListItem[]);
-    } catch {
-      /* ignore */
-    }
-  }
-
-  const toggleShift = useCallback(() => {
-    void (async () => {
-      if (!branchId) return;
-      if (!shift) {
-        try {
-          const opened = await posApi.openShift({ branchId, openingFloat: 0 });
-          setShift(opened as Record<string, unknown>);
-          toast.push({ title: "Shift opened", tone: "success" });
-        } catch (err) {
-          toast.push({
-            title: "Open shift failed",
-            description: err instanceof Error ? err.message : "Apply migration pos_cash_shifts",
-            tone: "danger",
-          });
-        }
-        return;
-      }
-      try {
-        const counted = Number(shift.expected_cash ?? shift.opening_float ?? 0);
-        await posApi.closeShift(String(shift.id), { closingCounted: counted });
-        setShift(null);
-        toast.push({ title: "Shift closed", tone: "success" });
-      } catch (err) {
-        toast.push({
-          title: "Close shift failed",
-          description: err instanceof Error ? err.message : "Error",
-          tone: "danger",
-        });
-      }
-    })();
-  }, [branchId, shift, toast]);
-
-  useEffect(() => {
-    if (tab !== "categories") return;
+    if (tab !== "categories" || q.trim()) return;
+    let cancelled = false;
     void (async () => {
       setSearching(true);
       try {
         if (selectedCategoryId) {
-          const res = await catalogApi.listProducts({ categoryId: selectedCategoryId, pageSize: 40 });
-          // Map catalog products into search-shaped cards via POS search by name
-          const names = res.items.slice(0, 20).map((p) => p.name);
-          const found: ProductSearchResult[] = [];
-          for (const name of names.slice(0, 8)) {
-            const hit = await posApi.searchProducts({
-              q: name,
-              warehouseId: warehouseId || undefined,
-              customerId: walkIn ? undefined : customerId || undefined,
-              limit: 5,
-            });
-            for (const item of hit.items) {
-              if (!found.some((f) => f.productId === item.productId)) found.push(item);
-            }
+          const res = await catalogApi.listProducts({
+            categoryId: selectedCategoryId,
+            page: categoryPage,
+            pageSize: POS_PRODUCT_PAGE_SIZE,
+          });
+          if (cancelled) return;
+          setCatalogHasMore(categoryPage * POS_PRODUCT_PAGE_SIZE < res.total);
+          const names = res.items.map((p) => p.name);
+          const found = await mergeProductSearches(
+            names,
+            async (name) => {
+              const hit = await posApi.searchProducts({
+                q: name,
+                warehouseId: warehouseId || undefined,
+                customerId: walkIn ? undefined : customerId || undefined,
+                limit: 5,
+              });
+              return hit.items;
+            },
+            POS_PRODUCT_PAGE_SIZE,
+          );
+          if (!cancelled) {
+            setResults((prev) => (categoryPage === 1 ? found : appendUniqueProducts(prev, found)));
           }
-          setResults(found);
-        } else {
+        } else if (!cancelled) {
+          setCatalogHasMore(false);
           setResults(recent);
         }
       } catch {
         /* ignore */
       } finally {
-        setSearching(false);
+        if (!cancelled) setSearching(false);
       }
     })();
+    return () => {
+      cancelled = true;
+    };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [tab, selectedCategoryId, warehouseId]);
+  }, [tab, selectedCategoryId, categoryPage, warehouseId, customerId, walkIn, q]);
 
   useEffect(() => {
     if (!q.trim()) {
-      setResults([]);
+      if (tab !== "categories") setResults([]);
       return;
     }
     if (!online) {
       setResults([]);
       return;
     }
+    const started = ++productSearchSeq.current;
     const handle = window.setTimeout(() => {
       void (async () => {
         setSearching(true);
@@ -443,10 +501,12 @@ export function PosPage({ entry = "sale" }: { entry?: "sale" | "holds" }) {
             q,
             warehouseId: warehouseId || undefined,
             customerId: walkIn ? undefined : customerId || undefined,
+            limit: searchLimit,
           });
+          if (!isLatestRequest(productSearchSeq.current, started)) return;
           setResults(res.items);
-          setTab("results");
         } catch (err) {
+          if (!isLatestRequest(productSearchSeq.current, started)) return;
           const failed = formatOnlineFailure(err, "generic");
           toast.push({
             title: failed.title,
@@ -454,12 +514,12 @@ export function PosPage({ entry = "sale" }: { entry?: "sale" | "holds" }) {
             tone: "danger",
           });
         } finally {
-          setSearching(false);
+          if (isLatestRequest(productSearchSeq.current, started)) setSearching(false);
         }
       })();
-    }, 220);
+    }, 50);
     return () => window.clearTimeout(handle);
-  }, [q, warehouseId, customerId, toast, online]);
+  }, [q, warehouseId, customerId, walkIn, toast, online, tab, searchLimit]);
 
   useEffect(() => {
     if (walkIn || !customerQuery.trim() || !hasPermission("customers.read")) {
@@ -467,6 +527,7 @@ export function PosPage({ entry = "sale" }: { entry?: "sale" | "holds" }) {
       return;
     }
     const orgId = organizationId ?? "";
+    const started = ++customerSearchSeq.current;
     const handle = window.setTimeout(() => {
       if (!online) {
         setCustomerHits([]);
@@ -478,9 +539,13 @@ export function PosPage({ entry = "sale" }: { entry?: "sale" | "holds" }) {
           organizationId: orgId,
           canRead: hasPermission("customers.read"),
         })
-        .then(setCustomerHits)
-        .catch(() => setCustomerHits([]));
-    }, 250);
+        .then((hits) => {
+          if (isLatestRequest(customerSearchSeq.current, started)) setCustomerHits(hits);
+        })
+        .catch(() => {
+          if (isLatestRequest(customerSearchSeq.current, started)) setCustomerHits([]);
+        });
+    }, 80);
     return () => window.clearTimeout(handle);
   }, [customerQuery, walkIn, online, organizationId, hasPermission]);
 
@@ -493,7 +558,7 @@ export function PosPage({ entry = "sale" }: { entry?: "sale" | "holds" }) {
     });
   }, []);
 
-  function toggleFavorite(p: ProductSearchResult) {
+  const toggleFavorite = useCallback((p: ProductSearchResult) => {
     setFavorites((prev) => {
       const exists = prev.some((x) => x.productId === p.productId);
       const next = exists
@@ -504,19 +569,156 @@ export function PosPage({ entry = "sale" }: { entry?: "sale" | "holds" }) {
       setFavoriteIds(new Set(next.map((x) => x.productId)));
       return next;
     });
-  }
+  }, []);
 
-  function addProduct(p: ProductSearchResult) {
-    const result = sessionAddProduct(p);
+  const addProduct = useCallback((p: ProductSearchResult, qty?: string) => {
+    const result = sessionAddProduct(p, undefined, qty);
     if (!result.ok) {
       toast.push({
         title: "Cannot add product",
         description: result.error ?? "Check stock or quantity",
         tone: "danger",
       });
-      return;
+      return false;
     }
     rememberRecent(p);
+    const warn = stockAvailabilityWarning(p.stockAvailable, qty ?? "1");
+    if (warn) {
+      toast.push({ title: warn, tone: "info" });
+    }
+    setQ("");
+    queueMicrotask(() => searchRef.current?.focus());
+    return true;
+  }, [sessionAddProduct, rememberRecent, toast]);
+  addProductRef.current = addProduct;
+
+  const selectCategory = useCallback((id: string | null) => {
+    setSelectedCategoryId(id);
+    setCategoryPage(1);
+    setTab("categories");
+  }, []);
+  const setProductQuery = useCallback((next: string) => {
+    setSearchLimit(POS_PRODUCT_SEARCH_LIMIT);
+    setQ(next);
+  }, []);
+  const onLoadMoreProducts = useCallback(() => {
+    if (q.trim()) {
+      setSearchLimit((current) => nextProductSearchLimit(current));
+      return;
+    }
+    if (tab === "categories" && selectedCategoryId) {
+      setCategoryPage((page) => page + 1);
+    }
+  }, [q, tab, selectedCategoryId]);
+  const onCommitSearch = useCallback((raw: string, highlighted: ProductSearchResult | null) => {
+    productHandlersRef.current.commit(raw, highlighted);
+  }, []);
+  const onCamera = useCallback(() => {
+    productHandlersRef.current.camera();
+  }, []);
+  const onQrScan = useCallback(() => {
+    productHandlersRef.current.qr();
+  }, []);
+  const onBarcodeScanHint = useCallback(() => {
+    productHandlersRef.current.barcode();
+  }, []);
+  const onManualEntry = useCallback(() => {
+    productHandlersRef.current.manual();
+  }, []);
+  const onCartPrice = useCallback((key: string, unitPrice: number) => {
+    pageOpsRef.current.cartPrice(key, unitPrice);
+  }, []);
+  const onCartDiscount = useCallback((key: string, raw: string) => {
+    pageOpsRef.current.cartDiscount(key, raw);
+  }, []);
+  const onCartRemove = useCallback((key: string) => {
+    pageOpsRef.current.cartRemove(key);
+  }, []);
+  const onCartClear = useCallback(() => {
+    pageOpsRef.current.cartClear();
+  }, []);
+  const onHoldSale = useCallback(() => {
+    pageOpsRef.current.hold();
+  }, []);
+  const onPaySale = useCallback(() => {
+    pageOpsRef.current.pay();
+  }, []);
+  const onQuotation = useCallback(() => {
+    pageOpsRef.current.quotation();
+  }, []);
+  const onRetryPayment = useCallback(() => {
+    pageOpsRef.current.retryPay();
+  }, []);
+  const onSelectCustomer = useCallback((id: string) => {
+    pageOpsRef.current.selectCustomer(id);
+  }, []);
+  const onCustomerWalkIn = useCallback(() => {
+    pageOpsRef.current.walkIn();
+  }, []);
+  const onSalesmanChange = useCallback((id: string) => {
+    pageOpsRef.current.salesman(id);
+  }, []);
+  const onLoadCustomerHistory = useCallback((id: string) => pageOpsRef.current.loadHistory(id), []);
+  const onCreateCustomer = useCallback(
+    (input: PosCustomerFormInput) => pageOpsRef.current.createCustomer(input),
+    [],
+  );
+  const onUpdateCustomer = useCallback(
+    (id: string, input: PosCustomerFormInput) => pageOpsRef.current.updateCustomer(id, input),
+    [],
+  );
+
+  async function commitProductSearch(raw: string, highlighted: ProductSearchResult | null) {
+    if (scanLockRef.current) return;
+    const cmd = parseProductSearchCommand(raw);
+    if (cmd.kind === "qty-last") {
+      const last = cart[cart.length - 1];
+      if (!last) {
+        toast.push({ title: "Cart is empty", description: "Add a product before *qty", tone: "info" });
+        return;
+      }
+      setQty(last.key, cmd.qty);
+      setQ("");
+      searchRef.current?.focus();
+      return;
+    }
+    const needle = cmd.query;
+    if (!needle) return;
+    const exact = pickExactProductMatch(results, needle);
+    if (exact) {
+      addProduct(exact, cmd.qty ?? undefined);
+      return;
+    }
+    if (highlighted && results.some((item) => item.productId === highlighted.productId)) {
+      addProduct(highlighted, cmd.qty ?? undefined);
+      return;
+    }
+    if (!online) {
+      toast.push({ title: "Search unavailable while offline", tone: "danger" });
+      return;
+    }
+    setSearching(true);
+    try {
+      const res = await posApi.searchProducts({
+        q: needle,
+        warehouseId: warehouseId || undefined,
+        customerId: walkIn ? undefined : customerId || undefined,
+      });
+      setResults(res.items);
+      const match =
+        pickExactProductMatch(res.items, needle) ??
+        (res.items.length === 1 ? res.items[0] : null);
+      if (!match) {
+        toast.push({ title: "No catalog match", description: needle, tone: "info" });
+        return;
+      }
+      addProduct(match, cmd.qty ?? undefined);
+    } catch (err) {
+      const failed = formatOnlineFailure(err, "generic");
+      toast.push({ title: failed.title, description: failed.description, tone: "danger" });
+    } finally {
+      setSearching(false);
+    }
   }
 
   function addManualQuick() {
@@ -572,31 +774,229 @@ export function PosPage({ entry = "sale" }: { entry?: "sale" | "holds" }) {
     setCommissionPercent(0);
   }
 
+  function requestClearCart() {
+    if (!cart.length) return;
+    setConfirmAction({ kind: "clear-cart" });
+  }
+
+  function requestCancelSale() {
+    if (!cart.length) {
+      clearSale();
+      return;
+    }
+    setConfirmAction({ kind: "cancel-sale" });
+  }
+
+  function requestPriceOverride() {
+    if (canPriceOverride) {
+      toast.push({
+        title: "Price override enabled",
+        description: "Edit line rate directly in the cart.",
+        tone: "info",
+      });
+      queueMicrotask(() => focusLastCartRate());
+      return;
+    }
+    setPendingDiscount({ kind: "price" });
+    setApprovalReason("Price override requested");
+    setApprovalOpen(true);
+  }
+
+  function recalculateTotals() {
+    recalculate();
+    requestInvoiceDiscount(invoiceDiscount);
+    setPayments((prev) => [...prev]);
+    toast.push({ title: "Totals recalculated", tone: "info" });
+  }
+
+  async function createQuotationFromCart() {
+    if (!requireOnlineForPos(online, toast.push)) return;
+    if (!hasPermission("quotations.write")) {
+      toast.push({
+        title: "Cannot create quotation",
+        description: "Requires quotations.write permission",
+        tone: "danger",
+      });
+      return;
+    }
+    if (!branchId) {
+      toast.push({ title: "No branch selected", tone: "danger" });
+      return;
+    }
+    const mapped = cartToQuotationItems(cart);
+    if (!mapped.ok) {
+      toast.push({ title: "Cannot create quotation", description: mapped.error, tone: "danger" });
+      return;
+    }
+    setQuoting(true);
+    try {
+      await afterSalesApi.createQuotation({
+        branchId,
+        customerId: walkIn ? undefined : customerId || undefined,
+        items: mapped.items,
+        discountTotal: Number(invoiceDiscount || 0),
+        notes: notes || undefined,
+        idempotencyKey: uuid(),
+      });
+      toast.push({ title: "Quotation created", tone: "success" });
+    } catch (err) {
+      toast.push({
+        title: "Quotation failed",
+        description: err instanceof Error ? err.message : "Could not create quotation",
+        tone: "danger",
+      });
+    } finally {
+      setQuoting(false);
+    }
+  }
+
+  function applyConfirmAction() {
+    if (!confirmAction) return;
+    if (confirmAction.kind === "clear-cart") clearCart();
+    else if (confirmAction.kind === "cancel-sale") clearSale();
+    else removeLine(confirmAction.key);
+    setConfirmAction(null);
+  }
+
   function requestInvoiceDiscount(value: string) {
     const base = Math.max(0, totals.subtotal - totals.itemDiscount);
-    const trimmed = value.trim();
-    const percent = trimmed.endsWith("%");
-    const numeric = Number(percent ? trimmed.slice(0, -1) : trimmed);
-    const applied = applyDiscount({
-      base,
-      mode: percent ? "percentage" : "fixed",
-      value: numeric || 0,
-      kind: percent ? "percentage" : "fixed",
-    });
-    setInvoiceDiscountKind(percent ? "percentage" : "fixed");
-    setInvoiceDiscountPercent(percent ? numeric || 0 : 0);
-    const decision = evaluateDiscountApproval({
-      discountAmount: applied.amount,
-      baseAmount: base,
-      actingRole: actingDiscountRole,
-    });
-    if (decision.needsApproval && applied.amount > 0) {
-      setPendingInvoiceDiscount(String(applied.amount));
+    const parsed = parseDiscountValueInput(value);
+    let evaluated;
+    try {
+      evaluated = evaluateDiscountAgainstPolicy({
+        base,
+        mode: parsed.mode,
+        value: parsed.value,
+        actingRole: actingDiscountRole,
+      });
+    } catch (err) {
+      toast.push({
+        title: "Invalid discount",
+        description: err instanceof Error ? err.message : "Could not apply discount",
+        tone: "danger",
+      });
+      return;
+    }
+    setInvoiceDiscountKind(parsed.mode === "percentage" ? "percentage" : "fixed");
+    setInvoiceDiscountPercent(parsed.mode === "percentage" ? parsed.value || 0 : 0);
+    if (evaluated.decision.needsApproval && evaluated.applied.amount > 0) {
+      setPendingDiscount({
+        kind: "invoice",
+        raw: value,
+        mode: parsed.mode,
+        value: parsed.value,
+        amount: evaluated.applied.amount,
+        base,
+        percent: evaluated.decision.percent,
+        requiredRole: evaluated.decision.requiredRole,
+        maxAllowed: evaluated.decision.maxAllowed,
+      });
       setApprovalReason("");
       setApprovalOpen(true);
       return;
     }
-    setInvoiceDiscount(String(applied.amount));
+    setInvoiceDiscount(String(evaluated.applied.amount));
+  }
+
+  function requestLineDiscount(key: string, raw: string) {
+    const line = cart.find((item) => item.key === key);
+    if (!line) return;
+    const parsed = parseDiscountValueInput(raw);
+    const base = Math.max(0, Number(line.qty) * Number(line.unitPrice));
+    let evaluated;
+    try {
+      evaluated = evaluateDiscountAgainstPolicy({
+        base,
+        mode: parsed.mode,
+        value: parsed.value,
+        actingRole: actingDiscountRole,
+      });
+    } catch (err) {
+      toast.push({
+        title: "Invalid discount",
+        description: err instanceof Error ? err.message : "Could not apply discount",
+        tone: "danger",
+      });
+      return;
+    }
+    if (evaluated.decision.needsApproval && evaluated.applied.amount > 0) {
+      setPendingDiscount({
+        kind: "line",
+        key,
+        raw,
+        mode: parsed.mode,
+        value: parsed.value,
+        amount: evaluated.applied.amount,
+        base,
+        percent: evaluated.decision.percent,
+        requiredRole: evaluated.decision.requiredRole,
+        maxAllowed: evaluated.decision.maxAllowed,
+      });
+      setApprovalReason("");
+      setApprovalOpen(true);
+      return;
+    }
+    setLineDiscountInput(key, raw);
+  }
+
+  async function submitDiscountApproval() {
+    if (!pendingDiscount) return;
+    if (!hasPermission("approvals.act")) {
+      toast.push({
+        title: "Cannot request approval",
+        description: "Requires approvals.act. This is the real Approval Workflow, not a cashier override.",
+        tone: "danger",
+      });
+      return;
+    }
+    if (!approvalReason.trim()) return;
+    setApprovalBusy(true);
+    try {
+      const payload =
+        pendingDiscount.kind === "price"
+          ? {
+              kind: "price_override",
+              key: pendingDiscount.key,
+              unitPrice: pendingDiscount.unitPrice,
+              actingRole: actingDiscountRole,
+            }
+          : {
+              scope: pendingDiscount.kind,
+              mode: pendingDiscount.mode,
+              value: pendingDiscount.value,
+              base: pendingDiscount.base,
+              percent: pendingDiscount.percent,
+              requiredRole: pendingDiscount.requiredRole,
+              actingRole: actingDiscountRole,
+            };
+      await adminApi.createApproval(
+        buildDiscountApprovalCreateBody({
+          branchId: branchId ?? undefined,
+          title: discountRequestTitle(pendingDiscount),
+          amount: pendingDiscount.kind === "price" ? pendingDiscount.unitPrice : pendingDiscount.amount,
+          remarks: approvalReason.trim(),
+          requesterRole: actingDiscountRole,
+          payload,
+        }),
+      );
+      toast.push({
+        title: "Approval requested",
+        description:
+          "The discount was not applied. Caps stay in force until a user with the required permission applies it on New Sale.",
+        tone: "success",
+      });
+      setApprovalOpen(false);
+      setPendingDiscount(null);
+      setApprovalReason("");
+    } catch (err) {
+      toast.push({
+        title: "Request failed",
+        description: err instanceof Error ? err.message : "Could not create approval",
+        tone: "danger",
+      });
+    } finally {
+      setApprovalBusy(false);
+    }
   }
 
   async function selectCustomer(id: string) {
@@ -695,8 +1095,36 @@ export function PosPage({ entry = "sale" }: { entry?: "sale" | "holds" }) {
   }
 
   async function checkout() {
-    if (busy || paymentConfirmation === "pending") return;
-    if (!requireOnlineForPos(online, toast.push)) return;
+    if (busy || paymentConfirmation === "pending" || payingRef.current) return;
+    payingRef.current = true;
+    setBusy(true);
+    setPaymentConfirmationError(null);
+    const idempotencyKey = checkoutIdempotencyKey;
+    try {
+    if (!requireOnlineForPos(online, toast.push)) {
+      setPaymentConfirmation("failure");
+      setPaymentConfirmationError("Internet required to post a sale");
+      return;
+    }
+
+    let creditCustomer = customer;
+    if (!walkIn && customerId) {
+      try {
+        creditCustomer = await posCustomerRepository.get({
+          id: customerId,
+          organizationId: organizationId ?? "",
+          canRead: hasPermission("customers.read"),
+          canViewLoyalty: hasPermission("loyalty.view") || hasPermission("loyalty.manage"),
+        });
+        applyCustomer(creditCustomer);
+      } catch (err) {
+        const message = err instanceof Error ? err.message : "Could not refresh customer";
+        setPaymentConfirmation("failure");
+        setPaymentConfirmationError(message);
+        toast.push({ title: "Customer refresh failed", description: message, tone: "danger" });
+        return;
+      }
+    }
 
     const kindById = new Map(methods.map((m) => [m.id, m.kind ?? m.code ?? ""]));
     const prep = preparePosPayments({
@@ -741,12 +1169,12 @@ export function PosPage({ entry = "sale" }: { entry?: "sale" | "holds" }) {
       toast.push({ title: validation.errors[0] ?? "Checkout invalid", tone: "danger" });
       return;
     }
-    if (!walkIn && customer && prep.remaining > 0) {
+    if (!walkIn && creditCustomer && prep.remaining > 0) {
       const credit = evaluatePosCustomerCredit({
-        customer,
+        customer: creditCustomer,
         additionalCredit: String(prep.remaining),
       });
-      if (customer.isBlocked) {
+      if (creditCustomer.isBlocked) {
         setPaymentConfirmation("failure");
         setPaymentConfirmationError("Customer is blocked");
         toast.push({ title: "Customer is blocked", tone: "danger" });
@@ -772,7 +1200,6 @@ export function PosPage({ entry = "sale" }: { entry?: "sale" | "holds" }) {
       amountReceived: s.kind === "cash" && cashReceived ? Number(cashReceived) : undefined,
     }));
 
-    const idempotencyKey = checkoutIdempotencyKey;
     try {
       paymentGateRef.current.begin(idempotencyKey);
     } catch (err) {
@@ -782,9 +1209,6 @@ export function PosPage({ entry = "sale" }: { entry?: "sale" | "holds" }) {
     }
 
     setPaymentConfirmation("pending");
-    setPaymentConfirmationError(null);
-    setBusy(true);
-    try {
       const result = await posApi.postSale({
         branchId: branchId!,
         warehouseId,
@@ -816,7 +1240,7 @@ export function PosPage({ entry = "sale" }: { entry?: "sale" | "holds" }) {
               ]
             : [],
         createInstallment:
-          useInstallment && customerId && !walkIn
+          canInstallment && useInstallment && customerId && !walkIn
             ? {
                 downPayment: downPayment || "0",
                 installmentCount: Number(installmentCount || 1),
@@ -867,6 +1291,7 @@ export function PosPage({ entry = "sale" }: { entry?: "sale" | "holds" }) {
 
       paymentGateRef.current.succeed(idempotencyKey);
       setPaymentConfirmation("success");
+      setMobileSheet(null);
       setLastInvoice(result.invoiceNumber);
       clearSale();
       void posHardware.openDrawer({ reason: `sale ${result.invoiceNumber}` });
@@ -898,12 +1323,18 @@ export function PosPage({ entry = "sale" }: { entry?: "sale" | "holds" }) {
         tone: "danger",
       });
     } finally {
+      payingRef.current = false;
       setBusy(false);
     }
   }
 
   async function holdBill() {
+    if (!canHold) {
+      toast.push({ title: "Hold requires pos.hold", tone: "danger" });
+      return;
+    }
     if (!branchId || !warehouseId || !cart.length) return;
+    if (busy || payingRef.current) return;
     if (!requireOnlineForPos(online, toast.push)) return;
     setBusy(true);
     try {
@@ -966,6 +1397,36 @@ export function PosPage({ entry = "sale" }: { entry?: "sale" | "holds" }) {
     if (typeof snap.referenceId === "string") setReferenceId(snap.referenceId);
     if (typeof snap.delivery === "boolean") setDelivery(snap.delivery);
   }
+
+  useEffect(() => {
+    const nav = (locationState ?? null) as PosHoldNavigationState | null;
+    if (!nav) return;
+    const hasHold = Boolean(nav.resumeSnapshot || nav.openHolds);
+    const hasAssignment = Boolean(nav.salesmanUserId || nav.referenceId);
+    if (!hasHold && !hasAssignment) return;
+    if (nav.openHolds) setShowHolds(true);
+    if (nav.salesmanUserId) {
+      setSalesmanUserId(nav.salesmanUserId);
+      if (typeof nav.commissionPercent === "number") setCommissionPercent(nav.commissionPercent);
+    }
+    if (nav.referenceId) setReferenceId(nav.referenceId);
+    if (nav.resumeSnapshot) {
+      try {
+        applyHoldSnapshot(nav.resumeSnapshot);
+        if (nav.checkout) {
+          window.setTimeout(() => void checkout(), 0);
+        }
+      } catch (err) {
+        toast.push({
+          title: "Could not restore held cart",
+          description: err instanceof Error ? err.message : "Resume the hold again from Hold / Resume",
+          tone: "danger",
+        });
+      }
+    }
+    navigate(".", { replace: true, state: {} });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   async function resume(id: string, andCheckout = false) {
     if (!requireOnlineForPos(online, toast.push)) return;
@@ -1108,7 +1569,6 @@ export function PosPage({ entry = "sale" }: { entry?: "sale" | "holds" }) {
       const result = await cameraScanner.requestScan();
       if (result.ok && result.data?.code) {
         setQ(result.data.code);
-        setTab("results");
         toast.push({
           title: "QR / camera code captured",
           description: result.data.code,
@@ -1173,73 +1633,167 @@ export function PosPage({ entry = "sale" }: { entry?: "sale" | "holds" }) {
     }
   }
 
-  useEffect(() => {
-    function onKey(e: KeyboardEvent) {
-      const tag = (e.target as HTMLElement | null)?.tagName;
-      const typing = tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT";
-      // Keep browser/system defaults unless Alt is held for common conflicts.
-      if (e.key === "F1" && e.altKey) {
+  function handlePosFunctionShortcut(action: PosShortcutAction) {
+    switch (action) {
+      case "new-sale":
+        requestCancelSale();
+        searchRef.current?.focus();
+        return;
+      case "hold-resume":
+        if (showHolds) setShowHolds(false);
+        else if (cart.length > 0 && canHold) void holdBill();
+        else if (canHold) setShowHolds(true);
+        return;
+      case "customers":
+        setWalkIn(false);
+        if (layoutMode === "mobile") setMobileSheet("customer");
+        customerRef.current?.focus();
+        return;
+      case "price-override":
+        requestPriceOverride();
+        return;
+      case "discount":
+        if (layoutMode === "mobile") setMobileSheet("cart");
+        discountRef.current?.focus();
+        return;
+      case "recalculate":
+        recalculateTotals();
+        return;
+      case "clear-cart":
+        requestClearCart();
+        return;
+      case "cancel-sale":
+        requestCancelSale();
+        return;
+    }
+  }
+
+  function handlePosShortcut(e: KeyboardEvent) {
+    if (isReservedBrowserChord(e)) return;
+    const typing = isTypingTarget(e.target);
+    const overlay = isPosOverlayOpen();
+
+    if (e.key === "Escape") {
+      if (overlay || typing) return;
+      if (receipt) {
         e.preventDefault();
-        clearSale();
+        setReceipt(null);
         searchRef.current?.focus();
         return;
       }
-      if (e.key === "F2") {
+      if (showHolds) {
         e.preventDefault();
-        if (showHolds) setShowHolds(false);
-        else if (cart.length > 0) void holdBill();
-        else setShowHolds(true);
+        setShowHolds(false);
+        searchRef.current?.focus();
         return;
       }
-      if (e.key === "F3" && e.altKey) {
+      if (mobileSheet) {
         e.preventDefault();
-        setWalkIn(false);
-        customerRef.current?.focus();
+        setMobileSheet(null);
+        searchRef.current?.focus();
         return;
       }
-      if (e.key === "F4") {
+      searchRef.current?.focus();
+      return;
+    }
+
+    if (overlay) return;
+
+    if (e.key === "Enter" && !typing && !isActionTarget(e.target)) {
+      e.preventDefault();
+      searchRef.current?.focus();
+      return;
+    }
+
+    if (!typing && cart.length) {
+      const last = cart[cart.length - 1];
+      if (last && (e.key === "+" || e.key === "=")) {
         e.preventDefault();
-        if (canPriceOverride) {
-          toast.push({
-            title: "Price override enabled",
-            description: "Edit line rate directly in cart.",
-            tone: "info",
-          });
-        } else {
-          setPendingInvoiceDiscount(null);
-          setApprovalReason("price:");
-          setApprovalOpen(true);
-        }
+        increaseQty(last.key);
         return;
       }
-      if (e.key === "F5" && e.altKey) {
+      if (last && (e.key === "-" || e.key === "_")) {
         e.preventDefault();
-        discountRef.current?.focus();
-        return;
-      }
-      if (e.key === "F6" && e.altKey) {
-        e.preventDefault();
-        // Re-apply discount math and totals from current inputs.
-        requestInvoiceDiscount(invoiceDiscount);
-        setPayments((prev) => [...prev]);
-        toast.push({ title: "Totals recalculated", tone: "info" });
-        return;
-      }
-      if (e.key === "F7" && !typing) {
-        e.preventDefault();
-        clearCart();
-        return;
-      }
-      if (e.key === "F8" && !typing) {
-        e.preventDefault();
-        clearSale();
+        decreaseQty(last.key);
         return;
       }
     }
+    if (isProductSearchFocusKey(e)) {
+      e.preventDefault();
+      const input = searchRef.current;
+      if (!input) return;
+      input.focus();
+      appendCharToSearchInput(input, e.key);
+    }
+  }
+
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => pageOpsRef.current.shortcut(e);
+    const onFunction = (event: Event) => {
+      event.preventDefault();
+      pageOpsRef.current.functionShortcut((event as CustomEvent<PosShortcutAction>).detail);
+    };
     window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
+    window.addEventListener(POS_SHORTCUT_EVENT, onFunction);
+    return () => {
+      window.removeEventListener("keydown", onKey);
+      window.removeEventListener(POS_SHORTCUT_EVENT, onFunction);
+    };
+  }, []);
+
+  useEffect(() => {
+    if (layoutMode !== "mobile") setMobileSheet(null);
+  }, [layoutMode]);
+
+  useEffect(() => {
+    searchRef.current?.focus();
+  }, []);
+
+  useEffect(() => {
+    if (!saleHasUnsavedWork(cart.length)) return;
+    function onBeforeUnload(event: BeforeUnloadEvent) {
+      event.preventDefault();
+      event.returnValue = "";
+    }
+    window.addEventListener("beforeunload", onBeforeUnload);
+    return () => window.removeEventListener("beforeunload", onBeforeUnload);
+  }, [cart.length]);
+
+  useEffect(() => {
+    return posHardware.subscribeScanner((event) => {
+      if (scanLockRef.current) return;
+      scanLockRef.current = true;
+      const cmd = parseProductSearchCommand(event.code);
+      const needle = cmd.kind === "search" ? cmd.query : event.code;
+      void posApi
+        .searchProducts({
+          q: needle,
+          warehouseId: warehouseIdRef.current || undefined,
+          customerId: walkInRef.current ? undefined : customerIdRef.current || undefined,
+        })
+        .then((res) => {
+          setResults(res.items);
+          const match = pickExactProductMatch(res.items, needle) ?? res.items[0];
+          if (match) {
+            addProductRef.current(match, cmd.kind === "search" ? cmd.qty ?? undefined : undefined);
+          } else {
+            toast.push({ title: "No catalog match", description: needle, tone: "info" });
+          }
+          setQ("");
+          searchRef.current?.focus();
+        })
+        .catch((err) => {
+          const failed = formatOnlineFailure(err, "generic");
+          toast.push({ title: failed.title, description: failed.description, tone: "danger" });
+        })
+        .finally(() => {
+          window.setTimeout(() => {
+            scanLockRef.current = false;
+          }, 80);
+        });
+    });
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [cart, payments, branchId, warehouseId, showHolds, canPriceOverride, invoiceDiscount]);
+  }, []);
 
   useEffect(() => {
     if (payments.length === 1 && totals.grand > 0 && !payments[0].amount) {
@@ -1248,136 +1802,234 @@ export function PosPage({ entry = "sale" }: { entry?: "sale" | "holds" }) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [totals.grand]);
 
+  const salesmanOptions = useMemo(
+    () =>
+      salesmen.map((s) => ({
+        id: s.id,
+        name: `${s.name}${s.code ? ` · ${s.code}` : ""} (${s.commissionPercent}%)`,
+      })),
+    [salesmen],
+  );
+  const creditHint = useMemo(() => {
+    if (!customer || walkIn) return null;
+    const paid = payments.reduce((s, p) => s + Number(p.amount || 0), 0);
+    const due = Math.max(0, totals.grand - paid);
+    if (due <= 0) return null;
+    const credit = evaluatePosCustomerCredit({
+      customer,
+      additionalCredit: String(due),
+    });
+    if (customer.isBlocked) return "Customer is blocked — credit sales not allowed";
+    if (credit.requiresApproval) {
+      return `Credit limit exceeded (projected ${credit.projectedOutstanding}) — approval required`;
+    }
+    if (credit.isOverdue) return "Customer has overdue balance";
+    return `Credit available · due date ${credit.dueDate ?? "—"}`;
+  }, [customer, walkIn, payments, totals.grand]);
+  const canWriteCustomers = hasPermission("customers.write");
+  const canLoadCustomerHistory =
+    hasPermission("customers.read") || hasPermission("ledgers.view");
+
+  const quoteMapped = useMemo(() => cartToQuotationItems(cart), [cart]);
+  const canQuote =
+    hasPermission("quotations.write") && Boolean(branchId) && quoteMapped.ok;
+  const quoteReason = !hasPermission("quotations.write")
+    ? "Requires quotations.write permission"
+    : !branchId
+      ? "No branch selected"
+      : quoteMapped.ok
+        ? "Save this cart as a quotation"
+        : quoteMapped.error;
+  const payBlockedReason = !branchId
+    ? "No branch selected"
+    : !warehouseId
+      ? "Select a warehouse"
+      : !cart.length
+        ? "Add products first"
+        : null;
+
+  productHandlersRef.current.commit = (raw, highlighted) => {
+    void commitProductSearch(raw, highlighted);
+  };
+  productHandlersRef.current.camera = () => {
+    void recognizeCamera();
+  };
+  productHandlersRef.current.qr = () => {
+    void scanQrFromCamera();
+  };
+  productHandlersRef.current.barcode = barcodeScanHint;
+  productHandlersRef.current.manual = addManualQuick;
+  pageOpsRef.current.cartPrice = (key, unitPrice) => {
+    if (!canPriceOverride) {
+      setPendingDiscount({ kind: "price", key, unitPrice });
+      setApprovalReason("Price override requested");
+      setApprovalOpen(true);
+      return;
+    }
+    const line = cart.find((c) => c.key === key);
+    const catalog = line?.retailPrice ?? line?.unitPrice ?? unitPrice;
+    const warn = priceOverrideWarning(Number(catalog), unitPrice);
+    if (warn) {
+      toast.push({ title: "Price override", description: warn, tone: "info" });
+    }
+    setPrice(key, unitPrice, true);
+  };
+  pageOpsRef.current.cartDiscount = (key, raw) => requestLineDiscount(key, raw);
+  pageOpsRef.current.cartRemove = (key) => setConfirmAction({ kind: "remove-line", key });
+  pageOpsRef.current.cartClear = requestClearCart;
+  pageOpsRef.current.hold = () => {
+    void holdBill();
+  };
+  pageOpsRef.current.pay = () => {
+    void checkout();
+  };
+  pageOpsRef.current.quotation = () => {
+    void createQuotationFromCart();
+  };
+  pageOpsRef.current.retryPay = () => {
+    setPaymentConfirmation("retry");
+    setPaymentConfirmationError(null);
+    setCheckoutIdempotencyKey(uuid());
+  };
+  pageOpsRef.current.selectCustomer = (id) => {
+    void selectCustomer(id);
+  };
+  pageOpsRef.current.walkIn = () => {
+    selectWalkIn();
+    setCustomerQuery("");
+  };
+  pageOpsRef.current.salesman = (id) => {
+    setSalesmanUserId(id);
+    const match = salesmen.find((s) => s.id === id);
+    setCommissionPercent(match?.commissionPercent ?? 0);
+  };
+  pageOpsRef.current.loadHistory = (id) =>
+    posCustomerRepository.history({
+      id,
+      canRead: hasPermission("customers.read") || hasPermission("ledgers.view"),
+    });
+  pageOpsRef.current.createCustomer = (input) => createCustomerFromPos(input);
+  pageOpsRef.current.updateCustomer = (id, input) => updateCustomerFromPos(id, input);
+  pageOpsRef.current.shortcut = handlePosShortcut;
+  pageOpsRef.current.functionShortcut = handlePosFunctionShortcut;
+
   return (
     <div className="flex h-full min-h-0 min-w-0 flex-1 flex-col overflow-x-hidden" dir={locale === "ur" ? "rtl" : "ltr"}>
-      <POSLayout
-        topbar={
-          <>
-            <PosHeader
-              branchId={branchId}
-              branches={branches}
-              onBranchChange={setBranchId}
-              online={online}
-              holdCount={holds.length}
-              mode={mode}
-              locale={locale}
-              onModeChange={setMode}
-              onLocaleChange={setLocale}
-              shiftOpen={Boolean(shift)}
-              onHeldSales={() => setShowHolds(true)}
-              onShiftToggle={toggleShift}
-            />
-            <PosSidebar
-              collapsed={false}
-              onToggle={() => undefined}
-              holdCount={holds.length}
-              drawerSummary={
-                shift
-                  ? {
-                      opening: Number(shift.opening_float ?? 0).toFixed(2),
-                      inHand: Number(shift.expected_cash ?? shift.opening_float ?? 0).toFixed(2),
-                      sales: Number(shift.sales_total ?? 0).toFixed(2),
-                      expenses: Number(shift.expense_total ?? 0).toFixed(2),
-                      expected: Number(shift.expected_cash ?? 0).toFixed(2),
-                    }
-                  : undefined
-              }
-            />
-          </>
-        }
-      >
-        <div className="flex min-h-0 flex-1 flex-col">
+        <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
           {!online ? (
             <div
               role="alert"
-              className="mx-3 mt-3 rounded-[var(--pos-radius)] border border-[var(--pos-danger)] bg-[var(--pos-danger-soft,rgba(220,38,38,0.08))] px-3 py-2 text-sm text-[var(--pos-danger)]"
+              className="mx-3 mt-3 shrink-0 rounded-[var(--pos-radius)] border border-[var(--pos-danger)] bg-[var(--pos-danger-soft,rgba(220,38,38,0.08))] px-3 py-2 text-sm text-[var(--pos-danger)]"
             >
               <strong>{INTERNET_REQUIRED_TITLE}</strong>
               <span className="mt-0.5 block opacity-90">{INTERNET_REQUIRED_MESSAGE}</span>
             </div>
           ) : null}
-          <div className="grid min-h-0 min-w-0 flex-1 gap-3 overflow-x-hidden p-3 xl:grid-cols-[minmax(0,1.4fr)_minmax(0,0.95fr)]">
-            <div className="flex min-h-0 flex-col gap-3">
-              <div className="flex flex-wrap items-center gap-2">
-                {warehouseId ? (
-                  <POSBadge tone="neutral">WH {warehouseId.slice(0, 8)}</POSBadge>
-                ) : (
-                  <POSBadge tone="warning">No warehouse</POSBadge>
-                )}
+          <PosSaleLayout
+            mode={layoutMode}
+            cartCount={cart.length}
+            grandTotal={totals.grand}
+            customerLabel={walkIn ? "Walk-in" : customer?.name || "Customer"}
+            canPay={Boolean(branchId && warehouseId && cart.length)}
+            payBlockedReason={payBlockedReason}
+            mobileSheet={mobileSheet}
+            onMobileSheet={setMobileSheet}
+            onCancelSale={requestCancelSale}
+            product={
+            <div className="flex min-h-0 flex-col gap-3 overflow-hidden">
+              <div className="flex shrink-0 flex-wrap items-center gap-2">
+                <div className="min-w-0 w-44 max-w-full">
+                  <POSSelect
+                    aria-label="Warehouse"
+                    value={warehouseId}
+                    onChange={(e) => setWarehouseId(e.target.value)}
+                    options={
+                      warehouses.length
+                        ? warehouses.map((w) => ({ value: w.id, label: w.name }))
+                        : [{ value: "", label: "No warehouse" }]
+                    }
+                  />
+                </div>
+                {!warehouseId ? <POSBadge tone="warning">No warehouse</POSBadge> : null}
                 {lastInvoice ? <POSBadge tone="success">Last {lastInvoice}</POSBadge> : null}
                 <POSBadge tone="primary">Rs {totals.grand.toFixed(2)}</POSBadge>
+                <div className="w-24">
+                  <POSSelect
+                    aria-label="Mode"
+                    value={mode}
+                    onChange={(e) => setMode(e.target.value as PosMode)}
+                    options={[
+                      { value: "easy", label: "Easy" },
+                      { value: "advanced", label: "Advanced" },
+                    ]}
+                  />
+                </div>
+                <div className="w-24">
+                  <POSSelect
+                    aria-label="Language"
+                    value={locale}
+                    onChange={(e) => setLocale(e.target.value as LocaleMode)}
+                    options={[
+                      { value: "en", label: "EN" },
+                      { value: "ur", label: "UR" },
+                      { value: "en_ur", label: "EN+UR" },
+                    ]}
+                  />
+                </div>
               </div>
               <PosProductPanel
                 query={q}
-                onQueryChange={setQ}
+                onQueryChange={setProductQuery}
                 searching={searching}
                 products={results}
                 favorites={favorites}
                 recent={recent}
                 categories={categories}
                 selectedCategoryId={selectedCategoryId}
-                onSelectCategory={(id) => {
-                  setSelectedCategoryId(id);
-                  setTab("categories");
-                }}
+                onSelectCategory={selectCategory}
                 favoriteIds={favoriteIds}
                 onToggleFavorite={toggleFavorite}
                 tab={tab}
                 onTabChange={setTab}
                 locale={locale}
+                priceLevel={priceLevel}
                 onAdd={addProduct}
+                onCommitSearch={onCommitSearch}
                 searchRef={searchRef}
-                onCamera={() => void recognizeCamera()}
-                onBarcodeScanHint={barcodeScanHint}
-                onQrScan={() => void scanQrFromCamera()}
-                onManualEntry={addManualQuick}
+                onCamera={onCamera}
+                onBarcodeScanHint={onBarcodeScanHint}
+                onQrScan={onQrScan}
+                onManualEntry={onManualEntry}
+                hasMore={
+                  q.trim()
+                    ? results.length >= searchLimit && nextProductSearchLimit(searchLimit) > searchLimit
+                    : tab === "categories" && Boolean(selectedCategoryId) && catalogHasMore
+                }
+                onLoadMore={onLoadMoreProducts}
               />
             </div>
-
-            <div className="flex min-h-0 flex-col gap-3">
+            }
+            customer={
               <PosCustomerPanel
                 customer={customer}
                 walkIn={walkIn}
                 customers={customerHits}
                 customerQuery={customerQuery}
                 onCustomerQuery={setCustomerQuery}
-                onSelectCustomer={(id) => void selectCustomer(id)}
-                onWalkIn={() => {
-                  selectWalkIn();
-                  setCustomerQuery("");
-                }}
-                onCreateCustomer={
-                  hasPermission("customers.write") ? createCustomerFromPos : undefined
-                }
-                onUpdateCustomer={
-                  hasPermission("customers.write") ? updateCustomerFromPos : undefined
-                }
-                onLoadHistory={
-                  hasPermission("customers.read") || hasPermission("ledgers.view")
-                    ? (id) =>
-                        posCustomerRepository.history({
-                          id,
-                          canRead:
-                            hasPermission("customers.read") || hasPermission("ledgers.view"),
-                        })
-                    : undefined
-                }
+                onSelectCustomer={onSelectCustomer}
+                onWalkIn={onCustomerWalkIn}
+                onCreateCustomer={canWriteCustomers ? onCreateCustomer : undefined}
+                onUpdateCustomer={canWriteCustomers ? onUpdateCustomer : undefined}
+                onLoadHistory={canLoadCustomerHistory ? onLoadCustomerHistory : undefined}
                 creatingCustomer={creatingCustomer}
-                canCreate={hasPermission("customers.write")}
-                canEdit={hasPermission("customers.write")}
+                canCreate={canWriteCustomers}
+                canEdit={canWriteCustomers}
                 canRead={hasPermission("customers.read")}
                 priceLevel={priceLevel}
                 onPriceLevel={setPriceLevel}
                 salesmanId={salesmanUserId}
-                salesmen={salesmen.map((s) => ({
-                  id: s.id,
-                  name: `${s.name} (${s.commissionPercent}%)`,
-                }))}
-                onSalesman={(id) => {
-                  setSalesmanUserId(id);
-                  const match = salesmen.find((s) => s.id === id);
-                  setCommissionPercent(match?.commissionPercent ?? 0);
-                }}
+                salesmen={salesmanOptions}
+                onSalesman={onSalesmanChange}
                 referenceId={referenceId}
                 references={references}
                 onReference={setReferenceId}
@@ -1385,53 +2037,28 @@ export function PosPage({ entry = "sale" }: { entry?: "sale" | "holds" }) {
                 onDelivery={setDelivery}
                 customerRef={customerRef}
                 advanced={advanced}
-                creditHint={
-                  customer && !walkIn
-                    ? (() => {
-                        const paid = payments.reduce((s, p) => s + Number(p.amount || 0), 0);
-                        const due = Math.max(0, totals.grand - paid);
-                        if (due <= 0) return null;
-                        const credit = evaluatePosCustomerCredit({
-                          customer,
-                          additionalCredit: String(due),
-                        });
-                        if (customer.isBlocked) return "Customer is blocked — credit sales not allowed";
-                        if (credit.requiresApproval) {
-                          return `Credit limit exceeded (projected ${credit.projectedOutstanding}) — approval required`;
-                        }
-                        if (credit.isOverdue) return "Customer has overdue balance";
-                        return `Credit available · due date ${credit.dueDate ?? "—"}`;
-                      })()
-                    : null
-                }
+                creditHint={creditHint}
               />
-
-              <PosCartPanel
+            }
+            cart={
+              <PosCart
                 cart={cart}
-                advanced={advanced}
                 locale={locale}
-                onQty={(key, qty) => setQty(key, qty)}
-                onIncrease={(key) => increaseQty(key)}
-                onDecrease={(key) => decreaseQty(key)}
-                onPrice={(key, unitPrice) => {
-                  if (!canPriceOverride) {
-                    setApprovalOpen(true);
-                    setPendingInvoiceDiscount(null);
-                    setApprovalReason(`price:${key}:${unitPrice}`);
-                    return;
-                  }
-                  setPrice(key, unitPrice, true);
-                }}
-                onDiscount={(key, raw) => setLineDiscountInput(key, raw)}
-                onUnitChange={(key, unitId) => changeUnit(key, unitId)}
-                onRemove={(key) => removeLine(key)}
-                onClear={() => clearCart()}
-                onManual={addManualQuick}
+                onQty={setQty}
+                onIncrease={increaseQty}
+                onDecrease={decreaseQty}
+                onPrice={onCartPrice}
+                onDiscount={onCartDiscount}
+                onUnitChange={changeUnit}
+                onRemove={onCartRemove}
+                onClear={onCartClear}
+                onManual={onManualEntry}
                 canDiscount={canDiscount}
                 canPriceOverride={canPriceOverride}
                 cartError={lastCartError}
               />
-
+            }
+            payment={
               <PosPaymentPanel
                 totals={totals}
                 invoiceDiscount={invoiceDiscount}
@@ -1445,15 +2072,17 @@ export function PosPage({ entry = "sale" }: { entry?: "sale" | "holds" }) {
                 onNotes={setNotes}
                 busy={busy}
                 canPay={Boolean(branchId && warehouseId && cart.length)}
+                payBlockedReason={payBlockedReason}
                 allowCreditDue={!walkIn && Boolean(customerId)}
-                onHold={() => void holdBill()}
-                onPay={() => void checkout()}
-                onCancel={clearSale}
-                onRetry={() => {
-                  setPaymentConfirmation("retry");
-                  setPaymentConfirmationError(null);
-                  setCheckoutIdempotencyKey(uuid());
-                }}
+                canHold={canHold}
+                canInstallment={canInstallment}
+                onHold={onHoldSale}
+                onPay={onPaySale}
+                onQuotation={onQuotation}
+                canQuote={canQuote}
+                quoteReason={quoteReason}
+                quoting={quoting}
+                onRetry={onRetryPayment}
                 advanced={advanced}
                 useInstallment={useInstallment}
                 onUseInstallment={setUseInstallment}
@@ -1473,67 +2102,23 @@ export function PosPage({ entry = "sale" }: { entry?: "sale" | "holds" }) {
                 onCashReceived={setCashReceived}
                 confirmation={paymentConfirmation}
                 confirmationError={paymentConfirmationError}
+                customer={customer}
+                walkIn={walkIn}
+                invoiceReference={lastInvoice}
               />
-
-              {advanced ? (
-                <POSCard title="Warehouse" padding="sm">
-                  <POSInput
-                    value={warehouseId}
-                    onChange={(e) => setWarehouseId(e.target.value)}
-                    aria-label="Warehouse ID"
-                  />
-                </POSCard>
-              ) : null}
-
-              {receipt ? (
-                <ReceiptPreview
-                  invoice={receipt}
-                  format={receiptFormat}
-                  onFormatChange={setReceiptFormat}
-                  onClose={() => setReceipt(null)}
-                />
-              ) : null}
-            </div>
-          </div>
-
-          <POSActionBar
-            left={
-              <div className="flex flex-wrap gap-2 text-[11px] text-[var(--pos-muted)]">
-                {POS_SHORTCUTS.map((s) => (
-                  <span key={s.key} className="inline-flex items-center gap-1">
-                    <kbd className="rounded border border-[var(--pos-border)] bg-[var(--pos-muted-bg)] px-1.5 py-0.5 font-semibold text-[var(--pos-ink)]">
-                      {s.key}
-                    </kbd>
-                    <span className="hidden sm:inline">{s.label}</span>
-                  </span>
-                ))}
-              </div>
-            }
-            right={
-              <>
-                <POSButton size="sm" variant="ghost" onClick={() => searchRef.current?.focus()}>
-                  Search
-                </POSButton>
-                <POSButton size="sm" variant="ghost" onClick={() => setShowHolds(true)}>
-                  Held ({holds.length})
-                </POSButton>
-                <POSButton size="sm" variant="ghost" onClick={clearSale} disabled={busy}>
-                  Cancel
-                </POSButton>
-                <POSButton
-                  size="sm"
-                  variant="success"
-                  onClick={() => void checkout()}
-                  disabled={busy || !branchId || !warehouseId || !cart.length}
-                  loading={busy}
-                >
-                  Pay Rs {totals.grand.toFixed(0)}
-                </POSButton>
-              </>
             }
           />
+          {receipt ? (
+            <div className="max-h-56 shrink-0 overflow-auto px-3 pb-2">
+              <ReceiptPreview
+                invoice={receipt}
+                format={receiptFormat}
+                onFormatChange={setReceiptFormat}
+                onClose={() => setReceipt(null)}
+              />
+            </div>
+          ) : null}
         </div>
-      </POSLayout>
 
       <POSDrawer open={showHolds} title="Held sales" onClose={() => setShowHolds(false)} side="right">
         <PosHoldsPanel
@@ -1561,51 +2146,88 @@ export function PosPage({ entry = "sale" }: { entry?: "sale" | "holds" }) {
         open={approvalOpen}
         title="Discount / price approval required"
         description={
-          pendingInvoiceDiscount != null
-            ? (() => {
-                const base = Math.max(0, totals.subtotal - totals.itemDiscount);
-                const amount = Number(pendingInvoiceDiscount || 0);
-                const decision = evaluateDiscountApproval({
-                  discountAmount: amount,
-                  baseAmount: base,
-                  actingRole: actingDiscountRole,
-                });
-                return `Invoice discount ${decision.percent}% requires ${decision.requiredRole} approval (your role: ${actingDiscountRole}, max ${decision.maxAllowed === Number.POSITIVE_INFINITY ? "unlimited" : `${decision.maxAllowed}%`}).`;
-              })()
-            : "Manual price override requires manager/owner/special discount permission."
+          pendingDiscount && pendingDiscount.kind !== "price"
+            ? `${pendingDiscount.kind === "invoice" ? "Invoice" : "Line"} discount ${pendingDiscount.percent}% requires ${pendingDiscount.requiredRole} approval (your role: ${actingDiscountRole}, max ${formatDiscountCap(pendingDiscount.maxAllowed)}). The discount has not been applied.`
+            : "Manual price override requires manager/owner/special discount permission. It has not been enabled."
         }
-        reason={approvalReason.startsWith("price:") ? "Price override requested" : approvalReason}
-        onReasonChange={(v) => {
-          if (!approvalReason.startsWith("price:")) setApprovalReason(v);
-          else setApprovalReason(approvalReason);
-        }}
+        reason={approvalReason}
+        onReasonChange={setApprovalReason}
         canApprove={
-          pendingInvoiceDiscount != null
+          pendingDiscount != null && pendingDiscount.kind !== "price"
             ? evaluateDiscountApproval({
-                discountAmount: Number(pendingInvoiceDiscount || 0),
-                baseAmount: Math.max(0, totals.subtotal - totals.itemDiscount),
+                discountAmount: pendingDiscount.amount,
+                baseAmount: pendingDiscount.base,
                 actingRole: actingDiscountRole,
               }).allowed
             : canPriceOverride
         }
+        canRequestApproval={hasPermission("approvals.act")}
+        requestBusy={approvalBusy}
         onCancel={() => {
           setApprovalOpen(false);
-          setPendingInvoiceDiscount(null);
+          setPendingDiscount(null);
         }}
+        onRequestApproval={() => void submitDiscountApproval()}
         onApprove={() => {
-          if (!approvalReason.trim() && pendingInvoiceDiscount != null) return;
-          if (pendingInvoiceDiscount != null) {
-            setInvoiceDiscount(pendingInvoiceDiscount);
-            setPendingInvoiceDiscount(null);
-          } else if (approvalReason.startsWith("price:")) {
-            const parts = approvalReason.split(":");
-            const key = parts[1];
-            const unitPrice = Number(parts[2] || 0);
-            if (key) setPrice(key, unitPrice, true);
+          if (!pendingDiscount) return;
+          if (pendingDiscount.kind === "price") {
+            if (!canPriceOverride) return;
+            if (pendingDiscount.key && pendingDiscount.unitPrice != null) {
+              const line = cart.find((c) => c.key === pendingDiscount.key);
+              const catalog = line?.retailPrice ?? line?.unitPrice ?? pendingDiscount.unitPrice;
+              const warn = priceOverrideWarning(Number(catalog), pendingDiscount.unitPrice);
+              if (warn) {
+                toast.push({ title: "Price override", description: warn, tone: "info" });
+              }
+              setPrice(pendingDiscount.key, pendingDiscount.unitPrice, true);
+            } else {
+              setAllowManualOverride(true);
+            }
+          } else {
+            const decision = evaluateDiscountApproval({
+              discountAmount: pendingDiscount.amount,
+              baseAmount: pendingDiscount.base,
+              actingRole: actingDiscountRole,
+            });
+            if (!decision.allowed) return;
+            if (pendingDiscount.kind === "invoice") {
+              setInvoiceDiscount(String(pendingDiscount.amount));
+            } else if (pendingDiscount.key) {
+              setLineDiscountInput(pendingDiscount.key, pendingDiscount.raw);
+            }
           }
           setApprovalOpen(false);
+          setPendingDiscount(null);
           setApprovalReason("");
         }}
+      />
+
+      <POSConfirmDialog
+        open={Boolean(confirmAction)}
+        title={
+          confirmAction?.kind === "clear-cart"
+            ? "Clear cart?"
+            : confirmAction?.kind === "cancel-sale"
+              ? "Cancel this sale?"
+              : "Remove item?"
+        }
+        description={
+          confirmAction?.kind === "clear-cart"
+            ? "All products will be removed from this cart."
+            : confirmAction?.kind === "cancel-sale"
+              ? "The cart, discounts, and payments on this sale will be cleared."
+              : "This product will be removed from the cart."
+        }
+        confirmLabel={
+          confirmAction?.kind === "clear-cart"
+            ? "Clear cart"
+            : confirmAction?.kind === "cancel-sale"
+              ? "Cancel sale"
+              : "Remove"
+        }
+        danger
+        onConfirm={applyConfirmAction}
+        onCancel={() => setConfirmAction(null)}
       />
     </div>
   );

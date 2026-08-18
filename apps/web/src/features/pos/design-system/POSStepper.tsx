@@ -31,7 +31,7 @@ export function POSStepper({
           <li key={step.id} className="flex items-center gap-2">
             <span
               className={posCn(
-                "inline-flex h-6 min-w-6 items-center justify-center rounded-full px-1.5 text-[11px] font-bold",
+                "inline-flex h-6 min-w-6 items-center justify-center rounded-[var(--pos-radius-sm)] px-1.5 text-[11px] font-bold",
                 done && "bg-[var(--pos-success)] text-white",
                 active && "bg-[var(--pos-primary)] text-white",
                 !done && !active && "bg-[var(--pos-muted-bg)] text-[var(--pos-muted)]",

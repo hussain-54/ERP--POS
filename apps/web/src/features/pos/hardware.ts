@@ -14,11 +14,11 @@ const usbScanner = new UsbKeyboardWedgeScanner({
   addKeyListener: (fn) => {
     if (typeof window === "undefined") return () => undefined;
     const handler = (e: KeyboardEvent) => {
-      if (e.key === "Enter") fn("Enter");
-      else if (e.key.length === 1 && !e.ctrlKey && !e.metaKey && !e.altKey) fn(e.key);
+      if (e.key === "Enter") fn("Enter", e);
+      else if (e.key.length === 1 && !e.ctrlKey && !e.metaKey && !e.altKey) fn(e.key, e);
     };
-    window.addEventListener("keydown", handler);
-    return () => window.removeEventListener("keydown", handler);
+    window.addEventListener("keydown", handler, true);
+    return () => window.removeEventListener("keydown", handler, true);
   },
 });
 

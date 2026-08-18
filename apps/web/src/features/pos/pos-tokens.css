@@ -1,42 +1,57 @@
-/* POS tokens — same ERP brand (Facebook blue + white workspace), denser terminal chrome */
+/* POS visual system — white workspace + professional blue, scoped to .pos-terminal.
+   Colors inherit ERP tokens so hex is not scattered through components. */
+
 .pos-terminal {
-  --pos-navy: #1c1e21;
-  --pos-navy-2: #1c1e21;
-  --pos-navy-3: #1c1e21;
-  --pos-bg: #f0f2f5;
-  --pos-workspace: #ffffff;
-  --pos-card: #ffffff;
-  --pos-muted-bg: #f0f2f5;
+  --pos-primary: var(--erp-brand);
+  --pos-primary-hover: var(--erp-brand-strong);
+  --pos-primary-active: color-mix(in srgb, var(--erp-brand) 78%, #0b1a33);
+  --pos-primary-soft: var(--erp-brand-soft);
+  --pos-hover: var(--pos-primary-hover);
+  --pos-active: var(--pos-primary-active);
+  --pos-light: var(--pos-primary-soft);
 
-  --pos-primary: #1877f2;
-  --pos-primary-strong: #166fe5;
-  --pos-primary-soft: #e7f3ff;
-  --pos-secondary: #1877f2;
-  --pos-secondary-soft: #e7f3ff;
-  --pos-success: #067647;
-  --pos-success-soft: #e8f8ef;
-  --pos-warning: #b54708;
-  --pos-warning-soft: #fff4e5;
-  --pos-danger: #b42318;
-  --pos-danger-soft: #fdecea;
+  --pos-workspace: var(--erp-surface);
+  --pos-card: var(--erp-surface);
+  --pos-bg: var(--erp-bg);
+  --pos-muted-bg: var(--erp-bg);
 
-  --pos-ink: #1c1e21;
-  --pos-muted: #65676b;
-  --pos-on-navy: #1c1e21;
-  --pos-on-navy-muted: #65676b;
+  --pos-border: var(--erp-border);
+  --pos-border-strong: color-mix(in srgb, var(--erp-border) 70%, var(--erp-ink));
 
-  --pos-border: #e4e6eb;
-  --pos-border-strong: #d0d3d9;
-  --pos-radius: 10px;
-  --pos-radius-sm: 8px;
-  --pos-radius-lg: 12px;
-  --pos-shadow: 0 1px 2px rgba(0, 0, 0, 0.06);
-  --pos-shadow-md: 0 2px 8px rgba(0, 0, 0, 0.06);
-  --pos-ring: rgba(24, 119, 242, 0.35);
-  --pos-focus: 0 0 0 2px #fff, 0 0 0 4px var(--pos-ring);
+  --pos-ink: var(--erp-ink);
+  --pos-muted: var(--erp-muted);
 
-  --pos-font: "Segoe UI", "Noto Nastaliq Urdu", sans-serif;
+  --pos-success: var(--erp-success);
+  --pos-success-soft: color-mix(in srgb, var(--erp-success) 12%, white);
+  --pos-warning: var(--erp-warning);
+  --pos-warning-soft: color-mix(in srgb, var(--erp-warning) 12%, white);
+  --pos-danger: var(--erp-danger);
+  --pos-danger-soft: color-mix(in srgb, var(--erp-danger) 12%, white);
+
+  --pos-navy: #0f1b33;
+  --pos-navy-2: #152445;
+  --pos-navy-3: #1c2f52;
+  --pos-nav-bg: var(--pos-navy);
+  --pos-nav-ink: #e8eef8;
+  --pos-nav-muted: #93a4c3;
+  --pos-nav-active-bg: var(--erp-brand);
+  --pos-nav-active-ink: #fff;
+  --pos-on-navy: var(--pos-nav-ink);
+  --pos-on-navy-muted: var(--pos-nav-muted);
+  --pos-secondary: var(--erp-brand);
+  --pos-secondary-soft: var(--erp-brand-soft);
+
+  --pos-radius: 6px;
+  --pos-radius-sm: 4px;
+  --pos-radius-lg: 8px;
+  --pos-shadow: none;
+  --pos-shadow-md: 0 1px 2px rgba(28, 30, 33, 0.08);
+  --pos-ring: var(--erp-ring);
+  --pos-focus: 0 0 0 2px var(--erp-surface), 0 0 0 4px var(--erp-ring);
+
+  --pos-font: var(--erp-font);
   --pos-font-mono: "Cascadia Code", "Consolas", ui-monospace, monospace;
+  --pos-control-height: 2.25rem;
 
   background: var(--pos-bg);
   color: var(--pos-ink);
@@ -44,14 +59,57 @@
 }
 
 .pos-terminal .pos-sidebar {
-  background: var(--pos-workspace);
-  color: var(--pos-ink);
-  border-right: 1px solid var(--pos-border);
+  background: var(--pos-nav-bg);
+  color: var(--pos-nav-ink);
+  border-right: 1px solid color-mix(in srgb, var(--pos-navy-3) 80%, #000);
+}
+
+.pos-terminal .pos-nav-link {
+  display: flex;
+  align-items: center;
+  gap: 0.625rem;
+  min-height: 2.5rem;
+  padding: 0.5rem 0.625rem;
+  border-radius: var(--pos-radius-sm);
+  font-size: 13px;
+  line-height: 1.25;
+  text-decoration: none;
+}
+
+.pos-terminal .pos-nav-link:focus-visible,
+.pos-terminal .pos-nav-erp-home:focus-visible {
+  outline: none;
+  box-shadow: var(--pos-focus);
+  z-index: 1;
 }
 
 .pos-terminal .pos-nav-active {
-  background: var(--pos-primary);
-  color: #fff;
+  background: var(--pos-nav-active-bg);
+  color: var(--pos-nav-active-ink);
+  box-shadow: inset 3px 0 0 #fff;
+}
+
+.pos-terminal .pos-nav-active:focus-visible {
+  box-shadow: inset 3px 0 0 #fff, var(--pos-focus);
+}
+
+.pos-terminal .pos-header {
+  background: var(--pos-workspace);
+  border-bottom: 2px solid var(--pos-primary);
+}
+
+.pos-terminal .pos-workspace {
+  background: var(--pos-workspace);
+}
+
+.pos-terminal .pos-register-table {
+  font-size: 12px;
+}
+
+.pos-terminal .pos-register-table th,
+.pos-terminal .pos-register-table td {
+  padding-top: 0.35rem;
+  padding-bottom: 0.35rem;
 }
 
 .pos-terminal .pos-cta {
@@ -60,7 +118,11 @@
 }
 
 .pos-terminal .pos-cta:hover:not(:disabled) {
-  background: var(--pos-primary-strong);
+  background: var(--pos-hover);
+}
+
+.pos-terminal .pos-cta:active:not(:disabled) {
+  background: var(--pos-active);
 }
 
 .pos-terminal .pos-cta:disabled {
@@ -70,10 +132,133 @@
 
 .pos-terminal .pos-grand {
   font-size: 1.75rem;
-  font-weight: 700;
+  font-weight: 800;
   letter-spacing: -0.02em;
-  color: var(--pos-ink);
+  color: var(--pos-primary);
   font-variant-numeric: tabular-nums;
+}
+
+.pos-terminal .pos-sale-ops {
+  background: var(--pos-card);
+  border: 1px solid var(--pos-border);
+  border-radius: var(--pos-radius);
+}
+
+.pos-terminal .pos-tx-customer,
+.pos-terminal .pos-tx-cart {
+  border-bottom: 1px solid var(--pos-border);
+}
+
+.pos-terminal .pos-cart-row-photo {
+  display: flex;
+  height: 2rem;
+  width: 2rem;
+  flex-shrink: 0;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+  border-radius: var(--pos-radius-sm);
+  background: var(--pos-muted-bg);
+  font-size: 0.7rem;
+  font-weight: 600;
+  color: var(--pos-primary);
+}
+
+.pos-terminal .pos-sale-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1.4fr) minmax(22rem, 0.95fr);
+  min-height: 0;
+  flex: 1;
+}
+
+.pos-terminal .pos-product-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.5rem;
+}
+
+@media (min-width: 1024px) {
+  .pos-terminal .pos-product-grid {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+}
+
+.pos-terminal .pos-pay-method-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 0.375rem;
+}
+
+.pos-terminal .pos-pay-now {
+  min-height: 3rem;
+  font-size: 0.95rem;
+  font-weight: 800;
+  letter-spacing: 0.06em;
+}
+
+.pos-terminal .pos-hold-sale {
+  font-weight: 700;
+}
+
+.pos-terminal .pos-sale-pay-dock {
+  position: sticky;
+  bottom: 0;
+  z-index: 4;
+  background: var(--pos-card);
+}
+
+.pos-terminal .pos-mobile-dock {
+  display: grid;
+  grid-template-columns: minmax(0, 1.2fr) minmax(0, 1fr) minmax(0, 0.9fr);
+  gap: 0.5rem;
+  padding: 0.5rem 0.75rem max(0.5rem, env(safe-area-inset-bottom));
+  border-top: 1px solid var(--pos-border);
+  background: var(--pos-workspace);
+}
+
+.pos-terminal .pos-mobile-dock > button {
+  min-width: 0;
+  overflow: hidden;
+}
+
+/* 1366x768 / 1440x900: keep two-zone terminal, slightly narrower cart */
+@media (max-width: 1439px) and (min-width: 1280px) {
+  .pos-terminal .pos-sale-grid {
+    grid-template-columns: minmax(0, 1.3fr) minmax(20rem, 0.9fr);
+  }
+
+  .pos-terminal .pos-sidebar {
+    width: 13.75rem;
+  }
+}
+
+/* Wide tablet / small desktop: keep two-zone terminal, slightly narrower cart */
+@media (max-width: 1279px) and (min-width: 1024px) {
+  .pos-terminal .pos-sale-grid {
+    grid-template-columns: minmax(0, 1.25fr) minmax(18rem, 0.95fr);
+  }
+}
+
+/* Portrait tablet: stack both zones in the viewport so the cart stays reachable */
+@media (max-width: 1023px) and (min-width: 768px) {
+  .pos-terminal .pos-sale-grid {
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-rows: minmax(10rem, 1fr) minmax(20rem, 48vh);
+  }
+
+  .pos-terminal .pos-sale-ops-customer {
+    max-height: 9.5rem;
+  }
+}
+
+@media (max-width: 1023px) {
+  .pos-terminal .pos-grand {
+    font-size: 1.25rem;
+  }
+
+  .pos-terminal .pos-cart-optional {
+    display: none;
+  }
 }
 
 .pos-terminal .pos-surface {
@@ -83,18 +268,26 @@
 }
 
 .pos-terminal .pos-input-base {
-  height: 2.25rem;
+  height: var(--pos-control-height);
   width: 100%;
   border-radius: var(--pos-radius-sm);
   border: 1px solid var(--pos-border);
   background: var(--pos-workspace);
   padding: 0 0.75rem;
-  font-size: 0.875rem;
+  font-size: 0.8125rem;
   color: var(--pos-ink);
 }
 
 .pos-terminal .pos-input-base:hover:not(:disabled) {
   border-color: var(--pos-border-strong);
+}
+
+.pos-terminal .pos-input-base:focus,
+.pos-terminal .pos-input-base:focus-visible,
+.pos-terminal .pos-input-base:focus-within {
+  outline: none;
+  border-color: var(--pos-primary);
+  box-shadow: var(--pos-focus);
 }
 
 .pos-terminal .pos-input-base:disabled {
@@ -112,8 +305,12 @@
   border-radius: var(--pos-radius-sm);
 }
 
-@media (max-width: 1023px) {
-  .pos-terminal .pos-grand {
-    font-size: 1.35rem;
-  }
+.pos-terminal h1 {
+  font-size: 1.125rem;
+  line-height: 1.3;
+  font-weight: 600;
+}
+
+.pos-terminal table {
+  font-variant-numeric: tabular-nums;
 }

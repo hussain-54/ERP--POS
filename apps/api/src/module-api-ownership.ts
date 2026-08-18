@@ -55,7 +55,7 @@ export const MODULE_API_OWNERSHIP: readonly ModuleApiOwnership[] = [
     apiGroup: "pos, parties",
     mount: "/api/v1/pos, /api/v1/parties/payments",
     repository: "PosRepository, PartiesRepository",
-    domain: "sale-transaction.ts, pos-hold.ts, pos-return.ts, pos-payment.ts, pos-cart.ts, split-payment.ts",
+    domain: "sale-transaction.ts, pos-hold.ts, pos-return.ts, pos-exchange.ts, pos-payment.ts, pos-cart.ts, split-payment.ts",
   },
   {
     id: "06",

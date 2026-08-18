@@ -1,5 +1,6 @@
 import { createClient, type SupabaseClient } from "@supabase/supabase-js";
 import { config, supabaseConfigured } from "../config.js";
+import { supabaseRealtimeOptions } from "./node-websocket.js";
 
 export function createUserClient(accessToken: string): SupabaseClient {
   return createClient(config.supabaseUrl, config.supabaseAnonKey, {
@@ -12,12 +13,14 @@ export function createUserClient(accessToken: string): SupabaseClient {
       persistSession: false,
       autoRefreshToken: false,
     },
+    ...supabaseRealtimeOptions(),
   });
 }
 
 export function createAnonClient(): SupabaseClient {
   return createClient(config.supabaseUrl, config.supabaseAnonKey, {
     auth: { persistSession: false, autoRefreshToken: false },
+    ...supabaseRealtimeOptions(),
   });
 }
 
@@ -26,6 +29,7 @@ export function createServiceClient(): SupabaseClient | null {
   if (!config.supabaseUrl || !config.supabaseServiceRoleKey) return null;
   return createClient(config.supabaseUrl, config.supabaseServiceRoleKey, {
     auth: { persistSession: false, autoRefreshToken: false },
+    ...supabaseRealtimeOptions(),
   });
 }
 

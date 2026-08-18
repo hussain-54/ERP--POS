@@ -78,6 +78,24 @@ export const partiesApi = {
       token: token(),
     });
   },
+  searchPayments(params: Record<string, string | number | undefined>) {
+    const qs = new URLSearchParams();
+    for (const [k, v] of Object.entries(params)) {
+      if (v !== undefined && v !== "") qs.set(k, String(v));
+    }
+    return apiFetch<{
+      items: Array<Record<string, unknown>>;
+      total: number;
+      limit: number;
+      offset: number;
+      summary: Record<string, unknown>;
+    }>(`/api/v1/parties/payments?${qs}`, { token: token() });
+  },
+  getPayment(id: string) {
+    return apiFetch<{ item: Record<string, unknown> }>(`/api/v1/parties/payments/${id}`, {
+      token: token(),
+    });
+  },
   postPayment(body: Record<string, unknown>) {
     return apiFetch<Payment>("/api/v1/parties/payments", {
       method: "POST",
@@ -111,6 +129,24 @@ export const partiesApi = {
       token: token(),
       body: JSON.stringify(body),
     });
+  },
+  searchInstallmentPlans(params: Record<string, string | number | undefined>) {
+    const qs = new URLSearchParams();
+    for (const [k, v] of Object.entries(params)) {
+      if (v !== undefined && v !== "") qs.set(k, String(v));
+    }
+    return apiFetch<{
+      items: Array<Record<string, unknown>>;
+      total: number;
+      limit: number;
+      offset: number;
+    }>(`/api/v1/parties/installments?${qs}`, { token: token() });
+  },
+  customerInstallments(customerId: string) {
+    return apiFetch<{ items: Array<Record<string, unknown>> }>(
+      `/api/v1/parties/customers/${customerId}/installments`,
+      { token: token() },
+    );
   },
   installmentSchedule(planId: string) {
     return apiFetch<{ items: Array<Record<string, unknown>> }>(

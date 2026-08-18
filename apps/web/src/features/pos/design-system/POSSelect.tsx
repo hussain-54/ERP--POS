@@ -10,6 +10,7 @@ export interface POSSelectOption {
 export interface POSSelectProps extends Omit<SelectHTMLAttributes<HTMLSelectElement>, "children"> {
   label?: string;
   error?: string;
+  compact?: boolean;
   options: POSSelectOption[];
 }
 
@@ -20,17 +21,22 @@ export function POSSelect({
   options,
   id,
   disabled,
+  compact,
   ...props
 }: POSSelectProps) {
   const selectId = id ?? props.name;
   return (
-    <label className="flex w-full flex-col gap-1 text-sm">
-      {label ? <span className="font-medium text-[var(--pos-ink)]">{label}</span> : null}
+    <label className={posCn("flex w-full flex-col", compact ? "gap-0.5" : "gap-1 text-sm")}>
+      {label ? (
+        <span className={posCn("font-medium text-[var(--pos-ink)]", compact && "text-[10px] uppercase tracking-wide text-[var(--pos-muted)]")}>
+          {label}
+        </span>
+      ) : null}
       <select
         id={selectId}
         disabled={disabled}
         aria-invalid={error ? true : undefined}
-        className={posCn("pos-input-base", error && "border-[var(--pos-danger)]", className)}
+        className={posCn("pos-input-base", compact && "h-8 text-xs", error && "border-[var(--pos-danger)]", className)}
         {...props}
       >
         {options.map((opt) => (
