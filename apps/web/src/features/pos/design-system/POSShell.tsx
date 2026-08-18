@@ -122,7 +122,7 @@ export function POSShell({ children }: { children: ReactNode }) {
         {navOpen && layoutMode !== "desktop" ? (
           <button
             type="button"
-            className="fixed inset-0 top-12 z-30 bg-black/30 xl:hidden"
+            className="fixed inset-0 z-30 bg-black/30 pos-nav-backdrop xl:hidden"
             aria-label="Close navigation"
             onClick={() => setNavOpen(false)}
           />

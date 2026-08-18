@@ -53,7 +53,7 @@ export function POSTabs<T extends string>({
             aria-selected={selected}
             tabIndex={selected ? 0 : -1}
             className={posCn(
-              "relative -mb-px h-9 px-3 text-[13px] font-medium",
+              "relative -mb-px h-9 px-3 text-[length:var(--pos-text-md)] font-semibold",
               selected
                 ? "border-b-2 border-[var(--pos-primary)] text-[var(--pos-primary)]"
                 : "border-b-2 border-transparent text-[var(--pos-muted)] hover:text-[var(--pos-ink)]",

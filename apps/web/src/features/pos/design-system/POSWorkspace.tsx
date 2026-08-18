@@ -12,7 +12,7 @@ export function POSWorkspace({
     <main
       className={posCn(
         "pos-workspace flex min-h-0 min-w-0 flex-1 flex-col",
-        dense ? "overflow-hidden" : "overflow-auto p-4 md:p-5",
+        dense ? "pos-workspace-dense overflow-hidden" : "pos-workspace-pad overflow-auto",
       )}
     >
       {children}

@@ -1,19 +1,45 @@
 import { useEffect, useState } from "react";
-import { posLayoutMode, type PosLayoutMode } from "./pos-layout";
+import {
+  POS_DESKTOP_MIN,
+  posLayoutMode,
+  posSaleChrome,
+  posShowsSplitRegister,
+  type PosLayoutMode,
+  type PosSaleChrome,
+} from "./pos-layout";
 
-export function usePosLayoutMode(): PosLayoutMode {
-  const [mode, setMode] = useState<PosLayoutMode>(() =>
-    typeof window === "undefined" ? "desktop" : posLayoutMode(window.innerWidth),
+export function usePosLayoutWidth(): number {
+  const [width, setWidth] = useState(() =>
+    typeof window === "undefined" ? POS_DESKTOP_MIN : window.innerWidth,
   );
 
   useEffect(() => {
     function sync() {
-      setMode(posLayoutMode(window.innerWidth));
+      setWidth(window.innerWidth);
     }
     sync();
     window.addEventListener("resize", sync);
     return () => window.removeEventListener("resize", sync);
   }, []);
 
-  return mode;
+  return width;
+}
+
+export function usePosLayout(): {
+  width: number;
+  mode: PosLayoutMode;
+  chrome: PosSaleChrome;
+  splitRegister: boolean;
+} {
+  const width = usePosLayoutWidth();
+  return {
+    width,
+    mode: posLayoutMode(width),
+    chrome: posSaleChrome(width),
+    splitRegister: posShowsSplitRegister(width),
+  };
+}
+
+export function usePosLayoutMode(): PosLayoutMode {
+  return usePosLayout().mode;
 }

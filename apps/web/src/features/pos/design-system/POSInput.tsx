@@ -15,8 +15,8 @@ export const POSInput = forwardRef<HTMLInputElement, POSInputProps>(function POS
 ) {
   const inputId = id ?? props.name;
   return (
-    <label className="flex w-full flex-col gap-1 text-sm">
-      {label ? <span className="font-medium text-[var(--pos-ink)]">{label}</span> : null}
+    <label className="flex w-full flex-col gap-1">
+      {label ? <span className="pos-field-label">{label}</span> : null}
       <span
         className={posCn(
           "pos-input-base flex items-center gap-2 !h-auto min-h-9 py-0",

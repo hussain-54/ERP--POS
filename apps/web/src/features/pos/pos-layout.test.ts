@@ -3,6 +3,9 @@ import {
   POS_DESKTOP_MIN,
   POS_TEST_WIDTHS,
   posLayoutMode,
+  posSaleChrome,
+  posSaleLayoutClass,
+  posShowsSplitRegister,
   posShowsTwoZoneTerminal,
   posTabletStacks,
   posUsesMobileSheets,
@@ -37,5 +40,17 @@ describe("POS responsive layout modes", () => {
     expect(posUsesMobileSheets(375)).toBe(true);
     expect(posUsesMobileSheets(768)).toBe(false);
     expect(posUsesMobileSheets(1280)).toBe(false);
+    expect(posSaleChrome(375)).toBe("sheets");
+    expect(posSaleChrome(767)).toBe("sheets");
+    expect(posSaleChrome(768)).toBe("stack");
+    expect(posSaleChrome(820)).toBe("stack");
+    expect(posSaleChrome(1023)).toBe("stack");
+    expect(posSaleChrome(1024)).toBe("split");
+    expect(posSaleChrome(1280)).toBe("split");
+    expect(posSaleLayoutClass("sheets")).toBe("pos-sale-mobile");
+    expect(posSaleLayoutClass("stack")).toContain("pos-sale-grid--stack");
+    expect(posSaleLayoutClass("split")).toBe("pos-sale-grid");
+    expect(posShowsSplitRegister(1024)).toBe(true);
+    expect(posShowsSplitRegister(820)).toBe(false);
   });
 });

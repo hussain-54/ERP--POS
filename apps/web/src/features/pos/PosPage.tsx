@@ -35,7 +35,8 @@ import { cameraScanner, posHardware } from "./hardware";
 import { aiApi } from "@/features/ai-camera/ai-api";
 import "./pos-tokens.css";
 import { PosSaleLayout } from "./components/PosSaleLayout";
-import { usePosLayoutMode } from "./usePosLayoutMode";
+import { PosSaleMeta } from "./components/PosSaleMeta";
+import { usePosLayout } from "./usePosLayoutMode";
 import type { PosMobileSheet } from "./pos-layout";
 import { PosProductPanel } from "./components/PosProductPanel";
 import { PosCustomerPanel, type PosCustomerFormInput } from "./components/PosCustomerPanel";
@@ -75,10 +76,8 @@ import { posActionFlags } from "./pos-security";
 import { type PosHoldNavigationState } from "./held-sales";
 import type { CustomerSearchHit } from "@electronic-erp/contracts";
 import {
-  POSBadge,
   POSConfirmDialog,
   POSDrawer,
-  POSSelect,
 } from "./design-system";
 import {
   POS_SHORTCUT_EVENT,
@@ -245,7 +244,7 @@ export function PosPage({ entry = "sale" }: { entry?: "sale" | "holds" }) {
   const [receiptFormat, setReceiptFormat] = useState<"80mm" | "58mm" | "a4">("80mm");
   const [showHolds, setShowHolds] = useState(holdEntry);
   const [creatingCustomer, setCreatingCustomer] = useState(false);
-  const layoutMode = usePosLayoutMode();
+  const { mode: layoutMode, chrome } = usePosLayout();
   const [mobileSheet, setMobileSheet] = useState<PosMobileSheet>(null);
 
   const searchRef = useRef<HTMLInputElement>(null);
@@ -266,6 +265,8 @@ export function PosPage({ entry = "sale" }: { entry?: "sale" | "holds" }) {
     cartDiscount: (_key: string, _raw: string) => undefined as void,
     cartRemove: (_key: string) => undefined as void,
     cartClear: () => undefined as void,
+    invoiceDiscount: (_value: string) => undefined as void,
+    cancelSale: () => undefined as void,
     hold: () => undefined as void,
     pay: () => undefined as void,
     quotation: () => undefined as void,
@@ -636,6 +637,12 @@ export function PosPage({ entry = "sale" }: { entry?: "sale" | "holds" }) {
   }, []);
   const onCartClear = useCallback(() => {
     pageOpsRef.current.cartClear();
+  }, []);
+  const onInvoiceDiscount = useCallback((value: string) => {
+    pageOpsRef.current.invoiceDiscount(value);
+  }, []);
+  const onCancelSale = useCallback(() => {
+    pageOpsRef.current.cancelSale();
   }, []);
   const onHoldSale = useCallback(() => {
     pageOpsRef.current.hold();
@@ -1840,6 +1847,7 @@ export function PosPage({ entry = "sale" }: { entry?: "sale" | "holds" }) {
       : quoteMapped.ok
         ? "Save this cart as a quotation"
         : quoteMapped.error;
+  const canPayNow = Boolean(branchId && warehouseId && cart.length);
   const payBlockedReason = !branchId
     ? "No branch selected"
     : !warehouseId
@@ -1847,6 +1855,21 @@ export function PosPage({ entry = "sale" }: { entry?: "sale" | "holds" }) {
       : !cart.length
         ? "Add products first"
         : null;
+  const saleMeta = useMemo(
+    () => (
+      <PosSaleMeta
+        warehouseId={warehouseId}
+        warehouses={warehouses}
+        lastInvoice={lastInvoice}
+        mode={mode}
+        locale={locale}
+        onWarehouse={setWarehouseId}
+        onMode={setMode}
+        onLocale={setLocale}
+      />
+    ),
+    [warehouseId, warehouses, lastInvoice, mode, locale],
+  );
 
   productHandlersRef.current.commit = (raw, highlighted) => {
     void commitProductSearch(raw, highlighted);
@@ -1877,6 +1900,8 @@ export function PosPage({ entry = "sale" }: { entry?: "sale" | "holds" }) {
   pageOpsRef.current.cartDiscount = (key, raw) => requestLineDiscount(key, raw);
   pageOpsRef.current.cartRemove = (key) => setConfirmAction({ kind: "remove-line", key });
   pageOpsRef.current.cartClear = requestClearCart;
+  pageOpsRef.current.invoiceDiscount = requestInvoiceDiscount;
+  pageOpsRef.current.cancelSale = requestCancelSale;
   pageOpsRef.current.hold = () => {
     void holdBill();
   };
@@ -1926,58 +1951,17 @@ export function PosPage({ entry = "sale" }: { entry?: "sale" | "holds" }) {
             </div>
           ) : null}
           <PosSaleLayout
-            mode={layoutMode}
+            chrome={chrome}
             cartCount={cart.length}
             grandTotal={totals.grand}
             customerLabel={walkIn ? "Walk-in" : customer?.name || "Customer"}
-            canPay={Boolean(branchId && warehouseId && cart.length)}
+            canPay={canPayNow}
             payBlockedReason={payBlockedReason}
             mobileSheet={mobileSheet}
             onMobileSheet={setMobileSheet}
-            onCancelSale={requestCancelSale}
+            onCancelSale={onCancelSale}
             product={
-            <div className="flex min-h-0 flex-col gap-3 overflow-hidden">
-              <div className="flex shrink-0 flex-wrap items-center gap-2">
-                <div className="min-w-0 w-44 max-w-full">
-                  <POSSelect
-                    aria-label="Warehouse"
-                    value={warehouseId}
-                    onChange={(e) => setWarehouseId(e.target.value)}
-                    options={
-                      warehouses.length
-                        ? warehouses.map((w) => ({ value: w.id, label: w.name }))
-                        : [{ value: "", label: "No warehouse" }]
-                    }
-                  />
-                </div>
-                {!warehouseId ? <POSBadge tone="warning">No warehouse</POSBadge> : null}
-                {lastInvoice ? <POSBadge tone="success">Last {lastInvoice}</POSBadge> : null}
-                <POSBadge tone="primary">Rs {totals.grand.toFixed(2)}</POSBadge>
-                <div className="w-24">
-                  <POSSelect
-                    aria-label="Mode"
-                    value={mode}
-                    onChange={(e) => setMode(e.target.value as PosMode)}
-                    options={[
-                      { value: "easy", label: "Easy" },
-                      { value: "advanced", label: "Advanced" },
-                    ]}
-                  />
-                </div>
-                <div className="w-24">
-                  <POSSelect
-                    aria-label="Language"
-                    value={locale}
-                    onChange={(e) => setLocale(e.target.value as LocaleMode)}
-                    options={[
-                      { value: "en", label: "EN" },
-                      { value: "ur", label: "UR" },
-                      { value: "en_ur", label: "EN+UR" },
-                    ]}
-                  />
-                </div>
-              </div>
-              <PosProductPanel
+            <PosProductPanel
                 query={q}
                 onQueryChange={setProductQuery}
                 searching={searching}
@@ -2006,8 +1990,8 @@ export function PosPage({ entry = "sale" }: { entry?: "sale" | "holds" }) {
                     : tab === "categories" && Boolean(selectedCategoryId) && catalogHasMore
                 }
                 onLoadMore={onLoadMoreProducts}
+                meta={saleMeta}
               />
-            </div>
             }
             customer={
               <PosCustomerPanel
@@ -2052,17 +2036,20 @@ export function PosPage({ entry = "sale" }: { entry?: "sale" | "holds" }) {
                 onUnitChange={changeUnit}
                 onRemove={onCartRemove}
                 onClear={onCartClear}
-                onManual={onManualEntry}
                 canDiscount={canDiscount}
                 canPriceOverride={canPriceOverride}
                 cartError={lastCartError}
+                invoiceDiscount={invoiceDiscount}
+                onInvoiceDiscount={onInvoiceDiscount}
+                discountRef={discountRef}
+                canInvoiceDiscount={canDiscount}
               />
             }
             payment={
               <PosPaymentPanel
                 totals={totals}
                 invoiceDiscount={invoiceDiscount}
-                onInvoiceDiscount={requestInvoiceDiscount}
+                onInvoiceDiscount={onInvoiceDiscount}
                 canInvoiceDiscount={canDiscount}
                 discountRef={discountRef}
                 methods={methods}
@@ -2071,7 +2058,7 @@ export function PosPage({ entry = "sale" }: { entry?: "sale" | "holds" }) {
                 notes={notes}
                 onNotes={setNotes}
                 busy={busy}
-                canPay={Boolean(branchId && warehouseId && cart.length)}
+                canPay={canPayNow}
                 payBlockedReason={payBlockedReason}
                 allowCreditDue={!walkIn && Boolean(customerId)}
                 canHold={canHold}

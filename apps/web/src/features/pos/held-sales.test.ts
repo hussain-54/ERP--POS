@@ -80,6 +80,7 @@ describe("Hold / Resume display helpers", () => {
     expect(stats.expired).toBe(1);
     expect(stats.today).toBe(3);
     expect(stats.mine).toBe(3);
+    expect(stats.totalValue).toBe(1000);
     expect(filterHoldTable(holds, "active", { now }).map((h) => h.holdLabel)).toEqual(["HOLD-1001"]);
     expect(
       filterHoldTable(holds, "all_pending", { now, cashierId: "other" }).map((h) => h.holdLabel),

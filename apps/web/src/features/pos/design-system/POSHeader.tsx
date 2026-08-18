@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useState, type ReactNode } from "react";
 import { Link } from "react-router-dom";
 import { POSBadge } from "./POSBadge";
 import { POSIconButton } from "./POSIconButton";
@@ -31,9 +31,9 @@ function POSClock() {
   const time = now.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", second: "2-digit" });
   const date = now.toLocaleDateString();
   return (
-    <div className="text-center text-xs" aria-label="Date / Time">
-      <div className="font-semibold tabular-nums text-[var(--pos-ink)]">{time}</div>
-      <div className="hidden text-[10px] text-[var(--pos-muted)] sm:block">{date}</div>
+    <div className="pos-header-clock" aria-label="Date / Time">
+      <span className="pos-header-time">{time}</span>
+      <span className="pos-header-date hidden sm:block">{date}</span>
     </div>
   );
 }
@@ -41,6 +41,23 @@ function POSClock() {
 function initials(name?: string) {
   const parts = (name ?? "User").trim().split(/\s+/).slice(0, 2);
   return parts.map((part) => part[0]?.toUpperCase() ?? "").join("") || "U";
+}
+
+function HeaderField({
+  kicker,
+  children,
+}: {
+  kicker: string;
+  children: ReactNode;
+}) {
+  return (
+    <div className="pos-header-field">
+      <span className="pos-header-kicker" aria-hidden="true">
+        {kicker}
+      </span>
+      {children}
+    </div>
+  );
 }
 
 /**
@@ -66,85 +83,72 @@ export function POSHeader({
   const cashier = cashierName ?? userName ?? "—";
 
   return (
-    <header
-      className={posCn(
-        "pos-header relative z-50 flex min-h-12 min-w-0 items-center gap-2 overflow-x-auto",
-        "px-2 py-1.5 sm:px-3",
-      )}
-    >
-      {onMenu ? (
-        <POSIconButton
-          label="Menu"
-          aria-expanded={menuOpen}
-          aria-controls="pos-environment-nav"
-          onClick={onMenu}
-        >
-          ☰
-        </POSIconButton>
-      ) : null}
+    <header className="pos-header relative z-50 min-w-0">
+      <div className="pos-header-left">
+        {onMenu ? (
+          <POSIconButton
+            label="Menu"
+            aria-expanded={menuOpen}
+            aria-controls="pos-environment-nav"
+            onClick={onMenu}
+          >
+            ☰
+          </POSIconButton>
+        ) : null}
 
-      <Link
-        to="/"
-        aria-label="ERP Home"
-        title="Return to the 39-module ERP"
-        className="inline-flex h-8 shrink-0 items-center rounded-[var(--pos-radius-sm)] border border-[var(--pos-border)] px-2 text-xs font-medium text-[var(--pos-primary)] hover:bg-[var(--pos-primary-soft)] focus-visible:outline-none focus-visible:shadow-[var(--pos-focus)]"
-      >
-        ERP Home
-      </Link>
+        <HeaderField kicker="Branch">
+          <div className="pos-header-control">
+            <POSSelect
+              compact
+              aria-label="Branch"
+              value={branchId ?? ""}
+              onChange={(e) => onBranchChange(e.target.value)}
+              options={
+                branchOptions.length
+                  ? branchOptions
+                  : [{ value: "", label: "No branch" }]
+              }
+            />
+          </div>
+        </HeaderField>
 
-      <div className="w-[8.5rem] shrink-0">
-        <POSSelect
-          compact
-          label="Branch"
-          aria-label="Branch"
-          value={branchId ?? ""}
-          onChange={(e) => onBranchChange(e.target.value)}
-          options={
-            branchOptions.length
-              ? branchOptions
-              : [{ value: "", label: "No branch" }]
-          }
-        />
+        <HeaderField kicker="Terminal">
+          <div className="pos-header-control">
+            <POSSelect
+              compact
+              aria-label="POS Terminal"
+              value={terminalId}
+              onChange={(e) => onTerminalChange(e.target.value)}
+              options={terminalOptions.length ? terminalOptions : [{ value: "", label: "This terminal" }]}
+            />
+          </div>
+        </HeaderField>
+
+        <div className="pos-header-field" aria-label="Cashier">
+          <span className="pos-header-kicker">Cashier</span>
+          <span className="pos-header-value" title={cashier}>
+            {cashier}
+          </span>
+        </div>
+
+        <span aria-label="Shift Status" className="shrink-0">
+          <POSBadge tone={shiftOpen ? "success" : "warning"}>
+            {shiftOpen ? "Shift Open" : "No Shift"}
+          </POSBadge>
+        </span>
       </div>
 
-      <div className="w-[8.5rem] shrink-0">
-        <POSSelect
-          compact
-          label="POS Terminal"
-          aria-label="POS Terminal"
-          value={terminalId}
-          onChange={(e) => onTerminalChange(e.target.value)}
-          options={terminalOptions.length ? terminalOptions : [{ value: "", label: "This terminal" }]}
-        />
+      <div className="pos-header-center">
+        <POSClock />
       </div>
 
-      <div className="w-[8rem] shrink-0">
-        <POSSelect
-          compact
-          label="Cashier"
-          aria-label="Cashier"
-          value={cashier}
-          onChange={() => undefined}
-          options={[{ value: cashier, label: cashier }]}
-          disabled
-        />
-      </div>
-
-      <span aria-label="Shift Status" className="shrink-0">
-        <POSBadge tone={shiftOpen ? "success" : "warning"}>
-          {shiftOpen ? "Shift Open" : "No Shift"}
-        </POSBadge>
-      </span>
-
-      <POSClock />
-
-      <div className="ml-auto flex shrink-0 items-center gap-1.5">
+      <div className="pos-header-right">
         <Link
           to="/held-sales"
           aria-label="Held Sales"
           className={posCn(
-            "inline-flex h-8 items-center gap-1.5 rounded-[var(--pos-radius-sm)] border border-[var(--pos-border)] px-2 text-xs font-medium",
-            "hover:bg-[var(--pos-muted-bg)] focus-visible:shadow-[var(--pos-focus)]",
+            "inline-flex h-8 items-center gap-1.5 rounded-[var(--pos-radius-sm)] border border-[var(--pos-border)] px-2 text-xs font-semibold",
+            "hover:bg-[var(--pos-muted-bg)] focus-visible:outline-none focus-visible:shadow-[var(--pos-focus)]",
           )}
         >
           Held
@@ -156,7 +160,8 @@ export function POSHeader({
         <Link
           to="/notifications"
           aria-label="Notifications"
-          className="inline-flex h-8 w-8 items-center justify-center rounded-[var(--pos-radius-sm)] border border-[var(--pos-border)] text-sm text-[var(--pos-ink)] hover:bg-[var(--pos-muted-bg)]"
+          title="ERP notifications"
+          className="inline-flex h-8 w-8 items-center justify-center rounded-[var(--pos-radius-sm)] border border-[var(--pos-border)] text-sm text-[var(--pos-ink)] hover:bg-[var(--pos-muted-bg)] focus-visible:outline-none focus-visible:shadow-[var(--pos-focus)]"
         >
           <span aria-hidden>🔔</span>
         </Link>

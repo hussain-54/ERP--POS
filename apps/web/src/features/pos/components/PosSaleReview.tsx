@@ -126,6 +126,7 @@ export function PosInvoiceSearch({
     <POSCard title={title} description="Search posted invoices. Select one record to review before changing stock or money.">
       <div className="grid gap-2 md:grid-cols-2 lg:grid-cols-3">
         <POSSearch
+          compact
           label="Invoice"
           placeholder="Invoice #"
           value={invoiceNumber}
@@ -146,6 +147,7 @@ export function PosInvoiceSearch({
         <POSInput label="Date from" type="date" value={dateFrom} onChange={(e) => onDateFrom(e.target.value)} />
         <POSInput label="Date to" type="date" value={dateTo} onChange={(e) => onDateTo(e.target.value)} />
         <POSSelect
+          compact
           label="Warehouse"
           value={warehouseId}
           onChange={(e) => onWarehouseId(e.target.value)}
@@ -153,7 +155,7 @@ export function PosInvoiceSearch({
         />
       </div>
       <div className="mt-3">
-        <POSButton onClick={onSearch} loading={busy} disabled={!canSearch}>
+        <POSButton size="sm" onClick={onSearch} loading={busy} disabled={!canSearch}>
           Search
         </POSButton>
       </div>

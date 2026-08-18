@@ -22,7 +22,7 @@ export function POSCard({
       {(title || actions) && (
         <div className={posCn("mb-2 flex items-start justify-between gap-2", padding === "none" && "px-3 pt-3")}>
           <div>
-            {title ? <h3 className="text-[13px] font-semibold text-[var(--pos-ink)]">{title}</h3> : null}
+            {title ? <h3 className="text-[length:var(--pos-text-md)] font-semibold text-[var(--pos-ink)]">{title}</h3> : null}
             {description ? (
               <p className="mt-0.5 text-xs text-[var(--pos-muted)]">{description}</p>
             ) : null}

@@ -45,10 +45,13 @@ export const POS_CANONICAL_ENTRY = "/pos";
 
 /**
  * Dedicated POS terminal sidebar (not the 39-module ERP tree, not the 12 ERP Sales children).
+ * Visual group label is POS; first operational item is New Sale.
  * Existing POS routes stay registered; Reports stays active on those operational screens.
  */
+export const POS_SHELL_NAV_GROUP = "POS";
+
 export const POS_SHELL_NAV_TITLES = [
-  "POS",
+  "New Sale",
   "Hold / Resume",
   "Customers",
   "Products",
@@ -77,7 +80,7 @@ export interface PosShellNavItem {
 }
 
 export const POS_SHELL_NAV: readonly PosShellNavItem[] = [
-  { title: "POS", path: "/pos", aliases: ["/pos/new"], permission: "pos.sell", icon: "pos" },
+  { title: "New Sale", path: "/pos", aliases: ["/pos/new"], permission: "pos.sell", icon: "pos" },
   { title: "Hold / Resume", path: "/held-sales", aliases: [], permission: "pos.hold", icon: "hold" },
   { title: "Customers", path: "/pos/customers", aliases: [], permission: "pos.sell", icon: "customers" },
   { title: "Products", path: "/pos/products", aliases: [], permission: "pos.sell", icon: "products" },
@@ -274,6 +277,8 @@ export const POS_COMPONENT_OWNERS = {
   ],
   newSale: [
     "features/pos/PosPage.tsx",
+    "features/pos/components/PosSaleLayout.tsx",
+    "features/pos/components/PosSaleMeta.tsx",
     "features/pos/components/PosProductPanel.tsx",
     "features/pos/components/PosDiscoveryTools.tsx",
     "features/pos/components/PosCart.tsx",

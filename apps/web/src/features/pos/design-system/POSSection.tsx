@@ -21,7 +21,7 @@ export function POSSection({
         <div className="mb-2 flex flex-wrap items-end justify-between gap-2">
           <div className="min-w-0">
             {title ? (
-              <h2 className="text-[13px] font-semibold tracking-tight text-[var(--pos-ink)]">
+              <h2 className="text-[length:var(--pos-text-md)] font-semibold tracking-tight text-[var(--pos-ink)]">
                 {title}
               </h2>
             ) : null}

@@ -9,7 +9,7 @@ export function POSTable({
   return (
     <div className="w-full min-w-0 max-w-full overflow-x-auto">
       <table
-        className={posCn("w-full min-w-max border-collapse text-left text-[13px]", className)}
+        className={posCn("pos-data-table w-full min-w-max border-collapse text-left text-[13px]", className)}
         {...props}
       >
         {children}
@@ -20,7 +20,7 @@ export function POSTable({
 
 export function POSTableHead({ children, className }: { children: ReactNode; className?: string }) {
   return (
-    <thead className={posCn("sticky top-0 bg-[var(--pos-muted-bg)] text-[11px] font-semibold uppercase tracking-wide text-[var(--pos-muted)]", className)}>
+    <thead className={posCn("pos-data-table-head sticky top-0 bg-[var(--pos-muted-bg)] text-[11px] font-semibold uppercase tracking-wide text-[var(--pos-muted)]", className)}>
       {children}
     </thead>
   );

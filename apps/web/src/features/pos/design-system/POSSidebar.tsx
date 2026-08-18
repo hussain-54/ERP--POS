@@ -48,23 +48,26 @@ export function POSSidebar({
     <aside
       className={posCn(
         "pos-sidebar flex shrink-0 flex-col overflow-y-auto",
-        "fixed bottom-0 left-0 top-12 z-40 w-[15.5rem] transition-transform duration-200 ease-out",
-        "xl:static xl:z-auto xl:h-auto xl:w-56 xl:translate-x-0",
+        "fixed bottom-0 left-0 z-40 transition-transform duration-200 ease-out",
+        "xl:static xl:z-auto xl:h-auto xl:translate-x-0",
         open ? "translate-x-0" : "-translate-x-full",
         !open ? "pointer-events-none xl:pointer-events-auto xl:hidden" : "",
       )}
       aria-label="POS sidebar"
     >
-      <div className="border-b border-white/10 px-3 py-3">
-        <div className="text-[11px] font-semibold uppercase tracking-wide text-[var(--pos-nav-muted)]">
-          Point of Sale
+      <div className="pos-sidebar-brand">
+        <span className="pos-sidebar-mark" aria-hidden="true">
+          POS
+        </span>
+        <div className="min-w-0">
+          <div className="pos-sidebar-title">POS Terminal</div>
+          <div className="pos-sidebar-sub">Point of Sale</div>
         </div>
-        <div className="mt-0.5 text-sm font-semibold text-[var(--pos-nav-ink)]">Terminal</div>
       </div>
 
       <POSNav onNavigate={onNavigate} grantedCount={grantedCount} hasPermission={hasPermission} />
 
-      <div className="mt-auto border-t border-white/10 p-3">
+      <div className="pos-sidebar-util mt-auto">
         <Link
           to="/"
           aria-label="ERP Home"

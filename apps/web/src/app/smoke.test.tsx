@@ -864,9 +864,9 @@ describe("responsive ERP shell", () => {
     const nav = screen.getByRole("navigation", { name: "POS navigation" });
     const hrefs = [...nav.querySelectorAll("a")].map((link) => link.getAttribute("href"));
     expect(hrefs).toEqual(POS_SHELL_NAV.map((item) => item.path));
-    expect(screen.getByRole("link", { name: "POS" }).className).toContain("pos-nav-active");
+    expect(screen.getByRole("link", { name: "New Sale" }).className).toContain("pos-nav-active");
     expect(POS_SHELL_NAV_TITLES).toEqual([
-      "POS",
+      "New Sale",
       "Hold / Resume",
       "Customers",
       "Products",

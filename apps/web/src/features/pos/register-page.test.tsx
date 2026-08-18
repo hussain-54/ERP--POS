@@ -17,6 +17,8 @@ describe("Register page", () => {
         </ToastProvider>
       </MemoryRouter>,
     );
+    expect(screen.getByRole("link", { name: "Home" })).toHaveAttribute("href", "/");
+    expect(screen.getByRole("link", { name: "Reports" })).toHaveAttribute("href", "/pos/reports");
     expect(screen.getByRole("heading", { name: "Register" })).toBeInTheDocument();
     for (const label of REGISTER_METRIC_LABELS) {
       expect(screen.getByText(label)).toBeInTheDocument();

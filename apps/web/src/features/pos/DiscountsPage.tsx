@@ -24,6 +24,7 @@ import {
 } from "./discounts-workspace";
 import {
   POSBadge,
+  POSBreadcrumb,
   POSButton,
   POSCard,
   POSEmptyState,
@@ -238,7 +239,14 @@ export function DiscountsPage() {
   }
 
   return (
-    <div className="space-y-3">
+    <div className="pos-ops-workspace space-y-3">
+      <POSBreadcrumb
+        items={[
+          { label: "Home", to: "/" },
+          { label: "Reports", to: "/pos/reports" },
+          { label: "Discounts" },
+        ]}
+      />
       <POSPageHeader
         title="Discounts"
         subtitle="Live POS discount policy. Caps come from discount-policy and applyDiscount. The UI does not compute a sale grand total. Over-cap discounts require the real Approval Workflow — cashiers cannot self-override."
@@ -270,7 +278,7 @@ export function DiscountsPage() {
           title="Maximum discount policy"
           description={`Inclusive ladder: cashier 5% · supervisor 10% · manager 20% · owner 50% · special unlimited. Sale post overwrites approverRole from session permissions. Workflow: ${APPROVAL_CHAINS.discount.join(" → ")}.`}
         >
-          <POSTable>
+          <POSTable className="pos-register-table">
             <POSTableHead>
               <tr>
                 {DISCOUNT_TABLE_COLUMNS.map((col) => (
@@ -295,7 +303,7 @@ export function DiscountsPage() {
         </POSSection>
       </POSCard>
 
-      <div className="grid min-h-0 gap-3 xl:grid-cols-[minmax(0,1fr)_minmax(22rem,0.9fr)]">
+      <div className="pos-split-register">
         <POSCard>
           <POSSection
             title="Policy check"

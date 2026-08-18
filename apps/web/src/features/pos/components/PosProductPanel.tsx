@@ -1,4 +1,4 @@
-import { memo, useEffect, useMemo, useState } from "react";
+import { memo, useEffect, useMemo, useState, type ReactNode } from "react";
 import type { ProductSearchResult } from "@electronic-erp/contracts";
 import { pickExactProductMatch, pickPriceLevel, resolvePosUnitPrice } from "@electronic-erp/domain";
 import {
@@ -51,6 +51,7 @@ interface Props {
   onManualEntry?: () => void;
   hasMore?: boolean;
   onLoadMore?: () => void;
+  meta?: ReactNode;
 }
 
 const DISCOVERY_TABS: { id: ProductTab; label: string }[] = [
@@ -140,7 +141,7 @@ const ProductCard = memo(function ProductCard({
         className="flex flex-1 flex-col text-left focus:outline-none focus-visible:shadow-[var(--pos-focus)]"
       >
         <div
-          className="relative flex h-14 items-center justify-center bg-[var(--pos-muted-bg)]"
+          className="pos-product-card-media relative flex h-16 items-center justify-center bg-[var(--pos-muted-bg)]"
           title={showPhoto ? title : "Product photos are not included in POS search"}
         >
           {showPhoto ? (
@@ -177,7 +178,7 @@ const ProductCard = memo(function ProductCard({
           <div className="text-[10px] text-[var(--pos-muted)]">SKU {p.sku || "—"}</div>
           <div className="mt-auto flex items-end justify-between gap-1 pt-0.5">
             <div>
-              <div className="text-[13px] font-semibold tabular-nums text-[var(--pos-ink)]">
+              <div className="text-[13px] font-bold tabular-nums text-[var(--pos-primary)]">
                 Rs {price.toFixed(2)}
               </div>
               <div className="text-[10px] text-[var(--pos-muted)]">
@@ -219,6 +220,7 @@ export const PosProductPanel = memo(function PosProductPanel({
   onManualEntry,
   hasMore = false,
   onLoadMore,
+  meta,
 }: Props) {
   const searchingCatalog = query.trim().length > 0;
   const [draft, setDraft] = useState(query);
@@ -293,7 +295,7 @@ export const PosProductPanel = memo(function PosProductPanel({
 
   return (
     <section className="pos-product-discovery flex min-h-0 flex-1 flex-col">
-      <div className="shrink-0 space-y-2">
+      <div className="pos-product-search-block shrink-0 space-y-2">
         <POSSearch
           ref={searchRef as React.RefObject<HTMLInputElement>}
           aria-label="Product search"
@@ -331,6 +333,7 @@ export const PosProductPanel = memo(function PosProductPanel({
             onCamera={onCamera}
             onManualEntry={onManualEntry}
           />
+          {meta}
           <POSBadge tone={searching ? "warning" : "neutral"}>
             {searching ? "Searching…" : `${list.length} items`}
           </POSBadge>

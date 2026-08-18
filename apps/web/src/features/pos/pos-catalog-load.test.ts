@@ -8,6 +8,7 @@ import {
   POS_PRODUCT_PAGE_SIZE,
   POS_PRODUCT_SEARCH_LIMIT,
   POS_PRODUCT_SEARCH_LIMIT_MAX,
+  POS_SEARCH_FLUSH_MS,
   productImageUrl,
   visibleProductSlice,
 } from "./pos-catalog-load";
@@ -48,6 +49,8 @@ describe("POS catalog load", () => {
 
   it("pages visible cards and raises the existing search limit without inventing a second API", () => {
     expect(POS_PRODUCT_PAGE_SIZE).toBe(12);
+    expect(POS_SEARCH_FLUSH_MS).toBe(180);
+    expect(POS_PRODUCT_SEARCH_LIMIT).toBe(24);
     expect(visibleProductSlice(["a", "b", "c"], 2)).toEqual(["a", "b"]);
     expect(canViewMoreProducts(13, 12)).toBe(true);
     expect(canViewMoreProducts(12, 12)).toBe(false);

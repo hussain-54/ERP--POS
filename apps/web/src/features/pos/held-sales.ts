@@ -27,6 +27,7 @@ export type HoldStats = {
   expired: number;
   today: number;
   mine: number;
+  totalValue: number;
 };
 
 const HOLD_TABS: Array<{ id: HoldTab; label: string }> = [
@@ -176,7 +177,20 @@ export const HOLD_KPI_CARDS = [
   { id: "expired", label: "Expired Holds", tab: "expired" as HoldTab, mineOnly: false, tone: "danger" as const },
   { id: "today", label: "Today's Holds", tab: "today" as HoldTab, mineOnly: false, tone: "neutral" as const },
   { id: "mine", label: "Your Holds", tab: "all_pending" as HoldTab, mineOnly: true, tone: "primary" as const },
+  { id: "value", label: "Total Held Value", tab: "all_pending" as HoldTab, mineOnly: false, tone: "primary" as const },
 ] as const;
+
+export function parkedHoldValue(holds: HeldSaleRecord[], now = new Date()): number {
+  const parked = [
+    ...filterHeldSales(holds, "active", { now }),
+    ...filterHeldSales(holds, "expiring", { now }),
+  ];
+  let total = 0;
+  for (const hold of parked) {
+    total += snapshotTotals(hold.cartSnapshot)?.grand ?? 0;
+  }
+  return total;
+}
 
 export function computeHoldStats(holds: HeldSaleRecord[], userId?: string | null, now = new Date()): HoldStats {
   return {
@@ -185,6 +199,7 @@ export function computeHoldStats(holds: HeldSaleRecord[], userId?: string | null
     expired: filterHeldSales(holds, "expired", { now }).length,
     today: filterHeldSales(holds, "today", { now }).length,
     mine: userId ? filterHeldSales(holds, "mine", { now, userId }).length : 0,
+    totalValue: parkedHoldValue(holds, now),
   };
 }
 

@@ -11,6 +11,7 @@ import {
   type CashShift,
 } from "./register-shift";
 import {
+  POSBreadcrumb,
   POSButton,
   POSCard,
   POSConfirmDialog,
@@ -204,14 +205,55 @@ export function RegisterPage() {
   }
 
   return (
-    <div className="space-y-3">
+    <div className="pos-ops-workspace space-y-3">
+      <POSBreadcrumb
+        items={[
+          { label: "Home", to: "/" },
+          { label: "Reports", to: "/pos/reports" },
+          { label: "Register" },
+        ]}
+      />
       <POSPageHeader
         title="Register"
         subtitle="Cashier shift control from the live cash-shift record. Card, other tenders, and refunds are not stored on the shift."
         actions={
-          <POSButton variant="secondary" size="sm" onClick={() => void reload()} disabled={loading}>
-            Refresh
-          </POSButton>
+          <>
+            <POSButton variant="secondary" size="sm" onClick={() => void reload()} disabled={loading}>
+              Refresh
+            </POSButton>
+            <POSButton
+              size="sm"
+              onClick={() => {
+                setOpeningFloat(String(shift?.openingFloat ?? 0));
+                setOpenModal(true);
+              }}
+              disabled={!canShift || openShift || busy}
+            >
+              Open Shift
+            </POSButton>
+            <POSButton
+              size="sm"
+              variant="secondary"
+              onClick={() => setConfirm("close")}
+              disabled={!canShift || !openShift || busy}
+            >
+              Close Shift
+            </POSButton>
+            <POSButton
+              size="sm"
+              variant="ghost"
+              onClick={() => {
+                setCountDraft(counted != null ? String(counted) : expected != null ? String(expected) : "0");
+                setCountModal(true);
+              }}
+              disabled={!canShift || !openShift}
+            >
+              Cash Count
+            </POSButton>
+            <POSButton size="sm" variant="ghost" onClick={() => setReconcileOpen(true)} disabled={!canShift || !shift}>
+              Reconcile
+            </POSButton>
+          </>
         }
       />
 
@@ -224,46 +266,15 @@ export function RegisterPage() {
 
       {canView && loading && !shift ? <POSLoadingState label="Loading register…" rows={4} /> : null}
 
-      <div className="grid grid-cols-2 gap-2 md:grid-cols-3 xl:grid-cols-4">
+      <div className="grid grid-cols-2 gap-2 md:grid-cols-3 lg:grid-cols-4">
         {REGISTER_METRIC_LABELS.map((label) => {
           const m = metricValues[label];
           return <POSStatCard key={label} label={label} value={m.value} tone={m.tone} />;
         })}
       </div>
 
-      <POSCard title="Shift actions" padding="sm">
-        <div className="flex flex-wrap gap-2">
-          <POSButton
-            onClick={() => {
-              setOpeningFloat(String(shift?.openingFloat ?? 0));
-              setOpenModal(true);
-            }}
-            disabled={!canShift || openShift || busy}
-          >
-            Open Shift
-          </POSButton>
-          <POSButton
-            variant="secondary"
-            onClick={() => setConfirm("close")}
-            disabled={!canShift || !openShift || busy}
-          >
-            Close Shift
-          </POSButton>
-          <POSButton
-            variant="ghost"
-            onClick={() => {
-              setCountDraft(counted != null ? String(counted) : expected != null ? String(expected) : "0");
-              setCountModal(true);
-            }}
-            disabled={!canShift || !openShift}
-          >
-            Cash Count
-          </POSButton>
-          <POSButton variant="ghost" onClick={() => setReconcileOpen(true)} disabled={!canShift || !shift}>
-            Reconcile
-          </POSButton>
-        </div>
-        <p className="mt-2 text-xs text-[var(--pos-muted)]">
+      <POSCard padding="sm">
+        <p className="text-xs text-[var(--pos-muted)]">
           Cash In and Cash Out are not exposed — the shift API does not post drawer movements.
           Reconcile compares counted cash to expected cash without creating journal entries.
         </p>

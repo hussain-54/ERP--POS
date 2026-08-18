@@ -4,6 +4,7 @@ import { cleanup, fireEvent, render, screen, act, within } from "@testing-librar
 import type { ProductSearchResult } from "@electronic-erp/contracts";
 import type { PosCustomerProfile } from "@electronic-erp/domain";
 import { PosProductPanel } from "./components/PosProductPanel";
+import { PosSaleMeta } from "./components/PosSaleMeta";
 import { POS_PRODUCT_PAGE_SIZE, POS_PRODUCT_SEARCH_PLACEHOLDER } from "./pos-catalog-load";
 import { PosCart } from "./components/PosCart";
 import { PosCustomerPanel } from "./components/PosCustomerPanel";
@@ -100,6 +101,27 @@ describe("industrial New Sale terminal", () => {
     expect(screen.getByText("No recent products")).toBeInTheDocument();
     expect(screen.queryByText(/sample product/i)).not.toBeInTheDocument();
     expect(screen.queryByText(/demo product/i)).not.toBeInTheDocument();
+  });
+
+  it("keeps warehouse, mode, and language in compact sale settings", () => {
+    const onWarehouse = vi.fn();
+    render(
+      <PosSaleMeta
+        warehouseId="w1"
+        warehouses={[{ id: "w1", name: "Main warehouse" }]}
+        lastInvoice="INV-9"
+        mode="easy"
+        locale="en"
+        onWarehouse={onWarehouse}
+        onMode={() => undefined}
+        onLocale={() => undefined}
+      />,
+    );
+    expect(screen.getByLabelText("Sale settings")).toBeInTheDocument();
+    expect(screen.getByLabelText("Warehouse")).toHaveValue("w1");
+    expect(screen.getByLabelText("Mode")).toHaveValue("easy");
+    expect(screen.getByLabelText("Language")).toHaveValue("en");
+    expect(screen.getByText("Last INV-9")).toBeInTheDocument();
   });
 
   it("renders real catalog cards with name, brand, sku, price, stock, and favorite", () => {
@@ -274,6 +296,9 @@ describe("industrial New Sale terminal", () => {
     expect(screen.getByText("Total")).toBeInTheDocument();
     expect(screen.getByText("LED-12 · Stock 15")).toBeInTheDocument();
     expect(screen.getByText("507.00")).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "CART (1 ITEM)" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Apply Discount" })).toBeDisabled();
+    expect(screen.getByRole("button", { name: "Clear Cart" })).toBeEnabled();
     fireEvent.click(screen.getByLabelText("Increase quantity"));
     fireEvent.click(screen.getByLabelText("Decrease quantity"));
     fireEvent.change(screen.getByLabelText("Quantity for LED Bulb 12W"), {
@@ -288,6 +313,36 @@ describe("industrial New Sale terminal", () => {
     expect(onQty).toHaveBeenCalledWith("line-1", "3");
     expect(onDiscount).toHaveBeenCalledWith("line-1", "15");
     expect(onRemove).toHaveBeenCalledWith("line-1");
+  });
+
+  it("puts Apply Discount on the cart header and keeps invoice discount state", () => {
+    const onInvoiceDiscount = vi.fn();
+    const discountRef = createRef<HTMLInputElement>();
+    render(
+      <PosCart
+        cart={[cartLine]}
+        locale="en"
+        onQty={() => undefined}
+        onIncrease={() => undefined}
+        onDecrease={() => undefined}
+        onPrice={() => undefined}
+        onDiscount={() => undefined}
+        onUnitChange={() => undefined}
+        onRemove={() => undefined}
+        onClear={() => undefined}
+        canDiscount
+        canPriceOverride={false}
+        invoiceDiscount="10"
+        onInvoiceDiscount={onInvoiceDiscount}
+        discountRef={discountRef}
+        canInvoiceDiscount
+      />,
+    );
+    expect(screen.getByRole("heading", { name: "CART (1 ITEM)" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Apply Discount" })).toBeEnabled();
+    expect(screen.getByRole("button", { name: "Clear Cart" })).toBeEnabled();
+    fireEvent.change(screen.getByLabelText("Invoice discount"), { target: { value: "15" } });
+    expect(onInvoiceDiscount).toHaveBeenCalledWith("15");
   });
 
   it("warns on last units and ignores negative quantity input", () => {

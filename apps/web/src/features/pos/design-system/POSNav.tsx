@@ -1,7 +1,7 @@
 import { useRef, type KeyboardEvent } from "react";
 import { Link, useLocation } from "react-router-dom";
 import { canShowNavItem } from "@/app/modules";
-import { isPosShellNavActive, POS_SHELL_NAV } from "../pos-ownership";
+import { isPosShellNavActive, POS_SHELL_NAV, POS_SHELL_NAV_GROUP } from "../pos-ownership";
 import { POSNavIcon } from "./POSNavIcon";
 import { posCn } from "./posCn";
 
@@ -49,9 +49,10 @@ export function POSNav({
       ref={navRef}
       id="pos-environment-nav"
       aria-label="POS navigation"
-      className="flex flex-col gap-1 p-2"
+      className="flex flex-col gap-0.5 p-2"
       onKeyDown={onKeyDown}
     >
+      <p className="pos-nav-group-label">{POS_SHELL_NAV_GROUP}</p>
       {POS_SHELL_NAV.map((item) => {
         if (!canShowNavItem(item.permission, grantedCount, hasPermission)) return null;
         const active = isPosShellNavActive(item, location.pathname);

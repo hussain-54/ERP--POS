@@ -444,7 +444,7 @@ export function ExchangePage() {
         : "Even exchange";
 
   return (
-    <div className="space-y-3">
+    <div className="pos-ops-workspace space-y-3">
       <POSBreadcrumb
         items={[
           { label: "Home", to: "/" },
@@ -512,7 +512,7 @@ export function ExchangePage() {
             />
             <POSInput label="Reason detail" value={reasonDetail} onChange={(e) => setReasonDetail(e.target.value)} />
           </div>
-          <POSTable>
+          <POSTable className="pos-register-table">
             <POSTableHead>
               <tr>
                 <POSTh />
@@ -584,8 +584,9 @@ export function ExchangePage() {
 
       {step === "replace" ? (
         <POSCard title="Select replacement product" description="Catalog search only. Quantity cannot exceed available stock.">
-          <div className="flex gap-2">
+          <div className="flex items-end gap-2">
             <POSSearch
+              compact
               label="Replacement product"
               placeholder="Search name, SKU, barcode…"
               value={productQuery}
@@ -597,7 +598,7 @@ export function ExchangePage() {
                 }
               }}
             />
-            <POSButton className="mt-6" size="sm" onClick={() => void searchProducts()} loading={searchingProducts}>
+            <POSButton size="sm" onClick={() => void searchProducts()} loading={searchingProducts}>
               Search
             </POSButton>
           </div>
@@ -617,7 +618,7 @@ export function ExchangePage() {
               </li>
             ))}
           </ul>
-          <POSTable>
+          <POSTable className="pos-register-table">
             <POSTableHead>
               <tr>
                 <POSTh>Replacement</POSTh>

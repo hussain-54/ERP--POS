@@ -47,6 +47,7 @@ describe("POS environment shell", () => {
     expect(links.map((link) => link.getAttribute("data-pos-nav"))).toEqual(POS_SHELL_NAV.map((item) => item.icon));
     expect(links.every((link) => link.querySelector("svg[aria-hidden='true']"))).toBe(true);
     expect(screen.queryByLabelText("ERP modules")).not.toBeInTheDocument();
+    expect(screen.getByRole("navigation", { name: "POS navigation" }).querySelector(".pos-nav-group-label")?.textContent).toBe("POS");
     expect(screen.getByLabelText("POS sidebar")).toBeInTheDocument();
     expect(screen.getAllByRole("link", { name: "ERP Home" }).every((link) => link.getAttribute("href") === "/")).toBe(
       true,
@@ -69,15 +70,15 @@ describe("POS environment shell", () => {
     for (const [path, title] of ROUTE_TITLES) {
       expect(posNavItemForPath(path)?.title).toBe(title);
     }
-    expect(posShellNavItemForPath("/pos")?.title).toBe("POS");
-    expect(posShellNavItemForPath("/pos/new")?.title).toBe("POS");
+    expect(posShellNavItemForPath("/pos")?.title).toBe("New Sale");
+    expect(posShellNavItemForPath("/pos/new")?.title).toBe("New Sale");
     expect(posShellNavItemForPath("/held-sales")?.title).toBe("Hold / Resume");
     expect(posShellNavItemForPath("/discounts")?.title).toBe("Price & Discount");
     expect(posShellNavItemForPath("/invoices")?.title).toBe("Reports");
     expect(posShellNavItemForPath("/pos/salesmen")?.title).toBe("Reports");
     expect(posShellNavItemForPath("/pos/settings")?.title).toBe("Settings");
     const { unmount } = renderPos("/pos/new");
-    const posLink = screen.getByRole("link", { name: "POS" });
+    const posLink = screen.getByRole("link", { name: "New Sale" });
     expect(posLink.className).toContain("pos-nav-active");
     expect(posLink).toHaveAttribute("aria-current", "page");
     unmount();
@@ -91,7 +92,7 @@ describe("POS environment shell", () => {
 
   it("moves POS sidebar focus with arrow keys", () => {
     renderPos("/pos");
-    const pos = screen.getByRole("link", { name: "POS" });
+    const pos = screen.getByRole("link", { name: "New Sale" });
     pos.focus();
     fireEvent.keyDown(pos, { key: "ArrowDown" });
     expect(screen.getByRole("link", { name: "Hold / Resume" })).toHaveFocus();

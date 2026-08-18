@@ -7,6 +7,7 @@ import {
   POS_OWNERSHIP,
   POS_SHELL_NAV,
   POS_SHELL_NAV_TITLES,
+  POS_SHELL_NAV_GROUP,
   posNavItemForPath,
   posShellNavItemForPath,
 } from "./pos-ownership";
@@ -98,6 +99,7 @@ describe("POS ownership map", () => {
 
   it("keeps a dedicated POS terminal sidebar separate from ERP Sales children", () => {
     expect(POS_SHELL_NAV.map((item) => item.title)).toEqual([...POS_SHELL_NAV_TITLES]);
+    expect(POS_SHELL_NAV_GROUP).toBe("POS");
     expect(POS_SHELL_NAV.map((item) => item.path)).toEqual([
       "/pos",
       "/held-sales",
@@ -120,6 +122,6 @@ describe("POS ownership map", () => {
     expect(isPosEnvironmentPath("/pos/products")).toBe(true);
     expect(isPosEnvironmentPath("/pos/reports")).toBe(true);
     expect(posShellNavItemForPath("/invoices")?.title).toBe("Reports");
-    expect(posShellNavItemForPath("/pos/new")?.title).toBe("POS");
+    expect(posShellNavItemForPath("/pos/new")?.title).toBe("New Sale");
   });
 });

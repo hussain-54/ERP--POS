@@ -14,6 +14,7 @@ import {
 } from "./references-workspace";
 import {
   POSBadge,
+  POSBreadcrumb,
   POSButton,
   POSCard,
   POSInput,
@@ -121,7 +122,14 @@ export function ReferencesPage() {
   }
 
   return (
-    <div className="space-y-3">
+    <div className="pos-ops-workspace space-y-3">
+      <POSBreadcrumb
+        items={[
+          { label: "Home", to: "/" },
+          { label: "Reports", to: "/pos/reports" },
+          { label: "References" },
+        ]}
+      />
       <POSPageHeader
         title="References"
         subtitle="Real sale_references plus posted sales that used them. New Sale still stores reference_id on the sale."
@@ -162,12 +170,12 @@ export function ReferencesPage() {
 
       <POSCard padding="none">
         <div className="p-3">
-          <POSSearch value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Reference #, customer, invoice…" />
+          <POSSearch compact value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Reference #, customer, invoice…" />
         </div>
         {loading && !rows.length ? (
           <POSLoadingState label="Loading references…" rows={6} className="p-3" />
         ) : (
-          <POSTable>
+          <POSTable className="pos-register-table">
             <POSTableHead>
               <tr>
                 {REFERENCE_TABLE_COLUMNS.map((col) => (
@@ -178,7 +186,7 @@ export function ReferencesPage() {
             <POSTableBody>
               {visible.map((row) => (
                 <tr key={row.id}>
-                  <POSTd className="font-medium">{row.referenceNumber || "—"}</POSTd>
+                  <POSTd className="font-semibold text-[var(--pos-primary)]">{row.referenceNumber || "—"}</POSTd>
                   <POSTd className="capitalize">{row.type}</POSTd>
                   <POSTd>{row.customer}</POSTd>
                   <POSTd>{row.invoice}</POSTd>

@@ -306,7 +306,7 @@ export function ReturnsPage() {
   const hasRemaining = remainingQtyTotal(lines) > 0;
 
   return (
-    <div className="space-y-3">
+    <div className="pos-ops-workspace space-y-3">
       <POSBreadcrumb
         items={[
           { label: "Home", to: "/" },
@@ -365,7 +365,7 @@ export function ReturnsPage() {
           {!hasRemaining ? (
             <PosWorkflowAlert messages={["Nothing remaining to return. Every line on this invoice is already fully returned."]} />
           ) : null}
-          <POSTable className="mt-3">
+          <POSTable className="mt-3 pos-register-table">
             <POSTableHead>
               <tr>
                 <POSTh>Item</POSTh>
@@ -420,7 +420,7 @@ export function ReturnsPage() {
               placeholder={reasonCode === "other" ? "Required" : "Optional"}
             />
           </div>
-          <POSTable>
+          <POSTable className="pos-register-table">
             <POSTableHead>
               <tr>
                 <POSTh />
@@ -509,7 +509,7 @@ export function ReturnsPage() {
 
       {step === "qty" ? (
         <POSCard title="Select quantities" description="Return quantity cannot exceed remaining returnable quantity.">
-          <POSTable>
+          <POSTable className="pos-register-table">
             <POSTableHead>
               <tr>
                 {RETURN_LINE_COLUMNS.map((col) => (

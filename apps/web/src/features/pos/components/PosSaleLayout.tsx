@@ -1,9 +1,9 @@
 import type { ReactNode } from "react";
 import { POSButton, POSDrawer } from "../design-system";
-import type { PosLayoutMode, PosMobileSheet } from "../pos-layout";
+import { posSaleLayoutClass, type PosMobileSheet, type PosSaleChrome } from "../pos-layout";
 
 export function PosSaleLayout({
-  mode,
+  chrome,
   product,
   customer,
   cart,
@@ -17,7 +17,7 @@ export function PosSaleLayout({
   onMobileSheet,
   onCancelSale,
 }: {
-  mode: PosLayoutMode;
+  chrome: PosSaleChrome;
   product: ReactNode;
   customer: ReactNode;
   cart: ReactNode;
@@ -39,9 +39,9 @@ export function PosSaleLayout({
     </div>
   );
 
-  if (mode === "mobile") {
+  if (chrome === "sheets") {
     return (
-      <div className="pos-sale-mobile flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden">
+      <div className={`${posSaleLayoutClass(chrome)} flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden`}>
         <div className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden p-3 pb-0">{product}</div>
         <div className="pos-mobile-dock" role="navigation" aria-label="Mobile POS actions">
           <POSButton
@@ -120,11 +120,7 @@ export function PosSaleLayout({
   }
 
   return (
-    <div
-      className={`pos-sale-grid min-h-0 min-w-0 gap-3 overflow-hidden p-3${
-        mode === "tablet" ? " pos-sale-grid--tablet" : ""
-      }`}
-    >
+    <div className={`${posSaleLayoutClass(chrome)} min-h-0 min-w-0 gap-3 overflow-hidden p-3`}>
       {product}
       {ops}
     </div>

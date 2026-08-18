@@ -28,7 +28,7 @@ export function POSSelect({
   return (
     <label className={posCn("flex w-full flex-col", compact ? "gap-0.5" : "gap-1 text-sm")}>
       {label ? (
-        <span className={posCn("font-medium text-[var(--pos-ink)]", compact && "text-[10px] uppercase tracking-wide text-[var(--pos-muted)]")}>
+        <span className={posCn("pos-field-label", compact && "pos-field-label--compact")}>
           {label}
         </span>
       ) : null}

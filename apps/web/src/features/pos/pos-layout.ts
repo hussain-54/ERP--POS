@@ -7,6 +7,7 @@ export const POS_DESKTOP_MIN = 1280;
 
 export type PosLayoutMode = "desktop" | "tablet" | "mobile";
 export type PosMobileSheet = "cart" | "customer" | "pay" | null;
+export type PosSaleChrome = "sheets" | "stack" | "split";
 
 /** Common register widths used to lock layout behavior. */
 export const POS_TEST_WIDTHS = [375, 390, 768, 820, 1024, 1280, 1440, 1920] as const;
@@ -28,6 +29,23 @@ export function posShowsTwoZoneTerminal(width: number): boolean {
 
 export function posUsesMobileSheets(width: number): boolean {
   return posLayoutMode(width) === "mobile";
+}
+
+export function posSaleChrome(width: number): PosSaleChrome {
+  if (posUsesMobileSheets(width)) return "sheets";
+  if (posTabletStacks(width)) return "stack";
+  return "split";
+}
+
+export function posSaleLayoutClass(chrome: PosSaleChrome): string {
+  if (chrome === "sheets") return "pos-sale-mobile";
+  if (chrome === "stack") return "pos-sale-grid pos-sale-grid--stack";
+  return "pos-sale-grid";
+}
+
+/** Split registers (holds, payments, installments) follow the two-zone breakpoint. */
+export function posShowsSplitRegister(width: number): boolean {
+  return posShowsTwoZoneTerminal(width);
 }
 
 /** Tablet and mobile collapse the dedicated POS sidebar; desktop keeps it open. */

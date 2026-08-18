@@ -21,6 +21,7 @@ import {
 } from "./payment-center";
 import {
   POSBadge,
+  POSBreadcrumb,
   POSButton,
   POSCard,
   POSEmptyState,
@@ -296,7 +297,14 @@ export function PaymentsPage() {
   const recordNote = methodSettlementNote(recordKind);
 
   return (
-    <div className="space-y-3">
+    <div className="pos-ops-workspace space-y-3">
+      <POSBreadcrumb
+        items={[
+          { label: "Home", to: "/" },
+          { label: "Reports", to: "/pos/reports" },
+          { label: "Payments" },
+        ]}
+      />
       <POSPageHeader
         title="Payments"
         subtitle="Recorded receipts from POS checkout and on-account collects. Wallet and card methods are stored locally — there is no payment gateway."
@@ -312,7 +320,7 @@ export function PaymentsPage() {
         }
       />
 
-      <div className="grid grid-cols-2 gap-2 md:grid-cols-3 xl:grid-cols-5">
+      <div className="grid grid-cols-2 gap-2 md:grid-cols-3 lg:grid-cols-5">
         <POSStatCard label="Recorded" value={String(summary?.recordedCount ?? 0)} hint={formatMoney(summary?.recordedAmount ?? 0)} tone="success" />
         <POSStatCard label="Pending" value={String(summary?.pendingCount ?? 0)} tone="warning" />
         <POSStatCard label="Failed" value={String(summary?.failedCount ?? 0)} tone="danger" />
@@ -323,6 +331,7 @@ export function PaymentsPage() {
       <POSCard title="Filters" padding="sm">
         <div className="mb-2">
           <POSSearch
+            compact
             label="Search"
             placeholder="Payment #, invoice #, customer…"
             value={search}
@@ -387,12 +396,12 @@ export function PaymentsPage() {
         </div>
       </POSCard>
 
-      <div className="grid min-h-0 gap-3 xl:grid-cols-[minmax(0,1.4fr)_minmax(20rem,0.85fr)]">
+      <div className="pos-split-register">
         <POSCard padding="none">
           {loading && items.length === 0 ? (
             <POSLoadingState label="Loading payments…" rows={8} className="p-3" />
           ) : (
-            <POSTable>
+            <POSTable className="pos-register-table">
               <POSTableHead>
                 <tr>
                   {PAYMENT_TABLE_COLUMNS.map((col) => (
@@ -406,7 +415,16 @@ export function PaymentsPage() {
                 {items.map((row) => (
                   <tr key={row.id} onClick={() => void openDetail(row.id)}>
                     <POSTd>
-                      <span className="font-medium">{paymentNumber(row)}</span>
+                      <button
+                        type="button"
+                        className="text-sm font-semibold text-[var(--pos-primary)] hover:underline"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          void openDetail(row.id);
+                        }}
+                      >
+                        {paymentNumber(row)}
+                      </button>
                     </POSTd>
                     <POSTd className="whitespace-nowrap">{formatSaleDate(row.occurredAt)}</POSTd>
                     <POSTd>{row.invoiceNumber?.trim() || "—"}</POSTd>
@@ -454,7 +472,7 @@ export function PaymentsPage() {
               description="Posted POS receipts and on-account collects appear here. Status uses payments.status and sync_state."
             />
           ) : null}
-          <div className="flex items-center justify-between gap-2 border-t border-[var(--pos-border)] px-3 py-2 text-sm">
+          <div className="flex items-center justify-between gap-2 border-t border-[var(--pos-border)] px-3 py-2 text-xs text-[var(--pos-muted)]">
             <span className="text-[var(--pos-muted)]">
               {total} payment{total === 1 ? "" : "s"} · page {page} of {pageCount}
             </span>
