@@ -22,6 +22,7 @@ describe("Payments page", () => {
     for (const label of ["Recorded", "Pending", "Failed", "Reversed", "Today"]) {
       expect(screen.getAllByText(label).length).toBeGreaterThan(0);
     }
+    expect(screen.getByPlaceholderText("Payment #, invoice #, customer…").className).not.toContain("pos-search-input");
     expect(screen.getByText("Filters")).toBeInTheDocument();
     for (const label of ["Date", "Invoice", "Customer", "Payment Method", "Cashier", "Status", "Branch", "Terminal"]) {
       expect(screen.getAllByText(label).length).toBeGreaterThan(0);

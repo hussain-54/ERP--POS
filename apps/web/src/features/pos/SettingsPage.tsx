@@ -14,6 +14,7 @@ import {
 } from "./pos-settings";
 import {
   POSBadge,
+  POSBreadcrumb,
   POSButton,
   POSCard,
   POSPageHeader,
@@ -84,7 +85,13 @@ export function SettingsPage() {
   }, [canListTax]);
 
   return (
-    <div className="space-y-3">
+    <div className="pos-ops-workspace space-y-3">
+      <POSBreadcrumb
+        items={[
+          { label: "Home", to: "/" },
+          { label: "Settings" },
+        ]}
+      />
       <POSPageHeader
         title={POS_SETTINGS_HEADING}
         subtitle="POS-specific configuration that already exists in domain, hardware, or APIs. System Administration keeps security, users, branches, integrations, backup, and company settings."
@@ -97,7 +104,7 @@ export function SettingsPage() {
 
       {POS_SETTINGS_SECTIONS.map((section) => (
         <POSCard key={section} title={section} padding="none">
-          <POSTable>
+          <POSTable className="pos-register-table">
             <POSTableHead>
               <tr>
                 {POS_SETTINGS_COLUMNS.map((col) => (
@@ -123,7 +130,7 @@ export function SettingsPage() {
           {section === "POS Terminal" ? (
             <div className="border-t border-[var(--pos-border)]">
               <p className="px-3 py-2 text-xs font-medium text-[var(--pos-muted)]">Live hardware</p>
-              <POSTable>
+              <POSTable className="pos-register-table">
                 <POSTableHead>
                   <tr>
                     <POSTh>Capability</POSTh>
@@ -153,7 +160,7 @@ export function SettingsPage() {
           {section === "Payments" ? (
             <div className="border-t border-[var(--pos-border)]">
               <p className="px-3 py-2 text-xs font-medium text-[var(--pos-muted)]">Live methods</p>
-              <POSTable>
+              <POSTable className="pos-register-table">
                 <POSTableHead>
                   <tr>
                     <POSTh>Code</POSTh>
@@ -183,7 +190,7 @@ export function SettingsPage() {
           {section === "Tax" ? (
             <div className="border-t border-[var(--pos-border)]">
               <p className="px-3 py-2 text-xs font-medium text-[var(--pos-muted)]">Live rates</p>
-              <POSTable>
+              <POSTable className="pos-register-table">
                 <POSTableHead>
                   <tr>
                     <POSTh>Code</POSTh>

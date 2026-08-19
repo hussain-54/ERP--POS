@@ -18,6 +18,7 @@ import {
   kpiDisplay,
   parseSaleRow,
   parseSaleSummary,
+  remainingAmountClass,
   SALE_KPI_CARDS,
   SALE_PAGE_SIZE,
   SALE_STATUS_FILTERS,
@@ -84,7 +85,7 @@ function filtersToQuery(
 
 export function SalesWorkspace({
   title = "Sales Dashboard",
-  subtitle = "Retail transaction register from live POS sales.",
+  subtitle = "Sales Management register from live POS sales.",
 }: {
   title?: string;
   subtitle?: string;
@@ -157,64 +158,68 @@ export function SalesWorkspace({
 
   useEffect(() => {
     let cancelled = false;
-    try {
-      void partiesApi
-        .listCustomers()
-        .then((res) => {
-          if (cancelled) return;
-          setCustomers(res.items.map((customer) => ({ id: String(customer.id), name: String(customer.name ?? "Customer") })));
-        })
-        .catch(() => undefined);
-    } catch {
-      /* not signed in */
-    }
-    try {
-      void adminApi
-        .listUsers()
-        .then((res) => {
-          if (cancelled) return;
-          setCashiers(
-            res.items
-              .map((user) => ({
-                id: String(user.id ?? ""),
-                name: String(user.full_name ?? user.fullName ?? user.email ?? "Cashier"),
-              }))
-              .filter((user) => user.id),
-          );
-        })
-        .catch(() => undefined);
-    } catch {
-      /* not signed in */
-    }
-    try {
-      void partiesApi
-        .listPaymentMethods()
-        .then((res) => {
-          if (cancelled) return;
-          setPaymentMethods(
-            res.items.map((method) => ({
-              id: String(method.id),
-              name: String(method.name ?? method.code ?? "Payment"),
-            })),
-          );
-        })
-        .catch(() => undefined);
-    } catch {
-      /* not signed in */
-    }
-    try {
-      void enterpriseApi
-        .listEmployees()
-        .then((res) => {
-          if (cancelled) return;
-          setSalesmen(mapSalesmanEmployees(res.items).map((salesman) => ({ id: salesman.id, name: salesman.name })));
-        })
-        .catch(() => undefined);
-    } catch {
-      /* not signed in */
-    }
+    const handle = window.setTimeout(() => {
+      if (cancelled) return;
+      try {
+        void partiesApi
+          .listCustomers()
+          .then((res) => {
+            if (cancelled) return;
+            setCustomers(res.items.map((customer) => ({ id: String(customer.id), name: String(customer.name ?? "Customer") })));
+          })
+          .catch(() => undefined);
+      } catch {
+        /* not signed in */
+      }
+      try {
+        void adminApi
+          .listUsers()
+          .then((res) => {
+            if (cancelled) return;
+            setCashiers(
+              res.items
+                .map((user) => ({
+                  id: String(user.id ?? ""),
+                  name: String(user.full_name ?? user.fullName ?? user.email ?? "Cashier"),
+                }))
+                .filter((user) => user.id),
+            );
+          })
+          .catch(() => undefined);
+      } catch {
+        /* not signed in */
+      }
+      try {
+        void partiesApi
+          .listPaymentMethods()
+          .then((res) => {
+            if (cancelled) return;
+            setPaymentMethods(
+              res.items.map((method) => ({
+                id: String(method.id),
+                name: String(method.name ?? method.code ?? "Payment"),
+              })),
+            );
+          })
+          .catch(() => undefined);
+      } catch {
+        /* not signed in */
+      }
+      try {
+        void enterpriseApi
+          .listEmployees()
+          .then((res) => {
+            if (cancelled) return;
+            setSalesmen(mapSalesmanEmployees(res.items).map((salesman) => ({ id: salesman.id, name: salesman.name })));
+          })
+          .catch(() => undefined);
+      } catch {
+        /* not signed in */
+      }
+    }, 0);
     return () => {
       cancelled = true;
+      window.clearTimeout(handle);
     };
   }, []);
 
@@ -381,7 +386,7 @@ export function SalesWorkspace({
   }
 
   return (
-    <div className="flex h-full min-h-0 flex-1 flex-col overflow-hidden p-3">
+    <div className="pos-sales-workspace flex h-full min-h-0 flex-1 flex-col overflow-hidden p-3">
       <div className="shrink-0 space-y-3">
         <POSBreadcrumb
           items={[
@@ -408,7 +413,7 @@ export function SalesWorkspace({
           }
         />
 
-        <div className="grid grid-cols-2 gap-2 md:grid-cols-3 xl:grid-cols-6">
+        <div className="grid grid-cols-2 gap-2 md:grid-cols-3 lg:grid-cols-6">
           {SALE_KPI_CARDS.map((card) => (
             <POSStatCard
               key={card.id}
@@ -422,6 +427,7 @@ export function SalesWorkspace({
         <POSCard padding="sm">
           <div className="mb-2">
             <POSSearch
+              compact
               label="Search"
               placeholder="Search by invoice #, customer, phone, SKU…"
               value={draft.search}
@@ -434,9 +440,9 @@ export function SalesWorkspace({
               }}
             />
           </div>
-          <div className="grid gap-2 md:grid-cols-2 xl:grid-cols-6">
+          <div className="grid gap-2 md:grid-cols-2 lg:grid-cols-6">
             <fieldset className="xl:col-span-2">
-              <legend className="mb-1 text-sm font-medium text-[var(--pos-ink)]">Date Range</legend>
+              <legend className="pos-field-label pos-field-label--compact mb-1">Date Range</legend>
               <div className="grid grid-cols-2 gap-2">
                 <POSInput
                   aria-label="Date from"
@@ -516,9 +522,10 @@ export function SalesWorkspace({
               />
             </div>
           ) : null}
+          <div className="mt-2">
+            <POSTabs items={SALE_TABS} value={tab} onChange={changeTab} />
+          </div>
         </POSCard>
-
-        <POSTabs items={SALE_TABS} value={tab} onChange={changeTab} />
       </div>
 
       <POSCard padding="none" className="mt-3 flex min-h-0 flex-1 flex-col overflow-hidden">
@@ -537,7 +544,13 @@ export function SalesWorkspace({
               {items.map((sale) => (
                 <tr key={sale.id}>
                   <POSTd className={saleColumnClassName("Invoice #")}>
-                    <span className="font-medium">{sale.invoiceNumber}</span>
+                    <button
+                      type="button"
+                      className="text-sm font-semibold text-[var(--pos-primary)] hover:underline"
+                      onClick={() => void openInvoice(sale.id)}
+                    >
+                      {sale.invoiceNumber}
+                    </button>
                   </POSTd>
                   <POSTd className={`whitespace-nowrap ${saleColumnClassName("Date / Time")}`}>
                     {formatSaleDate(sale.postedAt ?? sale.createdAt)}
@@ -551,9 +564,13 @@ export function SalesWorkspace({
                   <POSTd className={saleColumnClassName("Cashier")}>{sale.cashierName?.trim() || "Cashier"}</POSTd>
                   <POSTd className={saleColumnClassName("Salesman")}>{sale.salesmanName?.trim() || "—"}</POSTd>
                   <POSTd className={saleColumnClassName("Items")}>{sale.itemCount ?? 0}</POSTd>
-                  <POSTd className={saleColumnClassName("Total Amount")}>{formatMoney(sale.grandTotal)}</POSTd>
-                  <POSTd className={saleColumnClassName("Paid Amount")}>{formatMoney(sale.paidTotal)}</POSTd>
-                  <POSTd className={saleColumnClassName("Remaining")}>{formatMoney(sale.remainingTotal)}</POSTd>
+                  <POSTd className={`${saleColumnClassName("Total Amount")} font-semibold tabular-nums`}>
+                    {formatMoney(sale.grandTotal)}
+                  </POSTd>
+                  <POSTd className={`${saleColumnClassName("Paid Amount")} tabular-nums`}>{formatMoney(sale.paidTotal)}</POSTd>
+                  <POSTd className={`${saleColumnClassName("Remaining")} tabular-nums ${remainingAmountClass(sale.remainingTotal)}`}>
+                    {formatMoney(sale.remainingTotal)}
+                  </POSTd>
                   <POSTd className={saleColumnClassName("Payment Method")}>{sale.paymentMethods?.trim() || "—"}</POSTd>
                   <POSTd className={saleColumnClassName("Status")}>
                     <POSBadge tone={saleStatusTone(sale.status, sale.paymentStatus)}>
@@ -584,7 +601,7 @@ export function SalesWorkspace({
           ) : null}
         </div>
         {total > SALE_PAGE_SIZE ? (
-          <div className="flex items-center justify-between gap-2 border-t border-[var(--pos-border)] px-3 py-2 text-sm">
+          <div className="flex items-center justify-between gap-2 border-t border-[var(--pos-border)] px-3 py-2 text-xs text-[var(--pos-muted)]">
             <span className="text-[var(--pos-muted)]">
               {total} sale{total === 1 ? "" : "s"} · page {page} of {pageCount}
             </span>

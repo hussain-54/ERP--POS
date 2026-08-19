@@ -1,6 +1,7 @@
+import { memo } from "react";
 import { POSButton } from "../design-system";
 
-export function PosDiscoveryTools({
+export const PosDiscoveryTools = memo(function PosDiscoveryTools({
   onBarcodeScan,
   onQrScan,
   onCamera,
@@ -32,4 +33,4 @@ export function PosDiscoveryTools({
       </POSButton>
     </div>
   );
-}
+});

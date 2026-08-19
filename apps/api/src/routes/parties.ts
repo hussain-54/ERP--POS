@@ -197,7 +197,7 @@ partiesRouter.post("/suppliers/:id/ledger", async (req: AuthedRequest, res, next
   }
 });
 
-// 05 POS / Sales — payment methods (Payments page)
+// 02 POS / SALES — payment methods (Payments page)
 partiesRouter.get("/payment-methods", async (req: AuthedRequest, res, next) => {
   try {
     authz(req).assert("payments.receive");
@@ -270,7 +270,7 @@ partiesRouter.get("/payments/:id", async (req: AuthedRequest, res, next) => {
   }
 });
 
-// 05 POS / Sales — split payments
+// 02 POS / SALES — split payments
 partiesRouter.post("/payments", async (req: AuthedRequest, res, next) => {
   try {
     const direction = req.body.direction === "pay" ? "pay" : "receive";

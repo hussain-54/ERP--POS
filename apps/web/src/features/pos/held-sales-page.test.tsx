@@ -25,6 +25,7 @@ describe("Hold / Resume Sale page", () => {
     expect(screen.getByText("Expired Holds")).toBeInTheDocument();
     expect(screen.getAllByText("Today's Holds").length).toBeGreaterThan(0);
     expect(screen.getAllByText("Your Holds").length).toBeGreaterThan(0);
+    expect(screen.getByText("Total Held Value")).toBeInTheDocument();
     expect(screen.getByPlaceholderText("Search by hold #, customer, cashier...")).toBeInTheDocument();
     expect(screen.getByText("Filters")).toBeInTheDocument();
     expect(screen.getByLabelText("Filters")).toBeInTheDocument();

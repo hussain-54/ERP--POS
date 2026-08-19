@@ -1,10 +1,17 @@
 import type { HeldSaleFilter } from "@electronic-erp/contracts";
+import { memo } from "react";
 import {
   POSBadge,
   POSButton,
   POSEmptyState,
   POSInput,
+  POSTable,
+  POSTableBody,
+  POSTableHead,
+  POSTd,
+  POSTh,
 } from "../design-system";
+import { holdNumber, snapshotTotals } from "../held-sales";
 
 export type HeldSaleListItem = {
   id: string;
@@ -58,7 +65,21 @@ function toneFor(bucket?: string, status?: string) {
   return "primary" as const;
 }
 
-export function PosHoldsPanel({
+function statusLabel(bucket?: string, status?: string) {
+  if (status === "expired" || bucket === "expired") return "Expired";
+  if (bucket === "expiring") return "Expiring soon";
+  if (status === "cancelled") return "Cancelled";
+  if (status === "discarded") return "Discarded";
+  if (status === "resumed") return "Resumed";
+  return "Active";
+}
+
+function formatMoney(n: number | null | undefined): string {
+  if (n == null || !Number.isFinite(n)) return "—";
+  return n.toFixed(2);
+}
+
+export const PosHoldsPanel = memo(function PosHoldsPanel({
   holds,
   filter,
   onFilterChange,
@@ -78,7 +99,7 @@ export function PosHoldsPanel({
   onDiscard,
 }: Props) {
   return (
-    <div className="space-y-3">
+    <div className="pos-holds-drawer space-y-3">
       {onCreateHold ? (
         <div className="space-y-2 rounded-[var(--pos-radius-sm)] border border-[var(--pos-border)] p-3">
           <div className="text-xs font-medium text-[var(--pos-muted)]">New hold</div>
@@ -121,64 +142,77 @@ export function PosHoldsPanel({
       {holds.length === 0 ? (
         <POSEmptyState title="No held bills" description="Hold a sale to resume later (F2)" />
       ) : (
-        <ul className="space-y-2 text-sm">
-          {holds.map((h) => (
-            <li
-              key={h.id}
-              className="space-y-2 rounded-[var(--pos-radius-sm)] border border-[var(--pos-border)] px-3 py-2"
-            >
-              <div className="flex items-start justify-between gap-2">
-                <div className="min-w-0">
-                  <div className="truncate font-medium">{h.holdLabel ?? h.id}</div>
-                  <div className="text-xs text-[var(--pos-muted)]">
-                    {h.heldAt ? new Date(h.heldAt).toLocaleString() : ""}
-                    {h.cartItemCount != null ? ` · ${h.cartItemCount} items` : ""}
+        <POSTable className="pos-register-table">
+          <POSTableHead>
+            <tr>
+              <POSTh>Hold #</POSTh>
+              <POSTh>Items</POSTh>
+              <POSTh className="text-right">Total Amount</POSTh>
+              <POSTh>Hold Time</POSTh>
+              <POSTh>Status</POSTh>
+              <POSTh>Action</POSTh>
+            </tr>
+          </POSTableHead>
+          <POSTableBody>
+            {holds.map((h) => {
+              const totals = snapshotTotals(h.cartSnapshot);
+              const resumable = h.status === "held" && h.bucket !== "expired";
+              return (
+                <tr key={h.id}>
+                  <POSTd>
+                    <div className="min-w-0">
+                      <div className="font-medium">{holdNumber({ holdLabel: h.holdLabel ?? null, heldAt: h.heldAt ?? "" })}</div>
+                      {h.holdReason ? (
+                        <div className="truncate text-[11px] text-[var(--pos-muted)]">{h.holdReason}</div>
+                      ) : null}
+                    </div>
+                  </POSTd>
+                  <POSTd className="tabular-nums">{h.cartItemCount ?? "—"}</POSTd>
+                  <POSTd className="text-right tabular-nums">{totals ? formatMoney(totals.grand) : "—"}</POSTd>
+                  <POSTd className="text-[11px] text-[var(--pos-muted)]">
+                    {h.heldAt ? new Date(h.heldAt).toLocaleString() : "—"}
                     {h.minutesUntilExpiry != null ? ` · ${h.minutesUntilExpiry}m left` : ""}
-                  </div>
-                  {h.holdReason ? (
-                    <div className="truncate text-xs">{h.holdReason}</div>
-                  ) : null}
-                  {h.notes ? (
-                    <div className="truncate text-xs text-[var(--pos-muted)]">{h.notes}</div>
-                  ) : null}
-                </div>
-                <POSBadge tone={toneFor(h.bucket, h.status)}>
-                  {h.bucket ?? h.status ?? "held"}
-                </POSBadge>
-              </div>
-              <div className="flex flex-wrap gap-1">
-                {h.status === "held" && h.bucket !== "expired" ? (
-                  <>
-                    <POSButton size="sm" onClick={() => onResume(h.id)}>
-                      Resume
-                    </POSButton>
-                    <POSButton size="sm" variant="success" onClick={() => onResumeCheckout(h.id)}>
-                      Resume & pay
-                    </POSButton>
-                    <POSButton size="sm" variant="secondary" onClick={() => onEdit(h.id)}>
-                      Edit
-                    </POSButton>
-                    <POSButton size="sm" variant="ghost" onClick={() => onTransfer(h.id)}>
-                      Transfer
-                    </POSButton>
-                    <POSButton size="sm" variant="ghost" onClick={() => onCancel(h.id)}>
-                      Cancel
-                    </POSButton>
-                  </>
-                ) : null}
-                <POSButton size="sm" variant="secondary" onClick={() => onDuplicate(h.id)}>
-                  Duplicate
-                </POSButton>
-                {h.status === "held" || h.status === "expired" ? (
-                  <POSButton size="sm" variant="ghost" onClick={() => onDiscard(h.id)}>
-                    Discard
-                  </POSButton>
-                ) : null}
-              </div>
-            </li>
-          ))}
-        </ul>
+                  </POSTd>
+                  <POSTd>
+                    <POSBadge tone={toneFor(h.bucket, h.status)}>{statusLabel(h.bucket, h.status)}</POSBadge>
+                  </POSTd>
+                  <POSTd>
+                    <div className="flex flex-wrap gap-1">
+                      {resumable ? (
+                        <>
+                          <POSButton size="sm" onClick={() => onResume(h.id)}>
+                            Resume
+                          </POSButton>
+                          <POSButton size="sm" variant="success" onClick={() => onResumeCheckout(h.id)}>
+                            Resume & pay
+                          </POSButton>
+                          <POSButton size="sm" variant="secondary" onClick={() => onEdit(h.id)}>
+                            Edit
+                          </POSButton>
+                          <POSButton size="sm" variant="ghost" onClick={() => onTransfer(h.id)}>
+                            Transfer
+                          </POSButton>
+                          <POSButton size="sm" variant="ghost" onClick={() => onCancel(h.id)}>
+                            Cancel
+                          </POSButton>
+                        </>
+                      ) : null}
+                      <POSButton size="sm" variant="secondary" onClick={() => onDuplicate(h.id)}>
+                        Duplicate
+                      </POSButton>
+                      {h.status === "held" || h.status === "expired" ? (
+                        <POSButton size="sm" variant="ghost" onClick={() => onDiscard(h.id)}>
+                          Discard
+                        </POSButton>
+                      ) : null}
+                    </div>
+                  </POSTd>
+                </tr>
+              );
+            })}
+          </POSTableBody>
+        </POSTable>
       )}
     </div>
   );
-}
+});

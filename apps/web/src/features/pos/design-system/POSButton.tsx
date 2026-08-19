@@ -17,14 +17,14 @@ const variants: Record<Variant, string> = {
   secondary:
     "bg-[var(--pos-workspace)] text-[var(--pos-primary)] border border-[var(--pos-border)] hover:bg-[var(--pos-light)] hover:border-[var(--pos-primary)]",
   ghost: "bg-transparent text-[var(--pos-ink)] hover:bg-[var(--pos-muted-bg)]",
-  danger: "bg-[var(--pos-danger)] text-white hover:brightness-95",
-  success: "bg-[var(--pos-success)] text-white hover:brightness-95",
-  warning: "bg-[var(--pos-warning)] text-white hover:brightness-95",
+  danger: "bg-[var(--pos-danger)] text-[var(--pos-on-primary)] hover:brightness-95",
+  success: "bg-[var(--pos-success)] text-[var(--pos-on-primary)] hover:brightness-95",
+  warning: "bg-[var(--pos-warning)] text-[var(--pos-on-primary)] hover:brightness-95",
 };
 
 const sizes: Record<Size, string> = {
   sm: "h-8 px-2.5 text-xs gap-1.5",
-  md: "h-9 px-3 text-sm gap-2",
+  md: "h-9 px-3 text-[13px] gap-2",
   lg: "h-11 px-4 text-sm gap-2",
 };
 
@@ -43,7 +43,7 @@ export function POSButton({
     <button
       type={type}
       className={posCn(
-        "inline-flex items-center justify-center rounded-[var(--pos-radius-sm)] font-medium",
+        "inline-flex items-center justify-center rounded-[var(--pos-radius-sm)] font-semibold",
         "focus-visible:outline-none focus-visible:shadow-[var(--pos-focus)] disabled:cursor-not-allowed disabled:opacity-50",
         variants[variant],
         sizes[size],

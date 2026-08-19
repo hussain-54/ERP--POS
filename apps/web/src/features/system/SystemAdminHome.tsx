@@ -1,5 +1,5 @@
 import { Link } from "react-router-dom";
-import { systemAdminNavGroups } from "./SystemAdminLayout";
+import { systemAdminNavGroups } from "./system-admin-nav";
 
 export function SystemAdminHome() {
   const groups = systemAdminNavGroups();
@@ -7,7 +7,7 @@ export function SystemAdminHome() {
   return (
     <div className="space-y-6">
       <p className="max-w-2xl text-sm text-[var(--erp-muted)]">
-        Organization, operations, and access. Live sections open existing screens. Other sections
+        Organization and operations. Live sections open existing screens. Other sections
         are Coming Soon — no sample settings or placeholder APIs.
       </p>
 

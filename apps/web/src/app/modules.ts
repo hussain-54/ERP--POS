@@ -75,15 +75,25 @@ export interface ErpNavChild {
   shortcutToModuleId?: string;
 }
 
+/**
+ * One 39-module registry row. Global ERP navigation renders these parents only.
+ * `name` / `masterTitle` / `title` are the exact approved module name.
+ */
 export interface ErpNavSection {
   id: string;
-  /** Official 39-module name. Sidebar shows `title` (short label). */
+  number: string;
+  name: string;
   masterTitle: string;
   title: string;
   icon: NavIconName;
   path: string;
   description: string;
-  permission?: string;
+  permission: string;
+  permissions: string;
+  status: NavStatus;
+  folder: string | null;
+  featureOwnership: string | null;
+  aliases: readonly string[];
   children: ErpNavChild[];
 }
 
@@ -112,6 +122,37 @@ function soon(path: string, title: string, description: string, opts?: NavItemOp
   };
 }
 
+function parent(opts: {
+  id: string;
+  name: string;
+  icon: NavIconName;
+  path: string;
+  description: string;
+  permission: string;
+  folder: string | null;
+  status?: NavStatus;
+  aliases?: readonly string[];
+  children: ErpNavChild[];
+}): ErpNavSection {
+  return {
+    id: opts.id,
+    number: opts.id,
+    name: opts.name,
+    masterTitle: opts.name,
+    title: opts.name,
+    icon: opts.icon,
+    path: opts.path,
+    description: opts.description,
+    permission: opts.permission,
+    permissions: opts.permission,
+    status: opts.status ?? "implemented",
+    folder: opts.folder,
+    featureOwnership: opts.folder,
+    aliases: opts.aliases ?? [],
+    children: opts.children,
+  };
+}
+
 /**
  * Show a nav item when it has no permission mapping, when the session has not
  * loaded any keys yet (fail open), or when the user has the mapped key.
@@ -126,111 +167,52 @@ export function canShowNavItem(
   return hasPermission(permission);
 }
 
-/** Modules 36–38 are Coming Soon parents. System (39) is not — it has live children. */
+const COMING_SOON_PARENT_IDS = new Set([
+  "18",
+  "27",
+  "28",
+  "32",
+  "33",
+  "34",
+  "35",
+  "36",
+  "37",
+  "38",
+]);
+
+/** Placeholder-only top-level modules. Live parents (including 39) are not in this set. */
 export function isComingSoonEngineSection(section: Pick<ErpNavSection, "id">): boolean {
-  return section.id === "36" || section.id === "37" || section.id === "38";
+  return COMING_SOON_PARENT_IDS.has(section.id);
 }
 
 /**
- * Locked 39-module ERP navigation (FINAL 39-MODULE ALIGNMENT REPORT).
- * `masterTitle` is the official name shown in the ERP sidebar.
- * `title` is the short alias used by tests and command grouping — do not rename or reorder parents.
- * Keep all children, duplicate routes, and Coming Soon status for 36–38.
- * Do not add or remove top-level parents.
+ * Single source of truth for the approved 39-module ERP IA.
+ * Global sidebar shows these 39 parents only. Children stay registered for
+ * workspaces, command palette, and existing URLs — they are not global modules.
+ * Do not add, remove, rename, or reorder parents.
  */
 export const ERP_NAV_SECTIONS: ErpNavSection[] = [
-  {
+  parent({
     id: "01",
-    masterTitle: "Dashboard",
-    title: "Dashboard",
+    name: "COMMAND CENTER",
     icon: "dashboard",
-    path: "/",
-    description: "Operational overview and alerts.",
+    path: "/command-center",
+    description: "Central business control, KPIs, alerts and activity.",
     permission: "dashboard.view",
+    folder: "dashboard",
+    aliases: ["/"],
     children: [
-      live("/", "Dashboard", "Operational overview and alerts.", {
-        permission: "dashboard.view",
-      }),
+      live("/", "Modules", "Central business control, KPIs, alerts and activity.", { permission: "dashboard.view" }),
     ],
-  },
-  {
+  }),
+  parent({
     id: "02",
-    masterTitle: "Product Management",
-    title: "Products",
-    icon: "products",
-    path: "/products",
-    description: "Product master, taxonomy, units, and pricing.",
-    permission: "products.read",
-    children: [
-      live("/products", "Products", "Product master list.", { permission: "products.read" }),
-      live("/products/new", "New Product", "Create a product on the existing product form.", {
-        permission: "products.read",
-      }),
-      live("/categories", "Categories", "Category taxonomy.", { permission: "catalog_taxonomy.manage" }),
-      live("/subcategories", "Subcategories", "Subcategory taxonomy.", {
-        permission: "catalog_taxonomy.manage",
-      }),
-      live("/brands", "Brands", "Brand master.", { permission: "catalog_taxonomy.manage" }),
-      live("/companies", "Companies", "Company / manufacturer master.", {
-        permission: "catalog_taxonomy.manage",
-      }),
-      live("/units", "Units", "Units and conversions.", { permission: "units.manage" }),
-      live("/pricing", "Pricing", "Price levels and lists.", { permission: "pricing.read" }),
-      soon("/products/variants", "Variants", "Variant editor on the product form.", {
-        availableOn: "/products",
-        permission: "products.read",
-      }),
-      soon("/products/attributes", "Attributes", "Attribute fields on the product form.", {
-        availableOn: "/products",
-        permission: "products.read",
-      }),
-      soon("/products/media", "Media", "Media upload on the product form.", {
-        availableOn: "/products",
-        permission: "products.manage_media",
-      }),
-      soon("/products/specifications", "Specifications", "Specifications on the product form.", {
-        availableOn: "/products",
-        permission: "products.read",
-      }),
-    ],
-  },
-  {
-    id: "03",
-    masterTitle: "Barcode & QR",
-    title: "Barcodes",
-    icon: "barcode",
-    path: "/barcodes",
-    description: "Barcode and QR assignment and labels.",
-    permission: "barcodes.manage",
-    children: [
-      live("/barcodes", "Barcodes", "Generate and list barcodes.", {
-        permission: "barcodes.manage",
-      }),
-      live("/qr", "QR", "QR generation (same barcode tools).", { permission: "barcodes.manage" }),
-    ],
-  },
-  {
-    id: "04",
-    masterTitle: "AI Camera Product Recognition",
-    title: "AI Camera",
-    icon: "camera",
-    path: "/ai-camera",
-    description: "Camera-assisted product match.",
-    permission: "ai.recognize",
-    children: [
-      live("/ai-camera", "AI Camera", "Camera-assisted product match.", {
-        permission: "ai.recognize",
-      }),
-    ],
-  },
-  {
-    id: "05",
-    masterTitle: "POS / Sales",
-    title: "Sales",
+    name: "POS / SALES",
     icon: "pos",
     path: "/pos",
-    description: "Dedicated POS terminal. Parent click opens /pos, not a generic sales list.",
+    description: "Point of sale, billing, payments and sales operations.",
     permission: "pos.sell",
+    folder: "pos",
     children: [
       live("/pos", "New Sale", "POS terminal.", { permission: "pos.sell" }),
       live("/held-sales", "Hold / Resume", "Parked POS carts: resume, edit, transfer, or cancel holds.", {
@@ -259,82 +241,92 @@ export const ERP_NAV_SECTIONS: ErpNavSection[] = [
         permission: "pos.configure",
       }),
     ],
-  },
-  {
-    id: "06",
-    masterTitle: "Quotations",
-    title: "Quotations",
-    icon: "quote",
-    path: "/quotations",
-    description: "Quotes and conversion.",
-    permission: "quotations.read",
+  }),
+  parent({
+    id: "03",
+    name: "PRODUCT & CATALOG",
+    icon: "products",
+    path: "/product-catalog",
+    description: "Product master, taxonomy, units, pricing, barcodes, and QR.",
+    permission: "products.read",
+    folder: "product-management",
+    aliases: ["/products"],
     children: [
-      live("/quotations", "Quotations", "Quotes and conversion.", {
-        permission: "quotations.read",
+      live("/products", "Products", "Product master list.", { permission: "products.read" }),
+      live("/products/new", "New Product", "Create a product on the existing product form.", {
+        permission: "products.read",
+      }),
+      live("/categories", "Categories", "Category taxonomy.", { permission: "catalog_taxonomy.manage" }),
+      live("/subcategories", "Subcategories", "Subcategory taxonomy.", {
+        permission: "catalog_taxonomy.manage",
+      }),
+      live("/brands", "Brands", "Brand master.", { permission: "catalog_taxonomy.manage" }),
+      live("/companies", "Companies", "Company / manufacturer master.", {
+        permission: "catalog_taxonomy.manage",
+      }),
+      live("/units", "Units", "Units and conversions.", { permission: "units.manage" }),
+      live("/pricing", "Pricing", "Price levels and lists.", { permission: "pricing.read" }),
+      live("/barcodes", "Barcodes", "Generate and list barcodes.", { permission: "barcodes.manage" }),
+      live("/qr", "QR", "QR generation (same barcode tools).", { permission: "barcodes.manage" }),
+      soon("/products/variants", "Variants", "Variant editor on the product form.", {
+        availableOn: "/products",
+        permission: "products.read",
+      }),
+      soon("/products/attributes", "Attributes", "Attribute fields on the product form.", {
+        availableOn: "/products",
+        permission: "products.read",
+      }),
+      soon("/products/media", "Media", "Media upload on the product form.", {
+        availableOn: "/products",
+        permission: "products.manage_media",
+      }),
+      soon("/products/specifications", "Specifications", "Specifications on the product form.", {
+        availableOn: "/products",
+        permission: "products.read",
       }),
     ],
-  },
-  {
-    id: "07",
-    masterTitle: "Orders",
-    title: "Orders",
-    icon: "orders",
-    path: "/orders",
-    description: "Sales orders and wholesale order intake.",
-    permission: "orders.read",
-    children: [
-      live("/orders", "Orders", "Order list (shared with quotations screen).", {
-        permission: "orders.read",
-      }),
-      live("/b2b", "B2B", "Wholesale portal orders.", { permission: "b2b.manage" }),
-    ],
-  },
-  {
-    id: "08",
-    masterTitle: "Delivery",
-    title: "Delivery",
-    icon: "delivery",
-    path: "/deliveries",
-    description: "Delivery notes and tracking.",
-    permission: "deliveries.view",
-    children: [
-      live("/deliveries", "Delivery", "Delivery notes and tracking.", {
-        permission: "deliveries.view",
-      }),
-    ],
-  },
-  {
-    id: "09",
-    masterTitle: "Purchases",
-    title: "Purchases",
+  }),
+  parent({
+    id: "04",
+    name: "PURCHASING",
     icon: "purchases",
-    path: "/purchases",
-    description: "Purchase invoices, returns, and reorder.",
+    path: "/purchasing",
+    description: "Purchase invoices, returns, suppliers, and reorder.",
     permission: "purchases.read",
+    folder: "purchases",
+    aliases: ["/purchases"],
     children: [
-      live("/purchases", "Purchases", "Purchases and supplier prices.", {
-        permission: "purchases.read",
+      live("/purchases", "Purchases", "Purchases and supplier prices.", { permission: "purchases.read" }),
+      live("/purchase-returns", "Returns", "Purchase return posting.", { permission: "purchases.return" }),
+      live("/suppliers", "Suppliers", "Supplier master.", { permission: "suppliers.read" }),
+      live("/suppliers/ledger", "Ledger", "Supplier ledger on the supplier screen.", {
+        permission: "ledgers.view",
       }),
-      live("/purchase-returns", "Returns", "Purchase return posting.", {
-        permission: "purchases.return",
+      live("/suppliers/price-lists", "Price Lists", "Supplier prices on Purchases.", {
+        permission: "purchases.prices",
+      }),
+      soon("/suppliers/payables", "Payables", "Payables reports live under Reports.", {
+        availableOn: "/reports",
+        permission: "reports.view",
+      }),
+      soon("/suppliers/performance", "Performance", "Supplier performance analytics are not implemented yet.", {
+        permission: "suppliers.read",
       }),
       soon("/purchase-automation", "Automation", "Reorder suggestions are not implemented yet.", {
         permission: "purchases.read",
       }),
     ],
-  },
-  {
-    id: "10",
-    masterTitle: "Inventory",
-    title: "Inventory",
+  }),
+  parent({
+    id: "05",
+    name: "INVENTORY",
     icon: "inventory",
     path: "/inventory",
     description: "Stock on hand, movements, and traceability.",
     permission: "inventory.view",
+    folder: "inventory",
     children: [
-      live("/inventory", "Inventory", "Stock balances and movement ledger.", {
-        permission: "inventory.view",
-      }),
+      live("/inventory", "Inventory", "Stock balances and movement ledger.", { permission: "inventory.view" }),
       live("/stock-ops", "Movements", "Manual movements, adjustments, counts.", {
         permission: "inventory.adjust",
       }),
@@ -351,19 +343,18 @@ export const ERP_NAV_SECTIONS: ErpNavSection[] = [
       live("/inventory/damaged", "Damaged", "Damage movements (stock operations).", {
         permission: "inventory.adjust",
       }),
-      live("/inventory/audit", "Counts", "Stock counts (stock operations).", {
-        permission: "inventory.count",
-      }),
+      live("/inventory/audit", "Counts", "Stock counts (stock operations).", { permission: "inventory.count" }),
     ],
-  },
-  {
-    id: "11",
-    masterTitle: "Warehouses",
-    title: "Warehouses",
+  }),
+  parent({
+    id: "06",
+    name: "WAREHOUSE / WMS",
     icon: "warehouse",
-    path: "/warehouses",
+    path: "/warehouse",
     description: "Warehouses, locations, and transfers.",
     permission: "warehouses.manage",
+    folder: "warehouses",
+    aliases: ["/warehouses"],
     children: [
       live("/warehouses", "Warehouses", "Warehouse master.", { permission: "warehouses.manage" }),
       live("/warehouses/racks", "Racks", "Racks on the warehouses screen.", { permission: "warehouses.manage" }),
@@ -381,15 +372,28 @@ export const ERP_NAV_SECTIONS: ErpNavSection[] = [
       }),
       live("/stock-transfers", "Transfers", "Inter-warehouse transfers.", { permission: "inventory.transfer" }),
     ],
-  },
-  {
-    id: "12",
-    masterTitle: "Customers",
-    title: "Customers",
+  }),
+  parent({
+    id: "07",
+    name: "DELIVERY / LOGISTICS",
+    icon: "delivery",
+    path: "/delivery",
+    description: "Delivery notes and tracking.",
+    permission: "deliveries.view",
+    folder: "delivery",
+    aliases: ["/deliveries"],
+    children: [
+      live("/deliveries", "Delivery", "Delivery notes and tracking.", { permission: "deliveries.view" }),
+    ],
+  }),
+  parent({
+    id: "08",
+    name: "CUSTOMERS / CRM",
     icon: "customers",
     path: "/customers",
-    description: "Customer master, ledger, and credit.",
+    description: "Customer master, ledger, credit, and CRM.",
     permission: "customers.read",
+    folder: "customers",
     children: [
       live("/customers", "Customers", "Customer master.", { permission: "customers.read" }),
       live("/customers/ledger", "Ledger", "Customer ledger on the customer screen.", {
@@ -399,49 +403,26 @@ export const ERP_NAV_SECTIONS: ErpNavSection[] = [
         availableOn: "/reports",
         permission: "reports.view",
       }),
-      live("/credit", "Credit", "Credit / udhaar approvals.", {
-        permission: "credit.manage",
-        shortcutToModuleId: "22",
-      }),
+      live("/credit", "Credit", "Credit / udhaar approvals.", { permission: "credit.manage" }),
       live("/customers/payment-history", "History", "Payment history on the customer screen.", {
         permission: "customers.read",
       }),
+      live("/installments", "Installments", "Installment plans and dues.", {
+        permission: "installments.manage",
+      }),
+      live("/crm", "CRM", "CRM segments.", { permission: "crm.view" }),
+      live("/crm/campaigns", "Campaigns", "Campaigns including SMS and WhatsApp.", { permission: "crm.manage" }),
+      live("/crm/engagement", "Engagement", "Profiles and campaign activity.", { permission: "crm.view" }),
     ],
-  },
-  {
-    id: "13",
-    masterTitle: "Suppliers",
-    title: "Suppliers",
-    icon: "suppliers",
-    path: "/suppliers",
-    description: "Supplier master, ledger, and prices.",
-    permission: "suppliers.read",
-    children: [
-      live("/suppliers", "Suppliers", "Supplier master.", { permission: "suppliers.read" }),
-      live("/suppliers/ledger", "Ledger", "Supplier ledger on the supplier screen.", {
-        permission: "ledgers.view",
-      }),
-      soon("/suppliers/payables", "Payables", "Payables reports live under Reports.", {
-        availableOn: "/reports",
-        permission: "reports.view",
-      }),
-      live("/suppliers/price-lists", "Price Lists", "Supplier prices on Purchases.", {
-        permission: "purchases.prices",
-        shortcutToModuleId: "09",
-      }),
-      soon("/suppliers/performance", "Performance", "Supplier performance analytics are not implemented yet.", {
-        permission: "suppliers.read",
-      }),
-    ],
-  },
-  {
-    id: "14",
-    masterTitle: "Service & Repair",
-    title: "Service",
+  }),
+  parent({
+    id: "09",
+    name: "SERVICE MANAGEMENT",
     icon: "service",
     path: "/service",
     description: "Job cards, technicians, and repairs.",
     permission: "service.manage",
+    folder: "service-repair",
     children: [
       live("/service", "Service", "Service jobs.", { permission: "service.manage" }),
       live("/service/complaints", "Complaints", "Complaint capture on the service screen.", {
@@ -457,15 +438,15 @@ export const ERP_NAV_SECTIONS: ErpNavSection[] = [
         permission: "service.manage",
       }),
     ],
-  },
-  {
-    id: "15",
-    masterTitle: "Warranty",
-    title: "Warranty",
+  }),
+  parent({
+    id: "10",
+    name: "WARRANTY",
     icon: "warranty",
     path: "/warranty",
     description: "Warranty claims and replacements.",
     permission: "warranty.manage",
+    folder: "warranty",
     children: [
       live("/warranty", "Warranty", "Warranty claims.", { permission: "warranty.manage" }),
       live("/warranty/replacements", "Replacements", "Warranty replacements.", {
@@ -473,15 +454,15 @@ export const ERP_NAV_SECTIONS: ErpNavSection[] = [
       }),
       live("/warranty/history", "History", "Lookup and claim history.", { permission: "warranty.manage" }),
     ],
-  },
-  {
-    id: "16",
-    masterTitle: "Accounts",
-    title: "Accounts",
+  }),
+  parent({
+    id: "11",
+    name: "ACCOUNTS & FINANCE",
     icon: "accounts",
     path: "/accounts",
-    description: "Chart of accounts, journals, and vouchers.",
+    description: "Chart of accounts, journals, expenses, and financial statements.",
     permission: "accounts.read",
+    folder: "accounts",
     children: [
       live("/accounts", "Accounts", "Chart of accounts, journals, and vouchers.", {
         permission: "accounts.read",
@@ -496,62 +477,138 @@ export const ERP_NAV_SECTIONS: ErpNavSection[] = [
         permission: "payments.receive",
       }),
       live("/accounts/profit-loss", "P&L", "P&L from the reports hub.", { permission: "reports.finance" }),
+      live("/expenses", "Expenses", "Expense entry.", { permission: "expenses.manage" }),
+      live("/expenses/period", "Period Reports", "Expense period totals on the expenses screen.", {
+        permission: "expenses.manage",
+      }),
     ],
-  },
-  {
-    id: "17",
-    masterTitle: "Banking",
-    title: "Banking",
+  }),
+  parent({
+    id: "12",
+    name: "BANKING & PAYMENTS",
     icon: "banking",
     path: "/banking",
-    description: "Bank books and reconciliation.",
+    description: "Bank books and reconciliation. POS tender posting stays in the POS workspace.",
     permission: "banking.manage",
+    folder: "banking",
     children: [
       live("/banking", "Banking", "Bank books and reconciliation.", { permission: "banking.manage" }),
     ],
-  },
-  {
-    id: "18",
-    masterTitle: "CRM & Marketing",
-    title: "CRM",
-    icon: "crm",
-    path: "/crm",
-    description: "Segments, campaigns, and engagement.",
-    permission: "crm.view",
+  }),
+  parent({
+    id: "13",
+    name: "REPORTS & BUSINESS INTELLIGENCE",
+    icon: "reports",
+    path: "/reports",
+    description: "Operational reports and BI dashboards.",
+    permission: "reports.view",
+    folder: "reports",
     children: [
-      live("/crm", "CRM", "CRM segments.", { permission: "crm.view" }),
-      live("/crm/campaigns", "Campaigns", "Campaigns including SMS and WhatsApp.", { permission: "crm.manage" }),
+      live("/reports", "Reports", "Operational report hub.", { permission: "reports.view" }),
+      live("/bi", "BI", "KPI dashboards.", { permission: "bi.view" }),
+    ],
+  }),
+  parent({
+    id: "14",
+    name: "AI & AUTOMATION",
+    icon: "camera",
+    path: "/ai",
+    description: "Camera recognition and AI business insights.",
+    permission: "ai.recognize",
+    folder: "ai-camera",
+    aliases: ["/ai-camera"],
+    children: [
+      live("/ai-camera", "AI Camera", "Camera-assisted product match.", { permission: "ai.recognize" }),
+      live("/ai-insights", "AI Insights", "AI business insights.", { permission: "ai.insights" }),
+    ],
+  }),
+  parent({
+    id: "15",
+    name: "MARKETING & LOYALTY",
+    icon: "loyalty",
+    path: "/marketing",
+    description: "Loyalty programs and marketing campaigns.",
+    permission: "loyalty.view",
+    folder: "loyalty",
+    aliases: ["/loyalty"],
+    children: [
+      live("/loyalty", "Loyalty", "Points, tiers, and rewards.", { permission: "loyalty.view" }),
+      live("/loyalty/offers", "Offers", "Loyalty offers on the loyalty screen.", { permission: "loyalty.view" }),
+      live("/loyalty/redeem", "Redeem", "Point redemption on the loyalty screen.", { permission: "loyalty.view" }),
       live("/crm/sms", "SMS", "SMS channel campaigns.", { permission: "crm.manage" }),
       live("/crm/whatsapp", "WhatsApp", "WhatsApp channel campaigns.", { permission: "crm.manage" }),
       live("/crm/marketing", "Marketing", "Marketing campaigns on the CRM screen.", {
         permission: "crm.manage",
       }),
-      live("/crm/engagement", "Engagement", "Profiles and campaign activity.", { permission: "crm.view" }),
     ],
-  },
-  {
+  }),
+  parent({
+    id: "16",
+    name: "B2B / WHOLESALE",
+    icon: "orders",
+    path: "/b2b",
+    description: "Wholesale portal, quotations, and orders.",
+    permission: "b2b.manage",
+    folder: "orders",
+    children: [
+      live("/b2b", "B2B", "Wholesale portal orders.", { permission: "b2b.manage" }),
+      live("/quotations", "Quotations", "Quotes and conversion.", { permission: "quotations.read" }),
+      live("/orders", "Orders", "Order list (shared with quotations screen).", { permission: "orders.read" }),
+    ],
+  }),
+  parent({
+    id: "17",
+    name: "ONLINE STORE",
+    icon: "orders",
+    path: "/online-store",
+    description: "Storefront configuration.",
+    permission: "store.manage",
+    folder: "system",
+    children: [
+      live("/online-store", "Store", "Storefront configuration.", { permission: "store.manage" }),
+    ],
+  }),
+  parent({
+    id: "18",
+    name: "MOBILE",
+    icon: "devices",
+    path: "/mobile",
+    description: "Mobile channel settings.",
+    permission: "settings.manage",
+    folder: null,
+    status: "placeholder",
+    children: [
+      soon("/mobile", "Coming Soon", "Mobile channel settings are not implemented yet.", {
+        permission: "settings.manage",
+      }),
+    ],
+  }),
+  parent({
     id: "19",
-    masterTitle: "Reports & Analytics",
-    title: "Reports",
-    icon: "reports",
-    path: "/reports",
-    description: "Operational reports, BI, and AI insights.",
-    permission: "reports.view",
+    name: "ORGANIZATION / BRANCHES",
+    icon: "branches",
+    path: "/organization",
+    description: "Branch administration.",
+    permission: "branches.manage",
+    folder: "branches",
+    aliases: ["/branches"],
     children: [
-      live("/reports", "Reports", "Operational report hub.", { permission: "reports.view" }),
-      live("/bi", "BI", "KPI dashboards.", { permission: "bi.view" }),
-      live("/ai-insights", "AI Insights", "AI business insights.", { permission: "ai.insights" }),
+      live("/branches", "Branches", "Branch administration.", { permission: "branches.manage" }),
+      live("/branches/membership", "Membership", "Branch membership on the branches screen.", {
+        permission: "branches.manage",
+      }),
     ],
-  },
-  {
+  }),
+  parent({
     id: "20",
-    masterTitle: "Salesman / Field Sales",
-    title: "Salesmen",
+    name: "HR & PAYROLL",
     icon: "salesman",
-    path: "/salesman",
-    description: "Salesmen, references, and commissions.",
+    path: "/hr",
+    description: "Employees, attendance, payroll, and field salesmen.",
     permission: "hr.view",
+    folder: "system",
     children: [
+      live("/hr", "HR", "Employees, attendance, and payroll.", { permission: "hr.view" }),
       live("/salesman", "Salesmen", "Salesmen, references, and commissions.", { permission: "hr.view" }),
       live("/salesman/references", "References", "Outside references (same salesman screen).", {
         permission: "hr.view",
@@ -560,182 +617,158 @@ export const ERP_NAV_SECTIONS: ErpNavSection[] = [
         permission: "hr.view",
       }),
     ],
-  },
-  {
+  }),
+  parent({
     id: "21",
-    masterTitle: "Expenses",
-    title: "Expenses",
-    icon: "expenses",
-    path: "/expenses",
-    description: "Expense entry.",
-    permission: "expenses.manage",
-    children: [
-      live("/expenses", "Expenses", "Expense entry.", { permission: "expenses.manage" }),
-      live("/expenses/period", "Period Reports", "Expense period totals on the expenses screen.", {
-        permission: "expenses.manage",
-      }),
-    ],
-  },
-  {
-    id: "22",
-    masterTitle: "Installments",
-    title: "Installments",
-    icon: "installments",
-    path: "/installments",
-    description: "Installment plans and dues.",
-    permission: "installments.manage",
-    children: [
-      live("/installments", "Installments", "Installment plans and dues.", {
-        permission: "installments.manage",
-      }),
-    ],
-  },
-  {
-    id: "23",
-    masterTitle: "Loyalty",
-    title: "Loyalty",
-    icon: "loyalty",
-    path: "/loyalty",
-    description: "Points, tiers, and rewards.",
-    permission: "loyalty.view",
-    children: [
-      live("/loyalty", "Loyalty", "Points, tiers, and rewards.", { permission: "loyalty.view" }),
-      live("/loyalty/offers", "Offers", "Loyalty offers on the loyalty screen.", { permission: "loyalty.view" }),
-      live("/loyalty/redeem", "Redeem", "Point redemption on the loyalty screen.", { permission: "loyalty.view" }),
-    ],
-  },
-  {
-    id: "24",
-    masterTitle: "Documents",
-    title: "Documents",
-    icon: "documents",
-    path: "/documents",
-    description: "Attachments and files.",
-    permission: "documents.view",
-    children: [
-      live("/documents", "Documents", "Attachments and files.", { permission: "documents.view" }),
-    ],
-  },
-  {
-    id: "25",
-    masterTitle: "Approval Workflow",
-    title: "Approvals",
-    icon: "approvals",
-    path: "/approvals",
-    description: "Approval inbox.",
-    permission: "approvals.act",
-    children: [
-      live("/approvals", "Approvals", "Approval inbox.", { permission: "approvals.act" }),
-    ],
-  },
-  {
-    id: "26",
-    masterTitle: "Users & Role Management",
-    title: "Users",
-    icon: "users",
-    path: "/users",
-    description: "User and role administration.",
-    permission: "users.manage",
-    children: [
-      live("/users", "Users", "User administration.", { permission: "users.manage" }),
-      live("/users/roles", "Roles", "Role assignment on the users screen.", { permission: "users.manage" }),
-    ],
-  },
-  {
-    id: "27",
-    masterTitle: "Permissions",
-    title: "Permissions",
-    icon: "permissions",
-    path: "/permissions",
-    description: "Permission matrix.",
-    permission: "permissions.manage",
-    children: [
-      live("/permissions", "Permissions", "Permission matrix.", { permission: "permissions.manage" }),
-      live("/permissions/overrides", "User Overrides", "User permission overrides on the permissions screen.", {
-        permission: "permissions.manage",
-      }),
-    ],
-  },
-  {
-    id: "28",
-    masterTitle: "Audit Trail",
-    title: "Audit",
-    icon: "audit",
-    path: "/audit",
-    description: "Immutable audit log.",
-    permission: "audit.view",
-    children: [
-      live("/audit", "Audit", "Immutable audit log.", { permission: "audit.view" }),
-    ],
-  },
-  {
-    id: "29",
-    masterTitle: "Notification Center",
-    title: "Notifications",
-    icon: "notifications",
-    path: "/notifications",
-    description: "Notification center.",
-    permission: "notifications.view",
-    children: [
-      live("/notifications", "Notifications", "Notification center.", { permission: "notifications.view" }),
-    ],
-  },
-  {
-    id: "30",
-    masterTitle: "Multi-Branch",
-    title: "Branches",
-    icon: "branches",
-    path: "/branches",
-    description: "Branch administration.",
-    permission: "branches.manage",
-    children: [
-      live("/branches", "Branches", "Branch administration.", { permission: "branches.manage" }),
-      live("/branches/membership", "Membership", "Branch membership on the branches screen.", {
-        permission: "branches.manage",
-      }),
-    ],
-  },
-  {
-    id: "31",
-    masterTitle: "Tax & Pakistan Compliance",
-    title: "Tax",
+    name: "TAX / FBR",
     icon: "tax",
     path: "/tax",
     description: "Tax profile, rates, and FBR readiness.",
     permission: "tax.view",
+    folder: "tax",
     children: [
       live("/tax", "Tax", "NTN, STRN, and legal name.", { permission: "tax.view" }),
       live("/tax/rates", "Rates", "Sales tax rates (same tax screen).", { permission: "tax.view" }),
       live("/tax/reports", "Tax Reports", "Tax report on the tax screen.", { permission: "tax.view" }),
     ],
-  },
-  {
-    id: "32",
-    masterTitle: "Import / Export",
-    title: "Import / Export",
-    icon: "import",
-    path: "/import-export",
-    description: "Data import and export.",
-    permission: "import.execute",
+  }),
+  parent({
+    id: "22",
+    name: "DOCUMENT MANAGEMENT",
+    icon: "documents",
+    path: "/documents",
+    description: "Attachments and files.",
+    permission: "documents.view",
+    folder: "documents",
+    children: [live("/documents", "Documents", "Attachments and files.", { permission: "documents.view" })],
+  }),
+  parent({
+    id: "23",
+    name: "WORKFLOW / APPROVALS",
+    icon: "approvals",
+    path: "/workflows",
+    description: "Approval inbox.",
+    permission: "approvals.act",
+    folder: "approvals",
+    aliases: ["/approvals"],
+    children: [live("/approvals", "Approvals", "Approval inbox.", { permission: "approvals.act" })],
+  }),
+  parent({
+    id: "24",
+    name: "NOTIFICATIONS",
+    icon: "notifications",
+    path: "/notifications",
+    description: "Notification center.",
+    permission: "notifications.view",
+    folder: "notifications",
     children: [
-      live("/import-export", "Import", "CSV/Excel import.", { permission: "import.execute" }),
-      live("/import-export/export", "Export", "Product export (same import/export screen).", {
-        permission: "import.execute",
-      }),
-      live("/import-export/templates", "Templates", "Download import templates (same screen).", {
-        permission: "import.execute",
+      live("/notifications", "Notifications", "Notification center.", { permission: "notifications.view" }),
+    ],
+  }),
+  parent({
+    id: "25",
+    name: "USERS / ROLES / PERMISSIONS",
+    icon: "users",
+    path: "/users",
+    description: "User, role, and permission administration.",
+    permission: "users.manage",
+    folder: "users",
+    children: [
+      live("/users", "Users", "User administration.", { permission: "users.manage" }),
+      live("/users/roles", "Roles", "Role assignment on the users screen.", { permission: "users.manage" }),
+      live("/permissions", "Permissions", "Permission matrix.", { permission: "permissions.manage" }),
+      live("/permissions/overrides", "User Overrides", "User permission overrides on the permissions screen.", {
+        permission: "permissions.manage",
       }),
     ],
-  },
-  {
-    id: "33",
-    masterTitle: "Printing",
-    title: "Printing",
-    icon: "printing",
-    path: "/printing",
-    description: "Print jobs and templates.",
-    permission: "printing.manage",
+  }),
+  parent({
+    id: "26",
+    name: "SECURITY / AUDIT",
+    icon: "audit",
+    path: "/security",
+    description: "Audit log, sessions, and security controls.",
+    permission: "audit.view",
+    folder: "audit",
+    aliases: ["/audit"],
     children: [
+      live("/audit", "Audit", "Immutable audit log.", { permission: "audit.view" }),
+      live("/security", "Security", "Sessions, 2FA, and login history.", { permission: "security.view" }),
+    ],
+  }),
+  parent({
+    id: "27",
+    name: "OFFLINE / LOCAL OPERATIONS",
+    icon: "warehouse",
+    path: "/offline",
+    description: "Local operations. Online-only runtime — not implemented.",
+    permission: "settings.manage",
+    folder: null,
+    status: "placeholder",
+    children: [
+      soon("/offline", "Coming Soon", "Offline / local operations are not implemented. Runtime stays online-only.", {
+        permission: "settings.manage",
+      }),
+    ],
+  }),
+  parent({
+    id: "28",
+    name: "SYNC CENTER",
+    icon: "import",
+    path: "/sync",
+    description: "Sync center. Online-only runtime — not implemented.",
+    permission: "settings.manage",
+    folder: null,
+    status: "placeholder",
+    children: [
+      soon("/sync", "Coming Soon", "Sync center is not implemented. Runtime stays online-only.", {
+        permission: "settings.manage",
+      }),
+    ],
+  }),
+  parent({
+    id: "29",
+    name: "BACKUP / DISASTER RECOVERY",
+    icon: "backup",
+    path: "/backup",
+    description: "Backup jobs and restore points.",
+    permission: "backup.view",
+    folder: "backup",
+    children: [
+      live("/backup", "Backup", "Backup jobs.", { permission: "backup.view" }),
+      live("/backup/restore-points", "Restore Points", "Restore points (same backup screen).", {
+        permission: "backup.view",
+      }),
+    ],
+  }),
+  parent({
+    id: "30",
+    name: "INTEGRATION HUB",
+    icon: "admin",
+    path: "/integrations",
+    description: "API keys and webhooks.",
+    permission: "integrations.view",
+    folder: "system",
+    children: [
+      live("/integrations", "Integrations", "API keys and webhooks.", { permission: "integrations.view" }),
+    ],
+  }),
+  parent({
+    id: "31",
+    name: "DEVICES / PRINTING",
+    icon: "devices",
+    path: "/devices",
+    description: "Registered devices, hardware events, and print jobs.",
+    permission: "devices.manage",
+    folder: "devices",
+    children: [
+      live("/devices", "Devices", "Registered devices and hardware events.", { permission: "devices.manage" }),
+      live("/devices/drawer", "Cash Drawer", "Cash drawer open (same devices screen).", {
+        permission: "devices.manage",
+      }),
+      live("/devices/events", "Device Events", "Hardware events (same devices screen).", {
+        permission: "devices.manage",
+      }),
       live("/printing", "Printing", "Print jobs and templates.", { permission: "printing.manage" }),
       live("/printing/queue", "Print Queue", "Queued print jobs (same printing screen).", {
         permission: "printing.manage",
@@ -746,76 +779,49 @@ export const ERP_NAV_SECTIONS: ErpNavSection[] = [
         sidebar: false,
       }),
     ],
-  },
-  {
-    id: "34",
-    masterTitle: "Backup & Disaster Recovery",
-    title: "Backup",
-    icon: "backup",
-    path: "/backup",
-    description: "Backup jobs and restore points.",
-    permission: "backup.view",
-    children: [
-      live("/backup", "Backup", "Backup jobs.", { permission: "backup.view" }),
-      live("/backup/restore-points", "Restore Points", "Restore points (same backup screen).", {
-        permission: "backup.view",
-      }),
-    ],
-  },
-  {
-    id: "35",
-    masterTitle: "Devices / Printing",
-    title: "Devices",
-    icon: "devices",
-    path: "/devices",
-    description: "Registered devices and hardware events.",
-    permission: "devices.manage",
-    children: [
-      live("/devices", "Devices", "Registered devices and hardware events.", { permission: "devices.manage" }),
-      live("/devices/drawer", "Cash Drawer", "Cash drawer open (same devices screen).", {
-        permission: "devices.manage",
-      }),
-      live("/devices/events", "Device Events", "Hardware events (same devices screen).", {
-        permission: "devices.manage",
-      }),
-    ],
-  },
-  {
-    id: "36",
-    masterTitle: "Industry Engine",
-    title: "Industry",
+  }),
+  parent({
+    id: "32",
+    name: "INDUSTRY ENGINE",
     icon: "industry",
-    path: "/industry-engine",
+    path: "/industry",
     description: "Industry-specific configuration.",
     permission: "settings.manage",
+    folder: null,
+    status: "placeholder",
+    aliases: ["/industry-engine"],
     children: [
       soon("/industry-engine", "Coming Soon", "Industry-specific configuration is not implemented yet.", {
         permission: "settings.manage",
       }),
     ],
-  },
-  {
-    id: "37",
-    masterTitle: "Customization Engine",
-    title: "Customization",
+  }),
+  parent({
+    id: "33",
+    name: "CUSTOMIZATION ENGINE",
     icon: "customize",
-    path: "/customization-engine",
+    path: "/customization",
     description: "UI and field customization.",
     permission: "settings.manage",
+    folder: null,
+    status: "placeholder",
+    aliases: ["/customization-engine"],
     children: [
       soon("/customization-engine", "Coming Soon", "UI and field customization is not implemented yet.", {
         permission: "settings.manage",
       }),
     ],
-  },
-  {
-    id: "38",
-    masterTitle: "Rules / Automation Engine",
-    title: "Automation",
+  }),
+  parent({
+    id: "34",
+    name: "RULES / AUTOMATION ENGINE",
     icon: "rules",
-    path: "/rules-engine",
+    path: "/automation",
     description: "Automation rules and linked documents.",
     permission: "settings.manage",
+    folder: null,
+    status: "placeholder",
+    aliases: ["/rules-engine"],
     children: [
       soon("/rules-engine", "Automation", "Automation engine is not implemented yet.", {
         permission: "settings.manage",
@@ -828,15 +834,76 @@ export const ERP_NAV_SECTIONS: ErpNavSection[] = [
         sidebar: false,
       }),
     ],
-  },
-  {
+  }),
+  parent({
+    id: "35",
+    name: "CLIENT / TENANT MANAGEMENT",
+    icon: "users",
+    path: "/tenants",
+    description: "Tenant administration.",
+    permission: "settings.manage",
+    folder: null,
+    status: "placeholder",
+    children: [
+      soon("/tenants", "Coming Soon", "Client / tenant management is not implemented yet.", {
+        permission: "settings.manage",
+      }),
+    ],
+  }),
+  parent({
+    id: "36",
+    name: "SUBSCRIPTION / BILLING",
+    icon: "accounts",
+    path: "/subscription",
+    description: "Subscription and billing.",
+    permission: "settings.manage",
+    folder: null,
+    status: "placeholder",
+    aliases: ["/billing"],
+    children: [
+      soon("/billing", "Coming Soon", "Subscription / billing is not implemented yet.", {
+        permission: "settings.manage",
+      }),
+    ],
+  }),
+  parent({
+    id: "37",
+    name: "USAGE / METERING",
+    icon: "reports",
+    path: "/usage",
+    description: "Usage metering.",
+    permission: "settings.manage",
+    folder: null,
+    status: "placeholder",
+    children: [
+      soon("/usage", "Coming Soon", "Usage / metering is not implemented yet.", {
+        permission: "settings.manage",
+      }),
+    ],
+  }),
+  parent({
+    id: "38",
+    name: "DEVELOPER PLATFORM",
+    icon: "customize",
+    path: "/developer",
+    description: "Developer platform.",
+    permission: "settings.manage",
+    folder: null,
+    status: "placeholder",
+    children: [
+      soon("/developer", "Coming Soon", "Developer platform is not implemented yet.", {
+        permission: "settings.manage",
+      }),
+    ],
+  }),
+  parent({
     id: "39",
-    masterTitle: "System Administration",
-    title: "System",
+    name: "SYSTEM ADMINISTRATION",
     icon: "admin",
     path: "/settings",
     description: "System administration control center.",
     permission: "settings.manage",
+    folder: "system",
     children: [
       soon("/settings/company", "Company", "Dedicated company profile screen is not implemented yet.", {
         permission: "settings.manage",
@@ -860,12 +927,12 @@ export const ERP_NAV_SECTIONS: ErpNavSection[] = [
       soon("/settings/invoice-templates", "Templates", "Invoice template designer is not implemented yet.", {
         permission: "settings.manage",
       }),
-      soon("/settings/barcode", "Barcode", "Barcode defaults live under Barcodes.", {
+      soon("/settings/barcode", "Barcode", "Barcode defaults live under Product & Catalog.", {
         availableOn: "/barcodes",
         permission: "barcodes.manage",
       }),
-      soon("/settings/pos", "POS", "POS configuration is not a separate admin screen yet.", {
-        availableOn: "/pos",
+      soon("/settings/pos", "POS", "POS configuration lives in the POS workspace.", {
+        availableOn: "/pos/settings",
         permission: "pos.configure",
       }),
       soon("/settings/email", "Email", "Email gateway settings are not implemented yet.", {
@@ -877,47 +944,74 @@ export const ERP_NAV_SECTIONS: ErpNavSection[] = [
       soon("/settings/storage", "Storage", "Storage settings are not implemented yet.", {
         permission: "settings.manage",
       }),
-      soon("/settings/logs", "Logs", "System logs are not implemented yet.", {
+      soon("/settings/logs", "Logs", "System logs live under Security / Audit.", {
         availableOn: "/audit",
         permission: "audit.view",
       }),
       soon("/settings/maintenance", "Maintenance", "Maintenance tools are not implemented yet.", {
         permission: "settings.manage",
       }),
-      live("/security", "Security", "Sessions, 2FA, and login history.", { permission: "security.view" }),
-      live("/integrations", "Integrations", "API keys and webhooks.", { permission: "integrations.view" }),
-      live("/online-store", "Store", "Storefront configuration.", { permission: "store.manage" }),
-      soon("/mobile", "Mobile", "Mobile channel settings are not implemented yet.", {
-        permission: "settings.manage",
+      live("/import-export", "Import", "CSV/Excel import.", { permission: "import.execute" }),
+      live("/import-export/export", "Export", "Product export (same import/export screen).", {
+        permission: "import.execute",
       }),
-      live("/hr", "HR", "Employees, attendance, and payroll.", { permission: "hr.view" }),
+      live("/import-export/templates", "Import Templates", "Download import templates (same screen).", {
+        permission: "import.execute",
+      }),
     ],
-  },
+  }),
 ];
+
+/** Alias of the 39-parent registry — do not create a second module list. */
+export const ERP_MODULE_REGISTRY = ERP_NAV_SECTIONS;
+
+/** Stable parent routes shown in the global sidebar. Old URLs stay as aliases/children. */
+export const ERP_STABLE_PARENT_PATHS = [
+  "/command-center",
+  "/pos",
+  "/product-catalog",
+  "/purchasing",
+  "/inventory",
+  "/warehouse",
+  "/delivery",
+  "/customers",
+  "/service",
+  "/warranty",
+  "/accounts",
+  "/banking",
+  "/reports",
+  "/ai",
+  "/marketing",
+  "/b2b",
+  "/online-store",
+  "/mobile",
+  "/organization",
+  "/hr",
+  "/tax",
+  "/documents",
+  "/workflows",
+  "/notifications",
+  "/users",
+  "/security",
+  "/offline",
+  "/sync",
+  "/backup",
+  "/integrations",
+  "/devices",
+  "/industry",
+  "/customization",
+  "/automation",
+  "/tenants",
+  "/subscription",
+  "/usage",
+  "/developer",
+  "/settings",
+] as const;
 
 /**
  * Intentional duplicate URLs. Do not delete, merge pages, or redirect.
  * Canonical path owns the screen; aliases reuse that component unless
  * `sameComponent` is false (related inventory screens that stay distinct).
- *
- * Canonical owners:
- *   /pos → PosPage
- *   /held-sales → HeldSalesPage
- *   /quotations → QuotationsPage
- *   /returns → ReturnsPage
- *   /exchange → ExchangePage
- *   /payments → PaymentsPage
- *   /discounts → DiscountsPage
- *   /pos/salesmen → SalesmenPage
- *   /pos/references → ReferencesPage
- *   /pos/installments → InstallmentsPage
- *   /pos/settings → SettingsPage
- *   /barcodes → BarcodesPage
- *   /installments → CreditInstallmentsPage
- *   /salesman → SalesmanPage
- *   /inventory → InventoryPage
- *   /stock-ops → StockOpsPage
- *   /categories → TaxonomyPage (tab from pathname)
  */
 export const DUPLICATE_ROUTE_PAIRS: Array<{
   canonical: string;
@@ -932,6 +1026,16 @@ export const DUPLICATE_ROUTE_PAIRS: Array<{
     sameComponent: false,
   },
   { canonical: "/pos", duplicate: "/pos/new", note: "Same PosPage; naming alias only" },
+  { canonical: "/command-center", duplicate: "/", note: "Command Center landing; / stays registered" },
+  { canonical: "/product-catalog", duplicate: "/products", note: "Product catalog landing; /products stays registered" },
+  { canonical: "/purchasing", duplicate: "/purchases", note: "Purchasing landing; /purchases stays registered" },
+  { canonical: "/warehouse", duplicate: "/warehouses", note: "Warehouse landing; /warehouses stays registered" },
+  { canonical: "/delivery", duplicate: "/deliveries", note: "Delivery landing; /deliveries stays registered" },
+  { canonical: "/ai", duplicate: "/ai-camera", note: "AI landing; /ai-camera stays registered" },
+  { canonical: "/marketing", duplicate: "/loyalty", note: "Marketing landing; /loyalty stays registered" },
+  { canonical: "/organization", duplicate: "/branches", note: "Organization landing; /branches stays registered" },
+  { canonical: "/workflows", duplicate: "/approvals", note: "Workflow landing; /approvals stays registered" },
+  { canonical: "/security", duplicate: "/audit", note: "Related security screens; Security vs Audit stay distinct", sameComponent: false },
   { canonical: "/quotations", duplicate: "/orders", note: "Same QuotationsPage (orders section)" },
   {
     canonical: "/returns",
@@ -944,13 +1048,13 @@ export const DUPLICATE_ROUTE_PAIRS: Array<{
   {
     canonical: "/installments",
     duplicate: "/pos/installments",
-    note: "Related screens: CreditInstallmentsPage vs POS InstallmentsPage. Module 22 kept.",
+    note: "Related screens: CreditInstallmentsPage vs POS InstallmentsPage.",
     sameComponent: false,
   },
   {
     canonical: "/salesman",
     duplicate: "/pos/salesmen",
-    note: "Related screens: SalesmanPage vs POS SalesmenPage. Module 20 kept.",
+    note: "Related screens: SalesmanPage vs POS SalesmenPage.",
     sameComponent: false,
   },
   {
@@ -959,8 +1063,8 @@ export const DUPLICATE_ROUTE_PAIRS: Array<{
     note: "Related screens: SalesmanPage vs POS ReferencesPage.",
     sameComponent: false,
   },
-  { canonical: "/salesman", duplicate: "/salesman/references", note: "Same SalesmanPage; module 20 References child" },
-  { canonical: "/salesman", duplicate: "/salesman/commissions", note: "Same SalesmanPage; module 20 Commissions child" },
+  { canonical: "/salesman", duplicate: "/salesman/references", note: "Same SalesmanPage; HR References child" },
+  { canonical: "/salesman", duplicate: "/salesman/commissions", note: "Same SalesmanPage; HR Commissions child" },
   {
     canonical: "/inventory",
     duplicate: "/stock-ops",
@@ -992,8 +1096,9 @@ export const DUPLICATE_ROUTE_PAIRS: Array<{
 ];
 
 /**
- * POS environment (module 05). Clicking Sales / these URLs enters the POS shell.
- * Do not use startsWith("/pos/") — /salesman, /installments, /credit, /settings/pos stay ERP chrome.
+ * POS workspace paths (module 02). These screens use POS workspace chrome
+ * inside the ERP AppShell — they do not launch a separate application.
+ * Do not use startsWith("/pos/") — /salesman, /installments, /credit, /settings/pos stay generic workspaces.
  */
 export const POS_ENVIRONMENT_PATHS = new Set<string>(POS_ENVIRONMENT_PATH_LIST);
 
@@ -1008,17 +1113,9 @@ export function isPosTerminalPath(pathname: string): boolean {
   return POS_TERMINAL_PATHS.has(pathname);
 }
 
-/** Module 39 workspace (ERP chrome stays; this is not a second product). */
+/** Module 39 workspace only — promoted modules use normal ERP chrome. */
 export function isSystemAdminPath(pathname: string): boolean {
-  return (
-    pathname === "/settings" ||
-    pathname.startsWith("/settings/") ||
-    pathname === "/security" ||
-    pathname === "/integrations" ||
-    pathname === "/online-store" ||
-    pathname === "/mobile" ||
-    pathname === "/hr"
-  );
+  return pathname === "/settings" || pathname.startsWith("/settings/");
 }
 
 const LEGACY_ROUTES: ErpModuleRoute[] = [];
@@ -1028,29 +1125,34 @@ function flattenSections(): ErpModuleRoute[] {
   for (const section of ERP_NAV_SECTIONS) {
     rows.push({
       path: section.path,
-      title: section.title,
-      group: section.masterTitle,
+      title: section.name,
+      group: section.name,
       description: section.description,
       permission: section.permission,
-      status: section.children.some((c) => c.path === section.path)
-        ? section.children.find((c) => c.path === section.path)?.status
-        : section.path === "/industry-engine" ||
-            section.path === "/customization-engine" ||
-            section.path === "/rules-engine"
-          ? "placeholder"
-          : "implemented",
+      status: section.status,
       sidebar: true,
     });
     for (const child of section.children) {
       rows.push({
         path: child.path,
         title: child.title,
-        group: section.masterTitle,
+        group: section.name,
         description: child.description,
         status: child.status,
         availableOn: child.availableOn,
-        sidebar: child.sidebar !== false,
+        sidebar: false,
         permission: child.permission ?? section.permission,
+      });
+    }
+    for (const alias of section.aliases) {
+      rows.push({
+        path: alias,
+        title: section.name,
+        group: section.name,
+        description: section.description,
+        permission: section.permission,
+        status: section.status,
+        sidebar: false,
       });
     }
   }
@@ -1070,13 +1172,12 @@ function uniqueByPath(items: ErpModuleRoute[]): ErpModuleRoute[] {
 
 /**
  * Flat route registry used by the router.
- * Every original URL is preserved; new placeholder/alias paths are appended.
+ * Derived from ERP_NAV_SECTIONS — not a second module definition.
  */
 export const ERP_MODULES: ErpModuleRoute[] = uniqueByPath([...flattenSections(), ...LEGACY_ROUTES]);
 
 /**
- * Compatibility URLs that stay registered but must not appear as extra sidebar rows.
- * /held-sales remains the Hold / Resume child; /orders remains master module 07.
+ * Compatibility URLs that stay registered. They are never global sidebar rows.
  */
 export const COMPAT_ALIAS_PATHS = new Set([
   "/pos/new",
@@ -1089,15 +1190,6 @@ export const COMPAT_ALIAS_PATHS = new Set([
   "/settings/numbering",
 ]);
 
-export function isSidebarNavChild(section: ErpNavSection, child: ErpNavChild): boolean {
-  if (child.sidebar === false) return false;
-  if (child.path === section.path) return false;
-  if (child.shortcutToModuleId) return false;
-  if (COMPAT_ALIAS_PATHS.has(child.path)) return false;
-  if (section.id === "39") return false;
-  return true;
-}
-
 export function isCommandPaletteChild(section: ErpNavSection, child: ErpNavChild): boolean {
   if (child.path === section.path) return false;
   if (child.shortcutToModuleId) return false;
@@ -1106,70 +1198,41 @@ export function isCommandPaletteChild(section: ErpNavSection, child: ErpNavChild
   return true;
 }
 
+/** Contextual workspace tabs. Distinct child screens stay; naming-only aliases do not. */
+export function isWorkspaceNavChild(section: ErpNavSection, child: ErpNavChild): boolean {
+  if (child.path === section.path) return false;
+  if (child.shortcutToModuleId) return false;
+  if (child.path === "/pos/new" || child.path === "/qr" || child.path === "/settings/numbering") return false;
+  return true;
+}
+
+/** Global ERP nav never lists children. Workspace rails own contextual screens. */
 export const ERP_SIDEBAR_SECTIONS: ErpNavSection[] = ERP_NAV_SECTIONS.map((section) => ({
   ...section,
-  children: section.children.filter((child) => isSidebarNavChild(section, child)),
+  children: [],
 }));
 
 export const EXTRA_APP_PATHS = ["/products/new", "/pos/new", "/pos/customers", "/pos/products", "/pos/reports"] as const;
 
 /**
- * Frontend feature folders under apps/web/src/features.
- * Folders already match the 39-module names. Do not rename for churn.
- * 36–38 stay Coming Soon (no dedicated folders). auth/ and modules/ are shell, not product modules.
- * Shared API clients keep grouped names (catalog-api, parties-api, finance-api, …).
+ * Feature-folder ownership derived from the 39-module registry.
+ * Child screens may live in other existing folders; do not rename folders.
  */
-export const ERP_FEATURE_FOLDERS: ReadonlyArray<{ id: string; folder: string | null }> = [
-  { id: "01", folder: "dashboard" },
-  { id: "02", folder: "product-management" },
-  { id: "03", folder: "barcode-qr" },
-  { id: "04", folder: "ai-camera" },
-  { id: "05", folder: "pos" },
-  { id: "06", folder: "quotations" },
-  { id: "07", folder: "orders" },
-  { id: "08", folder: "delivery" },
-  { id: "09", folder: "purchases" },
-  { id: "10", folder: "inventory" },
-  { id: "11", folder: "warehouses" },
-  { id: "12", folder: "customers" },
-  { id: "13", folder: "suppliers" },
-  { id: "14", folder: "service-repair" },
-  { id: "15", folder: "warranty" },
-  { id: "16", folder: "accounts" },
-  { id: "17", folder: "banking" },
-  { id: "18", folder: "crm" },
-  { id: "19", folder: "reports" },
-  { id: "20", folder: "salesman" },
-  { id: "21", folder: "expenses" },
-  { id: "22", folder: "installments" },
-  { id: "23", folder: "loyalty" },
-  { id: "24", folder: "documents" },
-  { id: "25", folder: "approvals" },
-  { id: "26", folder: "users" },
-  { id: "27", folder: "permissions" },
-  { id: "28", folder: "audit" },
-  { id: "29", folder: "notifications" },
-  { id: "30", folder: "branches" },
-  { id: "31", folder: "tax" },
-  { id: "32", folder: "import-export" },
-  { id: "33", folder: "printing" },
-  { id: "34", folder: "backup" },
-  { id: "35", folder: "devices" },
-  { id: "36", folder: null },
-  { id: "37", folder: null },
-  { id: "38", folder: null },
-  { id: "39", folder: "system" },
-];
+export const ERP_FEATURE_FOLDERS: ReadonlyArray<{ id: string; folder: string | null }> = ERP_NAV_SECTIONS.map(
+  (section) => ({ id: section.id, folder: section.folder }),
+);
 
 export function findModuleByPath(pathname: string): ErpModuleRoute | undefined {
   return ERP_MODULES.find((m) => m.path === pathname);
 }
 
 export function findSectionForPath(pathname: string): ErpNavSection | undefined {
+  const exactChild = ERP_NAV_SECTIONS.find((section) => section.children.some((child) => child.path === pathname));
+  if (exactChild) return exactChild;
   return ERP_NAV_SECTIONS.find(
     (section) =>
       section.path === pathname ||
-      section.children.some((child) => child.path === pathname) ||
+      section.aliases.includes(pathname) ||
       (section.path !== "/" && pathname.startsWith(`${section.path}/`)),
   );
 }
@@ -1181,10 +1244,10 @@ export function requiredPermissionForPath(pathname: string): string | undefined 
 }
 
 /** Subtle sidebar spacing only — not extra top-level modules. */
-export const NAV_VISUAL_BREAK_BEFORE = new Set(["16", "26", "36"]);
+export const NAV_VISUAL_BREAK_BEFORE = new Set(["12", "27", "32"]);
 
 export function masterTitleById(id: string): string | undefined {
-  return ERP_NAV_SECTIONS.find((section) => section.id === id)?.masterTitle;
+  return ERP_NAV_SECTIONS.find((section) => section.id === id)?.name;
 }
 
 export function isNavChildActive(child: Pick<ErpNavChild, "path">, pathname: string): boolean {
@@ -1197,28 +1260,34 @@ export function isNavChildActive(child: Pick<ErpNavChild, "path">, pathname: str
 /** Header labels for the single ERP chrome. */
 export function resolveShellHeader(pathname: string): { moduleTitle: string; pageTitle: string | null } {
   if (pathname === "/products/new") {
-    return { moduleTitle: "Product Management", pageTitle: "New Product" };
+    return { moduleTitle: "PRODUCT & CATALOG", pageTitle: "New Product" };
   }
   if (pathname.startsWith("/products/") && pathname !== "/products") {
-    return { moduleTitle: "Product Management", pageTitle: "Product" };
+    return { moduleTitle: "PRODUCT & CATALOG", pageTitle: "Product" };
   }
   const section = findSectionForPath(pathname);
   if (!section) return { moduleTitle: "Electronic ERP", pageTitle: null };
   if (pathname === "/held-sales") {
-    return { moduleTitle: section.masterTitle, pageTitle: "Hold / Resume" };
+    return { moduleTitle: section.name, pageTitle: "Hold / Resume" };
   }
   if (isPosTerminalPath(pathname)) {
-    return { moduleTitle: section.masterTitle, pageTitle: "New Sale" };
+    return { moduleTitle: section.name, pageTitle: "New Sale" };
   }
   if (pathname === "/settings") {
-    return { moduleTitle: section.masterTitle, pageTitle: "Overview" };
+    return { moduleTitle: section.name, pageTitle: "Overview" };
   }
   if (pathname === "/settings/numbering") {
-    return { moduleTitle: section.masterTitle, pageTitle: "Date & Numbering" };
+    return { moduleTitle: section.name, pageTitle: "Date & Numbering" };
   }
   const child = section.children.find((item) => item.path === pathname);
   if (child) {
-    return { moduleTitle: section.masterTitle, pageTitle: child.title };
+    return { moduleTitle: section.name, pageTitle: child.title };
   }
-  return { moduleTitle: section.masterTitle, pageTitle: null };
+  if (pathname === section.path || section.aliases.includes(pathname)) {
+    const landing =
+      section.children.find((item) => item.path === pathname || section.aliases.includes(item.path)) ??
+      section.children[0];
+    return { moduleTitle: section.name, pageTitle: landing?.title ?? "Overview" };
+  }
+  return { moduleTitle: section.name, pageTitle: null };
 }

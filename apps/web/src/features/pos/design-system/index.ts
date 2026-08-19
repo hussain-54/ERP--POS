@@ -3,14 +3,10 @@
  * Business logic stays in PosPage / domain / pos-api.
  */
 export { posCn } from "./posCn";
-export { POSShell, PosShell } from "./POSShell";
-export { POSNav } from "./POSNav";
-export { POSNavIcon } from "./POSNavIcon";
-export { POSSidebar, PosSidebar } from "./POSSidebar";
-export { POSHeader, PosHeader } from "./POSHeader";
-export { POSTopbar } from "./POSTopbar";
-export { POSWorkspace, PosWorkspace } from "./POSWorkspace";
-export { POSShortcutBar, PosShortcutBar } from "./POSShortcutBar";
+export { POSShell } from "./POSShell";
+export { POSHeader } from "./POSHeader";
+export { POSWorkspace } from "./POSWorkspace";
+export { POSShortcutBar } from "./POSShortcutBar";
 export { POSPageHeader } from "./POSPageHeader";
 export { POSBreadcrumb } from "./POSBreadcrumb";
 export { POSSection } from "./POSSection";
@@ -39,8 +35,6 @@ export type { POSInputProps } from "./POSInput";
 export type { POSSearchProps } from "./POSSearch";
 export type { POSSelectProps, POSSelectOption } from "./POSSelect";
 export type { POSBadgeTone } from "./POSBadge";
-export type { POSSidebarProps } from "./POSSidebar";
-export type { POSTopbarProps } from "./POSTopbar";
 export type { POSHeaderProps } from "./POSHeader";
 export type { POSStepperStep } from "./POSStepper";
 export type { POSTabItem } from "./POSTabs";

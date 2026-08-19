@@ -89,7 +89,7 @@ function CustomerStat({
   hint?: string;
 }) {
   return (
-    <div className="rounded-[var(--pos-radius-sm)] bg-[var(--pos-muted-bg)] px-2 py-1.5" title={hint}>
+    <div className="pos-customer-stat rounded-[var(--pos-radius-sm)] bg-[var(--pos-muted-bg)] px-2 py-1" title={hint}>
       <div className="text-[10px] font-medium uppercase tracking-wide text-[var(--pos-muted)]">
         {label}
       </div>

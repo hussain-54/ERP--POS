@@ -4,71 +4,34 @@ import { useAuth } from "@/features/auth/AuthContext";
 import { isPosTerminalPath } from "@/app/modules";
 import { hardwareApi } from "@/features/printing/hardware-api";
 import { POSHeader } from "./POSHeader";
-import { POSSidebar } from "./POSSidebar";
 import { POSWorkspace } from "./POSWorkspace";
 import { POSShortcutBar } from "./POSShortcutBar";
-import { usePosLayoutMode } from "../usePosLayoutMode";
+import { POSButton } from "./POSButton";
 import { usePosShellStatus } from "../session/usePosShellStatus";
 import { posHardware } from "../hardware";
-import { posSidebarCollapsedByDefault } from "../pos-layout";
-import {
-  dispatchPosShortcut,
-  isPosOverlayOpen,
-  matchPosFunctionShortcut,
-  posShortcutFallbackPath,
-} from "../pos-ux";
+import { dispatchPosShortcut, isPosOverlayOpen, posShortcutFallbackPath, resolvePosFunctionShortcut } from "../pos-ux";
 import "../pos-tokens.css";
 
 /**
- * One POS environment: header + dedicated sidebar + workspace + shortcut bar.
- * Reused by every POS operational page. ERP Home leaves this shell.
+ * POS operational tools inside the shared ModuleWorkspace.
+ * Not a second application shell — header, context nav, and ERP chrome live above this.
  */
 export function POSShell({ children }: { children: ReactNode }) {
   const location = useLocation();
   const navigate = useNavigate();
-  const { user, branchId, branches, setBranchId, logout, hasPermission, permissions } = useAuth();
-  const {
-    holdCount,
-    shiftOpen,
-    drawer,
-    branchOptions,
-    terminalOptions,
-    terminalId,
-    setTerminalId,
-  } = usePosShellStatus(branchId, branches);
-  const layoutMode = usePosLayoutMode();
-  const [navOpen, setNavOpen] = useState(() => !posSidebarCollapsedByDefault(layoutMode));
+  const { user, branchId, branches, hasPermission } = useAuth();
+  const { holdCount, shiftOpen, drawer, terminalOptions, terminalId, setTerminalId } = usePosShellStatus(
+    branchId,
+    branches,
+  );
   const [drawerBusy, setDrawerBusy] = useState(false);
   const [drawerMessage, setDrawerMessage] = useState<string | null>(null);
   const dense = isPosTerminalPath(location.pathname);
-  const grantedCount = permissions.length;
-
-  useEffect(() => {
-    setNavOpen(!posSidebarCollapsedByDefault(layoutMode));
-  }, [layoutMode]);
-
-  useEffect(() => {
-    if (layoutMode === "desktop") return;
-    setNavOpen(false);
-  }, [location.pathname, layoutMode]);
-
-  useEffect(() => {
-    if (!navOpen || layoutMode === "desktop") return;
-    const previousOverflow = document.body.style.overflow;
-    document.body.style.overflow = "hidden";
-    function onKey(event: KeyboardEvent) {
-      if (event.key === "Escape") setNavOpen(false);
-    }
-    window.addEventListener("keydown", onKey);
-    return () => {
-      document.body.style.overflow = previousOverflow;
-      window.removeEventListener("keydown", onKey);
-    };
-  }, [navOpen, layoutMode]);
+  const summary = drawer ?? { opening: "—", inHand: "—", sales: "—", expenses: "—", expected: "—" };
 
   useEffect(() => {
     function onKey(event: KeyboardEvent) {
-      const action = matchPosFunctionShortcut(event);
+      const action = resolvePosFunctionShortcut(event);
       if (!action) return;
       event.preventDefault();
       if (isPosOverlayOpen()) return;
@@ -85,9 +48,9 @@ export function POSShell({ children }: { children: ReactNode }) {
     setDrawerBusy(true);
     setDrawerMessage(null);
     try {
-      const local = await posHardware.openDrawer({ reason: "POS sidebar", userId: user?.id });
+      const local = await posHardware.openDrawer({ reason: "POS workspace", userId: user?.id });
       if (!local.ok) {
-        await hardwareApi.openDrawer({ reason: "POS sidebar" });
+        await hardwareApi.openDrawer({ reason: "POS workspace" });
       }
       setDrawerMessage("Drawer opened");
     } catch (err) {
@@ -100,54 +63,54 @@ export function POSShell({ children }: { children: ReactNode }) {
   return (
     <div className="pos-terminal flex h-full min-h-0 min-w-0 flex-1 flex-col overflow-hidden">
       <POSHeader
-        branchId={branchId}
-        branchOptions={branchOptions}
-        onBranchChange={setBranchId}
         terminalId={terminalId}
         terminalOptions={terminalOptions}
         onTerminalChange={setTerminalId}
         cashierName={user?.fullName}
         holdCount={holdCount}
         shiftOpen={shiftOpen}
-        onMenu={() => setNavOpen((value) => !value)}
-        menuOpen={navOpen}
-        userName={user?.fullName ?? "User"}
-        onProfile={() => navigate("/settings")}
-        onLogout={() => {
-          void logout();
-        }}
       />
 
-      <div className="flex min-h-0 min-w-0 flex-1 overflow-hidden">
-        {navOpen && layoutMode !== "desktop" ? (
-          <button
-            type="button"
-            className="fixed inset-0 top-12 z-30 bg-black/30 xl:hidden"
-            aria-label="Close navigation"
-            onClick={() => setNavOpen(false)}
-          />
-        ) : null}
-
-        <POSSidebar
-          open={navOpen}
-          onNavigate={() => {
-            if (layoutMode !== "desktop") setNavOpen(false);
-          }}
-          grantedCount={grantedCount}
-          hasPermission={hasPermission}
-          drawer={drawer}
-          onCashDrawer={hasPermission("cash_drawer.open") ? () => void onCashDrawer() : undefined}
-          onCloseShift={() => navigate("/sales-management")}
-          drawerBusy={drawerBusy}
-          drawerMessage={drawerMessage}
-        />
-
-        <POSWorkspace dense={dense}>{children}</POSWorkspace>
+      <div className="flex flex-wrap items-center gap-2 border-b border-[var(--pos-border)] bg-[var(--pos-navy)] px-3 py-2 text-[11px] text-[var(--pos-nav-ink)]">
+        <POSButton
+          size="sm"
+          variant="ghost"
+          className="border border-white/20 bg-white/10 text-[var(--pos-nav-ink)] hover:bg-white/15"
+          onClick={hasPermission("cash_drawer.open") ? () => void onCashDrawer() : undefined}
+          disabled={!hasPermission("cash_drawer.open") || drawerBusy}
+        >
+          Cash Drawer
+        </POSButton>
+        <POSButton size="sm" variant="primary" onClick={() => navigate("/sales-management")}>
+          Close Shift
+        </POSButton>
+        <dl className="ml-auto flex flex-wrap gap-x-3 gap-y-1">
+          <div className="flex gap-1">
+            <dt className="text-[var(--pos-nav-muted)]">Opening</dt>
+            <dd className="tabular-nums">{summary.opening}</dd>
+          </div>
+          <div className="flex gap-1">
+            <dt className="text-[var(--pos-nav-muted)]">In Hand</dt>
+            <dd className="tabular-nums">{summary.inHand}</dd>
+          </div>
+          <div className="flex gap-1">
+            <dt className="text-[var(--pos-nav-muted)]">Sales</dt>
+            <dd className="tabular-nums">{summary.sales}</dd>
+          </div>
+          <div className="flex gap-1">
+            <dt className="text-[var(--pos-nav-muted)]">Expenses</dt>
+            <dd className="tabular-nums">{summary.expenses}</dd>
+          </div>
+          <div className="flex gap-1">
+            <dt className="font-semibold">Expected</dt>
+            <dd className="font-semibold tabular-nums">{summary.expected}</dd>
+          </div>
+        </dl>
+        {drawerMessage ? <p className="w-full text-[var(--pos-nav-muted)]">{drawerMessage}</p> : null}
       </div>
 
+      <POSWorkspace dense={dense}>{children}</POSWorkspace>
       <POSShortcutBar />
     </div>
   );
 }
-
-export { POSShell as PosShell };

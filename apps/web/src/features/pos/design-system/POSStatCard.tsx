@@ -33,7 +33,7 @@ export function POSStatCard({
         </p>
         {icon ? <span className="text-[var(--pos-muted)]">{icon}</span> : null}
       </div>
-      <p className={posCn("mt-0.5 text-base font-semibold tabular-nums", valueTone)}>{value}</p>
+      <p className={posCn("mt-0.5 text-[length:var(--pos-text-xl)] font-semibold tabular-nums", valueTone)}>{value}</p>
       {hint ? <p className="mt-0.5 text-[11px] text-[var(--pos-muted)]">{hint}</p> : null}
     </POSCard>
   );

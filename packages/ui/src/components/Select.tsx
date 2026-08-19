@@ -1,5 +1,6 @@
 import { forwardRef, type SelectHTMLAttributes } from "react";
 import { cn } from "../lib/cn.js";
+import { CONTROL_CLASS } from "../lib/control.js";
 
 export interface SelectOption {
   value: string;
@@ -18,16 +19,9 @@ export const Select = forwardRef<HTMLSelectElement, SelectProps>(function Select
   ref,
 ) {
   return (
-    <label className="flex w-full flex-col gap-1.5 text-sm">
-      {label ? <span className="font-medium">{label}</span> : null}
-      <select
-        ref={ref}
-        className={cn(
-          "h-10 rounded-xl border border-[var(--erp-border)] bg-white px-3 outline-none focus:ring-2 focus:ring-[var(--erp-ring)]",
-          className,
-        )}
-        {...props}
-      >
+    <label className="flex w-full flex-col gap-1 text-sm">
+      {label ? <span className="font-medium text-[var(--erp-ink)]">{label}</span> : null}
+      <select ref={ref} className={cn(CONTROL_CLASS, className)} {...props}>
         {placeholder ? <option value="">{placeholder}</option> : null}
         {options.map((opt) => (
           <option key={opt.value} value={opt.value}>
@@ -35,7 +29,7 @@ export const Select = forwardRef<HTMLSelectElement, SelectProps>(function Select
           </option>
         ))}
       </select>
-      {error ? <span className="text-[var(--erp-danger)]">{error}</span> : null}
+      {error ? <span className="text-xs text-[var(--erp-danger)]">{error}</span> : null}
     </label>
   );
 });

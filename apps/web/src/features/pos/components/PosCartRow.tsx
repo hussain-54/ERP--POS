@@ -1,6 +1,6 @@
 import { memo, useState, type KeyboardEvent } from "react";
 import type { CartLine, LocaleMode } from "../pos-types";
-import { moveCartQtyFocus, stockAvailabilityWarning } from "../pos-ux";
+import { moveCartQtyFocus, priceOverrideWarning, stockAvailabilityWarning } from "../pos-ux";
 import {
   cartLineDisplayTotal,
   cartLineImageUrl,
@@ -41,6 +41,9 @@ export const PosCartRow = memo(function PosCartRow({
   const unitOptions = line.unitOptions ?? [];
   const canEditRate = canPriceOverride || Boolean(line.isManual);
   const stockWarn = stockAvailabilityWarning(line.stock, line.qty);
+  const overrideWarn = canEditRate
+    ? priceOverrideWarning(Number(line.retailPrice ?? line.unitPrice), line.unitPrice)
+    : null;
   const photo = cartLineImageUrl(line);
   const [photoFailed, setPhotoFailed] = useState(false);
   const showPhoto = Boolean(photo) && !photoFailed;
@@ -134,15 +137,22 @@ export const PosCartRow = memo(function PosCartRow({
       </POSTd>
       <POSTd>
         {canEditRate ? (
-          <POSInput
-            className="w-20"
-            type="number"
-            value={String(line.unitPrice)}
-            title="Unit price"
-            data-pos-cart-rate=""
-            onChange={(e) => onPrice(line.key, Number(e.target.value) || 0)}
-            aria-label={`Rate for ${name}`}
-          />
+          <div>
+            <POSInput
+              className="w-20"
+              type="number"
+              value={String(line.unitPrice)}
+              title="Unit price"
+              data-pos-cart-rate=""
+              onChange={(e) => onPrice(line.key, Number(e.target.value) || 0)}
+              aria-label={`Rate for ${name}`}
+            />
+            {overrideWarn ? (
+              <div className="mt-0.5 text-[11px] text-[var(--pos-warning)]" role="status">
+                {overrideWarn}
+              </div>
+            ) : null}
+          </div>
         ) : (
           <span className="tabular-nums text-xs" title="Price override requires manager approval (F4)">
             {line.unitPrice.toFixed(2)}

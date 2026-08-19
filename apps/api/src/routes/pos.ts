@@ -25,7 +25,7 @@ import { createUserClient } from "../lib/supabase.js";
 import { requireAuth, type AuthedRequest } from "../middleware/auth.js";
 
 /**
- * POS router — module 05 POS / Sales (terminal, holds, invoices, returns).
+ * POS router — module 02 POS / SALES (terminal, holds, invoices, returns).
  * Mount: /api/v1/pos. Repository: PosRepository.
  */
 export const posRouter = Router();

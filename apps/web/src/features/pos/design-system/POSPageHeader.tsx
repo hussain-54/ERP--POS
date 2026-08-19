@@ -22,7 +22,7 @@ export function POSPageHeader({
       )}
     >
       <div className="min-w-0">
-        <h1 className="truncate text-base font-semibold tracking-tight text-[var(--pos-ink)]">
+        <h1 className="truncate text-[length:var(--pos-text-xl)] font-semibold tracking-tight text-[var(--pos-ink)]">
           {title}
         </h1>
         {subtitle ? <p className="mt-0.5 text-xs text-[var(--pos-muted)]">{subtitle}</p> : null}

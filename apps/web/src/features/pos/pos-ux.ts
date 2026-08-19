@@ -116,6 +116,26 @@ export function matchPosFunctionShortcut(event: {
   return hit?.action ?? null;
 }
 
+/** Hold and price-override must not steal focus while the cashier is typing. */
+const SHORTCUTS_BLOCKED_WHILE_TYPING: ReadonlySet<PosShortcutAction> = new Set([
+  "hold-resume",
+  "price-override",
+]);
+
+export function resolvePosFunctionShortcut(event: KeyboardEvent): PosShortcutAction | null {
+  const action = matchPosFunctionShortcut(event);
+  if (!action) return null;
+  if (isTypingTarget(event.target) && SHORTCUTS_BLOCKED_WHILE_TYPING.has(action)) return null;
+  return action;
+}
+
+/** Focus after React commits a mobile sheet / cart row. */
+export function schedulePosFocus(find: () => HTMLElement | null | undefined): void {
+  window.setTimeout(() => {
+    find()?.focus();
+  }, 0);
+}
+
 export function posShortcutFallbackPath(action: PosShortcutAction): string | null {
   switch (action) {
     case "new-sale":
@@ -155,8 +175,10 @@ export function dispatchPosShortcut(action: PosShortcutAction): boolean {
 }
 
 export function focusLastCartRate(): void {
-  const nodes = document.querySelectorAll<HTMLInputElement>("[data-pos-cart-rate]");
-  nodes[nodes.length - 1]?.focus();
+  schedulePosFocus(() => {
+    const nodes = document.querySelectorAll<HTMLInputElement>("[data-pos-cart-rate]");
+    return nodes[nodes.length - 1];
+  });
 }
 
 export function moveCartQtyFocus(currentIndex: number, delta: number): void {

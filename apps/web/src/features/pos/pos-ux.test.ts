@@ -12,6 +12,7 @@ import {
   parseProductSearchCommand,
   posShortcutFallbackPath,
   priceOverrideWarning,
+  resolvePosFunctionShortcut,
   saleHasUnsavedWork,
   stockAvailabilityWarning,
 } from "./pos-ux";
@@ -113,6 +114,15 @@ describe("POS cashier UX helpers", () => {
     expect(posShortcutFallbackPath("customers")).toBe("/pos/customers");
     expect(posShortcutFallbackPath("discount")).toBe("/discounts");
     expect(posShortcutFallbackPath("clear-cart")).toBeNull();
+    const input = document.createElement("input");
+    document.body.appendChild(input);
+    const typingEvent = { key: "F2", target: input, ctrlKey: false, metaKey: false, altKey: false, shiftKey: false } as unknown as KeyboardEvent;
+    const idleEvent = { key: "F2", target: document.body, ctrlKey: false, metaKey: false, altKey: false, shiftKey: false } as unknown as KeyboardEvent;
+    expect(resolvePosFunctionShortcut(typingEvent)).toBeNull();
+    expect(resolvePosFunctionShortcut(idleEvent)).toBe("hold-resume");
+    const typingF5 = { key: "F5", target: input, ctrlKey: false, metaKey: false, altKey: false, shiftKey: false } as unknown as KeyboardEvent;
+    expect(resolvePosFunctionShortcut(typingF5)).toBe("discount");
+    input.remove();
     const button = document.createElement("button");
     expect(isActionTarget(button)).toBe(true);
     expect(isActionTarget(document.createElement("div"))).toBe(false);

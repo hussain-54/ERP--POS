@@ -1,3 +1,4 @@
+import { memo } from "react";
 import { POSButton, POSInput, POSModal } from "../design-system";
 
 interface Props {
@@ -15,7 +16,7 @@ interface Props {
 }
 
 /** Real permission / approval gate — no fake PIN and no cashier self-override. */
-export function PosApprovalDialog({
+export const PosApprovalDialog = memo(function PosApprovalDialog({
   open,
   title,
   description,
@@ -74,4 +75,4 @@ export function PosApprovalDialog({
       ) : null}
     </POSModal>
   );
-}
+});

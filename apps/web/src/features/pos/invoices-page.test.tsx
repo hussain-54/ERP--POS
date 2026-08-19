@@ -20,10 +20,13 @@ describe("Sales Dashboard", () => {
     expect(screen.getByRole("link", { name: "Home" })).toHaveAttribute("href", "/");
     expect(screen.getByRole("link", { name: "Sales Management" })).toHaveAttribute("href", "/pos/reports");
     expect(screen.getByRole("heading", { name: "Sales Dashboard" })).toBeInTheDocument();
+    expect(screen.getByText("Sales Management register from live POS sales.")).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Search" })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Reset" })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Export" })).toBeInTheDocument();
-    expect(screen.getByPlaceholderText("Search by invoice #, customer, phone, SKU…")).toBeInTheDocument();
+    expect(screen.getByPlaceholderText("Search by invoice #, customer, phone, SKU…").className).not.toContain(
+      "pos-search-input",
+    );
     expect(screen.getByText("Date Range")).toBeInTheDocument();
     for (const label of ["Customer", "Cashier", "Salesman", "Payment Method"]) {
       expect(screen.getAllByText(label).length).toBeGreaterThan(0);

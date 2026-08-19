@@ -8,7 +8,7 @@ import { inventoryApi } from "@/features/inventory/inventory-api";
 import { adminApi } from "@/features/users/admin-api";
 import { posApi } from "./pos-api";
 import { canActOnOwnedOrForeignHold } from "./pos-security";
-import { usePosLayoutMode } from "./usePosLayoutMode";
+import { usePosLayout } from "./usePosLayoutMode";
 import {
   canResumeHold,
   computeHoldStats,
@@ -75,6 +75,7 @@ function kpiValue(id: (typeof HOLD_KPI_CARDS)[number]["id"], stats: ReturnType<t
   if (id === "expiring") return String(stats.expiring);
   if (id === "expired") return String(stats.expired);
   if (id === "today") return String(stats.today);
+  if (id === "value") return `Rs ${formatMoney(stats.totalValue)}`;
   return String(stats.mine);
 }
 
@@ -204,7 +205,7 @@ function HoldDetail({
         </div>
         <div className="flex justify-between border-t border-[var(--pos-border)] pt-1 font-semibold">
           <span>Grand Total</span>
-          <span className="tabular-nums">{formatMoney(detailTotals?.grand)}</span>
+          <span className="pos-grand tabular-nums text-base">Rs {formatMoney(detailTotals?.grand)}</span>
         </div>
       </div>
 
@@ -275,8 +276,7 @@ function HoldDetail({
 export function HeldSalesPage() {
   const toast = useToast();
   const navigate = useNavigate();
-  const layoutMode = usePosLayoutMode();
-  const inlineDetail = layoutMode === "desktop";
+  const { splitRegister: inlineDetail } = usePosLayout();
   const { branchId, user, hasPermission } = useAuth();
   const userId = user?.id ?? null;
   const loadGen = useRef(0);
@@ -663,7 +663,7 @@ export function HeldSalesPage() {
   }
 
   return (
-    <div className="flex h-full min-h-0 flex-1 flex-col overflow-hidden p-3">
+    <div className="pos-hold-workspace flex h-full min-h-0 flex-1 flex-col overflow-hidden p-3">
       <div className="shrink-0 space-y-3">
         <POSPageHeader
           title="Hold / Resume Sale"
@@ -680,7 +680,7 @@ export function HeldSalesPage() {
           }
         />
 
-        <div className="grid grid-cols-2 gap-2 md:grid-cols-5">
+        <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-6">
           {HOLD_KPI_CARDS.map((card) => {
             const active = mineOnly === card.mineOnly && tab === card.tab;
             return (
@@ -697,6 +697,7 @@ export function HeldSalesPage() {
                   label={card.label}
                   value={kpiValue(card.id, stats)}
                   tone={card.tone}
+                  hint={card.id === "value" ? "Active and expiring holds" : undefined}
                   className={active ? "ring-1 ring-[var(--pos-primary)]" : undefined}
                 />
               </button>
@@ -736,13 +737,12 @@ export function HeldSalesPage() {
 
       <div
         className={posCn(
-          "mt-3 grid min-h-0 flex-1 gap-3 overflow-hidden",
-          inlineDetail && "xl:grid-cols-[minmax(0,1.35fr)_minmax(22rem,0.9fr)]",
+          "pos-split-register mt-3 min-h-0 flex-1 overflow-hidden",
         )}
       >
         <POSCard padding="none" className="flex min-h-0 flex-col overflow-hidden">
           <div className="min-h-0 flex-1 overflow-auto" tabIndex={0} onKeyDown={onTableKeyDown}>
-            <POSTable>
+            <POSTable className="pos-register-table">
                 <POSTableHead>
                   <tr>
                     {HOLD_TABLE_COLUMNS.map((col) => (

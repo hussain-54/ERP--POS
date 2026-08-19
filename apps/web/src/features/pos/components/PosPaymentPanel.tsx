@@ -90,10 +90,10 @@ interface Props {
 
 export const PosPaymentPanel = memo(function PosPaymentPanel({
   totals,
-  invoiceDiscount,
-  onInvoiceDiscount,
+  invoiceDiscount: _invoiceDiscount,
+  onInvoiceDiscount: _onInvoiceDiscount,
   canInvoiceDiscount,
-  discountRef,
+  discountRef: _discountRef,
   methods,
   payments,
   onPayments,
@@ -135,6 +135,9 @@ export const PosPaymentPanel = memo(function PosPaymentPanel({
   walkIn = true,
   invoiceReference = null,
 }: Props) {
+  void _invoiceDiscount;
+  void _onInvoiceDiscount;
+  void _discountRef;
   const [confirmOpen, setConfirmOpen] = useState(false);
   const summary = useMemo(() => toPosTransactionSummary(totals), [totals]);
   const kindById = useMemo(() => {
@@ -308,18 +311,7 @@ export const PosPaymentPanel = memo(function PosPaymentPanel({
     <section className="pos-sale-pay-dock pos-tx-pay px-3 py-3">
       <PosTotals summary={summary} />
 
-      {canInvoiceDiscount ? (
-        <div className="mt-3">
-          <POSInput
-            ref={discountRef as React.RefObject<HTMLInputElement>}
-            label="Invoice discount"
-            type="text"
-            placeholder="amount or 10%"
-            value={invoiceDiscount}
-            onChange={(e) => onInvoiceDiscount(e.target.value)}
-          />
-        </div>
-      ) : (
+      {canInvoiceDiscount ? null : (
         <p className="mt-3 text-[11px] text-[var(--pos-muted)]">
           Invoice discount requires a POS discount permission
         </p>

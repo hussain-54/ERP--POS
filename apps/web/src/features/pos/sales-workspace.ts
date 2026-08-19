@@ -123,9 +123,9 @@ export function parseSaleRow(row: Record<string, unknown>): SaleRow {
 export const SALE_PAGE_SIZE = 25;
 
 export const SALE_KPI_CARDS = [
-  { id: "totalSales", label: "Total Sales", tone: "neutral" as const },
+  { id: "totalSales", label: "Total Sales", tone: "primary" as const },
   { id: "totalInvoices", label: "Total Invoices", tone: "neutral" as const },
-  { id: "netSales", label: "Net Sales", tone: "neutral" as const },
+  { id: "netSales", label: "Net Sales", tone: "primary" as const },
   { id: "totalDiscount", label: "Total Discount", tone: "neutral" as const },
   { id: "totalTax", label: "Total Tax", tone: "neutral" as const },
   { id: "pendingAmount", label: "Pending Amount", tone: "warning" as const },
@@ -201,6 +201,10 @@ export function saleStatusTone(status: string, paymentStatus: string): POSBadgeT
 
 export function saleStatusLabel(status: string, paymentStatus: string): string {
   return saleRegisterBadge(status, paymentStatus).label;
+}
+
+export function remainingAmountClass(remaining: number): string {
+  return remaining > 0.009 ? "text-[var(--pos-warning)] font-semibold" : "text-[var(--pos-ink)]";
 }
 
 export function customerLabel(row: Pick<SaleRow, "customerName">): string {

@@ -100,7 +100,7 @@ export function createApp() {
   app.use("/api/v1/catalog", catalogRouter); // 02 Products, 03 Barcodes, 32 Import (catalog templates)
   app.use("/api/v1/inventory", inventoryRouter); // 10 Inventory, 11 Warehouses (masters)
   app.use("/api/v1/parties", partiesRouter); // 12 Customers, 13 Suppliers, 22 Installments, 05 Payments
-  app.use("/api/v1/pos", posRouter); // 05 POS / Sales
+  app.use("/api/v1/pos", posRouter); // 02 POS / SALES
   app.use("/api/v1/purchases", purchasesRouter); // 09 Purchases, 08 Delivery, 11 locations/transfers, 13 price lists
   app.use("/api/v1/after-sales", afterSalesRouter); // 06 Quotations, 07 Orders, 14 Service, 15 Warranty
   app.use("/api/v1/accounting", accountingRouter); // 16 Accounts, 17 Banking, 21 Expenses

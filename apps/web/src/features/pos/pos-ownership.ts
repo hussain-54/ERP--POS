@@ -1,5 +1,5 @@
 /**
- * POS information architecture — module 05 ownership.
+ * POS information architecture — module 02 POS / SALES ownership.
  *
  * Names and order are locked. Do not rename or reorder.
  * Canonical POS entry is `/pos`. Aliases stay registered; do not delete them.
@@ -44,73 +44,9 @@ export interface PosOwnershipItem {
 export const POS_CANONICAL_ENTRY = "/pos";
 
 /**
- * Dedicated POS terminal sidebar (not the 39-module ERP tree, not the 12 ERP Sales children).
- * Existing POS routes stay registered; Reports stays active on those operational screens.
+ * POS feature navigation lives on ModuleWorkspace (registry children).
+ * Do not add a second POS sidebar. Hub URLs below stay registered as aliases.
  */
-export const POS_SHELL_NAV_TITLES = [
-  "POS",
-  "Hold / Resume",
-  "Customers",
-  "Products",
-  "Price & Discount",
-  "Reports",
-  "Settings",
-] as const;
-
-export type PosShellNavTitle = (typeof POS_SHELL_NAV_TITLES)[number];
-
-export type PosShellNavIcon =
-  | "pos"
-  | "hold"
-  | "customers"
-  | "products"
-  | "discount"
-  | "reports"
-  | "settings";
-
-export interface PosShellNavItem {
-  title: PosShellNavTitle;
-  path: string;
-  aliases: readonly string[];
-  permission: string;
-  icon: PosShellNavIcon;
-}
-
-export const POS_SHELL_NAV: readonly PosShellNavItem[] = [
-  { title: "POS", path: "/pos", aliases: ["/pos/new"], permission: "pos.sell", icon: "pos" },
-  { title: "Hold / Resume", path: "/held-sales", aliases: [], permission: "pos.hold", icon: "hold" },
-  { title: "Customers", path: "/pos/customers", aliases: [], permission: "pos.sell", icon: "customers" },
-  { title: "Products", path: "/pos/products", aliases: [], permission: "pos.sell", icon: "products" },
-  { title: "Price & Discount", path: "/discounts", aliases: [], permission: "pos.sell", icon: "discount" },
-  {
-    title: "Reports",
-    path: "/pos/reports",
-    aliases: [
-      "/invoices",
-      "/sales-management",
-      "/returns",
-      "/exchange",
-      "/payments",
-      "/pos/references",
-      "/pos/salesmen",
-      "/pos/installments",
-    ],
-    permission: "pos.view_invoices",
-    icon: "reports",
-  },
-  { title: "Settings", path: "/pos/settings", aliases: [], permission: "pos.configure", icon: "settings" },
-] as const;
-
-export function isPosShellNavActive(item: PosShellNavItem, pathname: string): boolean {
-  if (item.path === pathname) return true;
-  return item.aliases.includes(pathname);
-}
-
-export function posShellNavItemForPath(pathname: string): PosShellNavItem | undefined {
-  const exact = POS_SHELL_NAV.find((item) => item.path === pathname);
-  if (exact) return exact;
-  return POS_SHELL_NAV.find((item) => item.aliases.includes(pathname));
-}
 
 export const POS_OWNERSHIP: readonly PosOwnershipItem[] = [
   {
@@ -228,7 +164,7 @@ export const POS_OWNERSHIP: readonly PosOwnershipItem[] = [
 export const POS_TERMINAL_CANONICAL = POS_CANONICAL_ENTRY;
 
 /**
- * URLs that enter the POS environment shell.
+ * URLs that use POS workspace chrome inside the ERP AppShell.
  * Do not include master-module owners (/salesman, /installments) or /credit / /settings/pos.
  */
 export const POS_ENVIRONMENT_PATHS = [
@@ -265,15 +201,14 @@ export const POS_COMPONENT_OWNERS = {
   shell: [
     "features/pos/design-system/POSShell.tsx",
     "features/pos/design-system/POSHeader.tsx",
-    "features/pos/design-system/POSTopbar.tsx",
-    "features/pos/design-system/POSNav.tsx",
-    "features/pos/design-system/POSSidebar.tsx",
     "features/pos/design-system/POSWorkspace.tsx",
     "features/pos/design-system/POSShortcutBar.tsx",
     "features/pos/design-system/POSActionBar.tsx",
   ],
   newSale: [
     "features/pos/PosPage.tsx",
+    "features/pos/components/PosSaleLayout.tsx",
+    "features/pos/components/PosSaleMeta.tsx",
     "features/pos/components/PosProductPanel.tsx",
     "features/pos/components/PosDiscoveryTools.tsx",
     "features/pos/components/PosCart.tsx",

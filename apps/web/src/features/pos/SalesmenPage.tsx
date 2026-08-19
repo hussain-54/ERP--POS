@@ -12,6 +12,7 @@ import {
 } from "./salesman-workspace";
 import {
   POSBadge,
+  POSBreadcrumb,
   POSButton,
   POSCard,
   POSEmptyState,
@@ -127,7 +128,14 @@ export function SalesmenPage() {
   }
 
   return (
-    <div className="space-y-3">
+    <div className="pos-ops-workspace space-y-3">
+      <POSBreadcrumb
+        items={[
+          { label: "Home", to: "/" },
+          { label: "Reports", to: "/pos/reports" },
+          { label: "Salesmen" },
+        ]}
+      />
       <POSPageHeader
         title="Salesmen"
         subtitle="Roster from the Salesman module. Commission still accrues from pos-commission on posted sales. Select a linked salesman for New Sale."
@@ -182,12 +190,12 @@ export function SalesmenPage() {
 
       <POSCard padding="none">
         <div className="p-3">
-          <POSSearch value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Name, code, phone…" />
+          <POSSearch compact value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Name, code, phone…" />
         </div>
         {loading && !rows.length ? (
           <POSLoadingState label="Loading salesmen…" rows={6} className="p-3" />
         ) : (
-          <POSTable>
+          <POSTable className="pos-register-table">
             <POSTableHead>
               <tr>
                 {SALESMEN_TABLE_COLUMNS.map((col) => (

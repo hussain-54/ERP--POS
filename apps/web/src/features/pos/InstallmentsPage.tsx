@@ -3,7 +3,7 @@ import { useToast } from "@electronic-erp/ui";
 import { useAuth } from "@/features/auth/AuthContext";
 import { partiesApi } from "@/features/customers/parties-api";
 import { posApi } from "./pos-api";
-import { formatMoney } from "./sales-workspace";
+import { formatMoney, remainingAmountClass } from "./sales-workspace";
 import {
   INSTALLMENT_LINE_COLUMNS,
   INSTALLMENT_PLAN_COLUMNS,
@@ -14,6 +14,7 @@ import {
 } from "./installments-workspace";
 import {
   POSBadge,
+  POSBreadcrumb,
   POSButton,
   POSCard,
   POSEmptyState,
@@ -230,7 +231,14 @@ export function InstallmentsPage() {
   }
 
   return (
-    <div className="space-y-3">
+    <div className="pos-ops-workspace space-y-3">
+      <POSBreadcrumb
+        items={[
+          { label: "Home", to: "/" },
+          { label: "Reports", to: "/pos/reports" },
+          { label: "Installments" },
+        ]}
+      />
       <POSPageHeader
         title="Installments"
         subtitle="Plans from installment_plans. Schedule math uses buildInstallmentPlan. There is no installment payment poster here — collect remaining on Payments or New Sale."
@@ -252,6 +260,7 @@ export function InstallmentsPage() {
           <div className="grid gap-2 md:grid-cols-2">
             <div>
               <POSSearch
+                compact
                 label="Customer"
                 aria-label="Customer"
                 value={customerQuery}
@@ -282,6 +291,7 @@ export function InstallmentsPage() {
             </div>
             <div>
               <POSSearch
+                compact
                 label="Invoice"
                 aria-label="Invoice"
                 value={invoiceQuery}
@@ -345,10 +355,11 @@ export function InstallmentsPage() {
           </div>
         </POSCard>
 
-      <div className="grid min-h-0 gap-3 xl:grid-cols-[minmax(0,1.3fr)_minmax(20rem,0.9fr)]">
+      <div className="pos-split-register">
         <POSCard padding="none">
           <div className="p-3">
             <POSSearch
+              compact
               value={query}
               onChange={(e) => setQuery(e.target.value)}
               placeholder="Plan, customer, invoice…"
@@ -357,7 +368,7 @@ export function InstallmentsPage() {
           {loading && !plans.length ? (
             <POSLoadingState label="Loading installment plans…" rows={6} className="p-3" />
           ) : (
-            <POSTable>
+            <POSTable className="pos-register-table">
               <POSTableHead>
                 <tr>
                   {INSTALLMENT_PLAN_COLUMNS.map((col) => (
@@ -368,12 +379,14 @@ export function InstallmentsPage() {
               <POSTableBody>
                 {visiblePlans.map((plan) => (
                   <tr key={plan.id} onClick={() => setSelectedId(plan.id)}>
-                    <POSTd className="font-medium">{plan.planNumber}</POSTd>
+                    <POSTd className="font-semibold text-[var(--pos-primary)]">{plan.planNumber}</POSTd>
                     <POSTd>{plan.customerName}</POSTd>
                     <POSTd>{plan.invoiceNumber}</POSTd>
                     <POSTd className="tabular-nums">{formatMoney(plan.totalAmount)}</POSTd>
                     <POSTd className="tabular-nums">{formatMoney(plan.paid)}</POSTd>
-                    <POSTd className="tabular-nums">{formatMoney(plan.remaining)}</POSTd>
+                    <POSTd className={`tabular-nums ${remainingAmountClass(plan.remaining)}`}>
+                      {formatMoney(plan.remaining)}
+                    </POSTd>
                     <POSTd>{plan.nextDueDate ?? "—"}</POSTd>
                     <POSTd>
                       <POSBadge tone={installmentStatusTone(plan.status)}>{plan.status}</POSBadge>
@@ -386,7 +399,7 @@ export function InstallmentsPage() {
         </POSCard>
 
         <POSCard title="Details">
-          <POSTable>
+          <POSTable className="pos-register-table">
             <POSTableHead>
               <tr>
                 {INSTALLMENT_LINE_COLUMNS.map((col) => (

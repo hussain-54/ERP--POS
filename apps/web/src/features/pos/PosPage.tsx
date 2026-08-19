@@ -35,7 +35,8 @@ import { cameraScanner, posHardware } from "./hardware";
 import { aiApi } from "@/features/ai-camera/ai-api";
 import "./pos-tokens.css";
 import { PosSaleLayout } from "./components/PosSaleLayout";
-import { usePosLayoutMode } from "./usePosLayoutMode";
+import { PosSaleMeta } from "./components/PosSaleMeta";
+import { usePosLayout } from "./usePosLayoutMode";
 import type { PosMobileSheet } from "./pos-layout";
 import { PosProductPanel } from "./components/PosProductPanel";
 import { PosCustomerPanel, type PosCustomerFormInput } from "./components/PosCustomerPanel";
@@ -51,12 +52,10 @@ import { posCustomerRepository } from "./session/pos-customer-repository";
 import { partiesApi } from "@/features/customers/parties-api";
 import { cartToQuotationItems } from "./pos-quotation";
 import {
-  appendUniqueProducts,
   isLatestRequest,
-  mergeProductSearches,
   nextProductSearchLimit,
-  POS_PRODUCT_PAGE_SIZE,
   POS_PRODUCT_SEARCH_LIMIT,
+  productsMatchingCategory,
 } from "./pos-catalog-load";
 import {
   appendCharToSearchInput,
@@ -69,16 +68,15 @@ import {
   parseProductSearchCommand,
   priceOverrideWarning,
   saleHasUnsavedWork,
+  schedulePosFocus,
   stockAvailabilityWarning,
 } from "./pos-ux";
 import { posActionFlags } from "./pos-security";
 import { type PosHoldNavigationState } from "./held-sales";
 import type { CustomerSearchHit } from "@electronic-erp/contracts";
 import {
-  POSBadge,
   POSConfirmDialog,
   POSDrawer,
-  POSSelect,
 } from "./design-system";
 import {
   POS_SHORTCUT_EVENT,
@@ -199,7 +197,6 @@ export function PosPage({ entry = "sale" }: { entry?: "sale" | "holds" }) {
   const [categories, setCategories] = useState<Array<{ id: string; name: string }>>([]);
   const [selectedCategoryId, setSelectedCategoryId] = useState<string | null>(null);
   const [searchLimit, setSearchLimit] = useState(POS_PRODUCT_SEARCH_LIMIT);
-  const [categoryPage, setCategoryPage] = useState(1);
   const [catalogHasMore, setCatalogHasMore] = useState(false);
   const [warehouseId, setWarehouseId] = useState("");
   const [warehouses, setWarehouses] = useState<Array<{ id: string; name: string }>>([]);
@@ -245,7 +242,7 @@ export function PosPage({ entry = "sale" }: { entry?: "sale" | "holds" }) {
   const [receiptFormat, setReceiptFormat] = useState<"80mm" | "58mm" | "a4">("80mm");
   const [showHolds, setShowHolds] = useState(holdEntry);
   const [creatingCustomer, setCreatingCustomer] = useState(false);
-  const layoutMode = usePosLayoutMode();
+  const { mode: layoutMode, chrome } = usePosLayout();
   const [mobileSheet, setMobileSheet] = useState<PosMobileSheet>(null);
 
   const searchRef = useRef<HTMLInputElement>(null);
@@ -266,6 +263,8 @@ export function PosPage({ entry = "sale" }: { entry?: "sale" | "holds" }) {
     cartDiscount: (_key: string, _raw: string) => undefined as void,
     cartRemove: (_key: string) => undefined as void,
     cartClear: () => undefined as void,
+    invoiceDiscount: (_value: string) => undefined as void,
+    cancelSale: () => undefined as void,
     hold: () => undefined as void,
     pay: () => undefined as void,
     quotation: () => undefined as void,
@@ -438,50 +437,44 @@ export function PosPage({ entry = "sale" }: { entry?: "sale" | "holds" }) {
 
   useEffect(() => {
     if (tab !== "categories" || q.trim()) return;
-    let cancelled = false;
-    void (async () => {
-      setSearching(true);
-      try {
-        if (selectedCategoryId) {
-          const res = await catalogApi.listProducts({
-            categoryId: selectedCategoryId,
-            page: categoryPage,
-            pageSize: POS_PRODUCT_PAGE_SIZE,
-          });
-          if (cancelled) return;
-          setCatalogHasMore(categoryPage * POS_PRODUCT_PAGE_SIZE < res.total);
-          const names = res.items.map((p) => p.name);
-          const found = await mergeProductSearches(
-            names,
-            async (name) => {
-              const hit = await posApi.searchProducts({
-                q: name,
-                warehouseId: warehouseId || undefined,
-                customerId: walkIn ? undefined : customerId || undefined,
-                limit: 5,
-              });
-              return hit.items;
-            },
-            POS_PRODUCT_PAGE_SIZE,
-          );
-          if (!cancelled) {
-            setResults((prev) => (categoryPage === 1 ? found : appendUniqueProducts(prev, found)));
-          }
-        } else if (!cancelled) {
-          setCatalogHasMore(false);
-          setResults(recent);
-        }
-      } catch {
-        /* ignore */
-      } finally {
-        if (!cancelled) setSearching(false);
-      }
-    })();
-    return () => {
-      cancelled = true;
-    };
+    if (!selectedCategoryId) {
+      productSearchSeq.current += 1;
+      setCatalogHasMore(false);
+      setResults(recent);
+      return;
+    }
+    const categoryName = categories.find((item) => item.id === selectedCategoryId)?.name;
+    if (!categoryName) return;
+    if (!online) {
+      productSearchSeq.current += 1;
+      setResults([]);
+      return;
+    }
+    const started = ++productSearchSeq.current;
+    setSearching(true);
+    void posApi
+      .searchProducts({
+        q: categoryName,
+        warehouseId: warehouseId || undefined,
+        customerId: walkIn ? undefined : customerId || undefined,
+        limit: searchLimit,
+      })
+      .then((res) => {
+        if (!isLatestRequest(productSearchSeq.current, started)) return;
+        setCatalogHasMore(
+          res.items.length >= searchLimit && nextProductSearchLimit(searchLimit) > searchLimit,
+        );
+        setResults(productsMatchingCategory(res.items, categoryName));
+      })
+      .catch(() => {
+        if (!isLatestRequest(productSearchSeq.current, started)) return;
+        setCatalogHasMore(false);
+      })
+      .finally(() => {
+        if (isLatestRequest(productSearchSeq.current, started)) setSearching(false);
+      });
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [tab, selectedCategoryId, categoryPage, warehouseId, customerId, walkIn, q]);
+  }, [tab, selectedCategoryId, categories, warehouseId, customerId, walkIn, q, searchLimit, online]);
 
   useEffect(() => {
     if (!q.trim()) {
@@ -493,32 +486,29 @@ export function PosPage({ entry = "sale" }: { entry?: "sale" | "holds" }) {
       return;
     }
     const started = ++productSearchSeq.current;
-    const handle = window.setTimeout(() => {
-      void (async () => {
-        setSearching(true);
-        try {
-          const res = await posApi.searchProducts({
-            q,
-            warehouseId: warehouseId || undefined,
-            customerId: walkIn ? undefined : customerId || undefined,
-            limit: searchLimit,
-          });
-          if (!isLatestRequest(productSearchSeq.current, started)) return;
-          setResults(res.items);
-        } catch (err) {
-          if (!isLatestRequest(productSearchSeq.current, started)) return;
-          const failed = formatOnlineFailure(err, "generic");
-          toast.push({
-            title: failed.title,
-            description: failed.description,
-            tone: "danger",
-          });
-        } finally {
-          if (isLatestRequest(productSearchSeq.current, started)) setSearching(false);
-        }
-      })();
-    }, 50);
-    return () => window.clearTimeout(handle);
+    setSearching(true);
+    void (async () => {
+      try {
+        const res = await posApi.searchProducts({
+          q,
+          warehouseId: warehouseId || undefined,
+          customerId: walkIn ? undefined : customerId || undefined,
+          limit: searchLimit,
+        });
+        if (!isLatestRequest(productSearchSeq.current, started)) return;
+        setResults(res.items);
+      } catch (err) {
+        if (!isLatestRequest(productSearchSeq.current, started)) return;
+        const failed = formatOnlineFailure(err, "generic");
+        toast.push({
+          title: failed.title,
+          description: failed.description,
+          tone: "danger",
+        });
+      } finally {
+        if (isLatestRequest(productSearchSeq.current, started)) setSearching(false);
+      }
+    })();
   }, [q, warehouseId, customerId, walkIn, toast, online, tab, searchLimit]);
 
   useEffect(() => {
@@ -528,25 +518,22 @@ export function PosPage({ entry = "sale" }: { entry?: "sale" | "holds" }) {
     }
     const orgId = organizationId ?? "";
     const started = ++customerSearchSeq.current;
-    const handle = window.setTimeout(() => {
-      if (!online) {
-        setCustomerHits([]);
-        return;
-      }
-      void posCustomerRepository
-        .search({
-          q: customerQuery,
-          organizationId: orgId,
-          canRead: hasPermission("customers.read"),
-        })
-        .then((hits) => {
-          if (isLatestRequest(customerSearchSeq.current, started)) setCustomerHits(hits);
-        })
-        .catch(() => {
-          if (isLatestRequest(customerSearchSeq.current, started)) setCustomerHits([]);
-        });
-    }, 80);
-    return () => window.clearTimeout(handle);
+    if (!online) {
+      setCustomerHits([]);
+      return;
+    }
+    void posCustomerRepository
+      .search({
+        q: customerQuery,
+        organizationId: orgId,
+        canRead: hasPermission("customers.read"),
+      })
+      .then((hits) => {
+        if (isLatestRequest(customerSearchSeq.current, started)) setCustomerHits(hits);
+      })
+      .catch(() => {
+        if (isLatestRequest(customerSearchSeq.current, started)) setCustomerHits([]);
+      });
   }, [customerQuery, walkIn, online, organizationId, hasPermission]);
 
   const rememberRecent = useCallback((p: ProductSearchResult) => {
@@ -594,7 +581,7 @@ export function PosPage({ entry = "sale" }: { entry?: "sale" | "holds" }) {
 
   const selectCategory = useCallback((id: string | null) => {
     setSelectedCategoryId(id);
-    setCategoryPage(1);
+    setSearchLimit(POS_PRODUCT_SEARCH_LIMIT);
     setTab("categories");
   }, []);
   const setProductQuery = useCallback((next: string) => {
@@ -602,14 +589,8 @@ export function PosPage({ entry = "sale" }: { entry?: "sale" | "holds" }) {
     setQ(next);
   }, []);
   const onLoadMoreProducts = useCallback(() => {
-    if (q.trim()) {
-      setSearchLimit((current) => nextProductSearchLimit(current));
-      return;
-    }
-    if (tab === "categories" && selectedCategoryId) {
-      setCategoryPage((page) => page + 1);
-    }
-  }, [q, tab, selectedCategoryId]);
+    setSearchLimit((current) => nextProductSearchLimit(current));
+  }, []);
   const onCommitSearch = useCallback((raw: string, highlighted: ProductSearchResult | null) => {
     productHandlersRef.current.commit(raw, highlighted);
   }, []);
@@ -636,6 +617,12 @@ export function PosPage({ entry = "sale" }: { entry?: "sale" | "holds" }) {
   }, []);
   const onCartClear = useCallback(() => {
     pageOpsRef.current.cartClear();
+  }, []);
+  const onInvoiceDiscount = useCallback((value: string) => {
+    pageOpsRef.current.invoiceDiscount(value);
+  }, []);
+  const onCancelSale = useCallback(() => {
+    pageOpsRef.current.cancelSale();
   }, []);
   const onHoldSale = useCallback(() => {
     pageOpsRef.current.hold();
@@ -794,7 +781,7 @@ export function PosPage({ entry = "sale" }: { entry?: "sale" | "holds" }) {
         description: "Edit line rate directly in the cart.",
         tone: "info",
       });
-      queueMicrotask(() => focusLastCartRate());
+      focusLastCartRate();
       return;
     }
     setPendingDiscount({ kind: "price" });
@@ -1647,14 +1634,15 @@ export function PosPage({ entry = "sale" }: { entry?: "sale" | "holds" }) {
       case "customers":
         setWalkIn(false);
         if (layoutMode === "mobile") setMobileSheet("customer");
-        customerRef.current?.focus();
+        schedulePosFocus(() => customerRef.current);
         return;
       case "price-override":
+        if (layoutMode === "mobile") setMobileSheet("cart");
         requestPriceOverride();
         return;
       case "discount":
         if (layoutMode === "mobile") setMobileSheet("cart");
-        discountRef.current?.focus();
+        schedulePosFocus(() => discountRef.current);
         return;
       case "recalculate":
         recalculateTotals();
@@ -1840,6 +1828,7 @@ export function PosPage({ entry = "sale" }: { entry?: "sale" | "holds" }) {
       : quoteMapped.ok
         ? "Save this cart as a quotation"
         : quoteMapped.error;
+  const canPayNow = Boolean(branchId && warehouseId && cart.length);
   const payBlockedReason = !branchId
     ? "No branch selected"
     : !warehouseId
@@ -1847,6 +1836,21 @@ export function PosPage({ entry = "sale" }: { entry?: "sale" | "holds" }) {
       : !cart.length
         ? "Add products first"
         : null;
+  const saleMeta = useMemo(
+    () => (
+      <PosSaleMeta
+        warehouseId={warehouseId}
+        warehouses={warehouses}
+        lastInvoice={lastInvoice}
+        mode={mode}
+        locale={locale}
+        onWarehouse={setWarehouseId}
+        onMode={setMode}
+        onLocale={setLocale}
+      />
+    ),
+    [warehouseId, warehouses, lastInvoice, mode, locale],
+  );
 
   productHandlersRef.current.commit = (raw, highlighted) => {
     void commitProductSearch(raw, highlighted);
@@ -1877,6 +1881,8 @@ export function PosPage({ entry = "sale" }: { entry?: "sale" | "holds" }) {
   pageOpsRef.current.cartDiscount = (key, raw) => requestLineDiscount(key, raw);
   pageOpsRef.current.cartRemove = (key) => setConfirmAction({ kind: "remove-line", key });
   pageOpsRef.current.cartClear = requestClearCart;
+  pageOpsRef.current.invoiceDiscount = requestInvoiceDiscount;
+  pageOpsRef.current.cancelSale = requestCancelSale;
   pageOpsRef.current.hold = () => {
     void holdBill();
   };
@@ -1926,58 +1932,17 @@ export function PosPage({ entry = "sale" }: { entry?: "sale" | "holds" }) {
             </div>
           ) : null}
           <PosSaleLayout
-            mode={layoutMode}
+            chrome={chrome}
             cartCount={cart.length}
             grandTotal={totals.grand}
             customerLabel={walkIn ? "Walk-in" : customer?.name || "Customer"}
-            canPay={Boolean(branchId && warehouseId && cart.length)}
+            canPay={canPayNow}
             payBlockedReason={payBlockedReason}
             mobileSheet={mobileSheet}
             onMobileSheet={setMobileSheet}
-            onCancelSale={requestCancelSale}
+            onCancelSale={onCancelSale}
             product={
-            <div className="flex min-h-0 flex-col gap-3 overflow-hidden">
-              <div className="flex shrink-0 flex-wrap items-center gap-2">
-                <div className="min-w-0 w-44 max-w-full">
-                  <POSSelect
-                    aria-label="Warehouse"
-                    value={warehouseId}
-                    onChange={(e) => setWarehouseId(e.target.value)}
-                    options={
-                      warehouses.length
-                        ? warehouses.map((w) => ({ value: w.id, label: w.name }))
-                        : [{ value: "", label: "No warehouse" }]
-                    }
-                  />
-                </div>
-                {!warehouseId ? <POSBadge tone="warning">No warehouse</POSBadge> : null}
-                {lastInvoice ? <POSBadge tone="success">Last {lastInvoice}</POSBadge> : null}
-                <POSBadge tone="primary">Rs {totals.grand.toFixed(2)}</POSBadge>
-                <div className="w-24">
-                  <POSSelect
-                    aria-label="Mode"
-                    value={mode}
-                    onChange={(e) => setMode(e.target.value as PosMode)}
-                    options={[
-                      { value: "easy", label: "Easy" },
-                      { value: "advanced", label: "Advanced" },
-                    ]}
-                  />
-                </div>
-                <div className="w-24">
-                  <POSSelect
-                    aria-label="Language"
-                    value={locale}
-                    onChange={(e) => setLocale(e.target.value as LocaleMode)}
-                    options={[
-                      { value: "en", label: "EN" },
-                      { value: "ur", label: "UR" },
-                      { value: "en_ur", label: "EN+UR" },
-                    ]}
-                  />
-                </div>
-              </div>
-              <PosProductPanel
+            <PosProductPanel
                 query={q}
                 onQueryChange={setProductQuery}
                 searching={searching}
@@ -2006,8 +1971,8 @@ export function PosPage({ entry = "sale" }: { entry?: "sale" | "holds" }) {
                     : tab === "categories" && Boolean(selectedCategoryId) && catalogHasMore
                 }
                 onLoadMore={onLoadMoreProducts}
+                meta={saleMeta}
               />
-            </div>
             }
             customer={
               <PosCustomerPanel
@@ -2052,17 +2017,20 @@ export function PosPage({ entry = "sale" }: { entry?: "sale" | "holds" }) {
                 onUnitChange={changeUnit}
                 onRemove={onCartRemove}
                 onClear={onCartClear}
-                onManual={onManualEntry}
                 canDiscount={canDiscount}
                 canPriceOverride={canPriceOverride}
                 cartError={lastCartError}
+                invoiceDiscount={invoiceDiscount}
+                onInvoiceDiscount={onInvoiceDiscount}
+                discountRef={discountRef}
+                canInvoiceDiscount={canDiscount}
               />
             }
             payment={
               <PosPaymentPanel
                 totals={totals}
                 invoiceDiscount={invoiceDiscount}
-                onInvoiceDiscount={requestInvoiceDiscount}
+                onInvoiceDiscount={onInvoiceDiscount}
                 canInvoiceDiscount={canDiscount}
                 discountRef={discountRef}
                 methods={methods}
@@ -2071,7 +2039,7 @@ export function PosPage({ entry = "sale" }: { entry?: "sale" | "holds" }) {
                 notes={notes}
                 onNotes={setNotes}
                 busy={busy}
-                canPay={Boolean(branchId && warehouseId && cart.length)}
+                canPay={canPayNow}
                 payBlockedReason={payBlockedReason}
                 allowCreditDue={!walkIn && Boolean(customerId)}
                 canHold={canHold}

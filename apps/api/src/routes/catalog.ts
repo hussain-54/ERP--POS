@@ -32,7 +32,8 @@ import {
 } from "../services/import-service.js";
 
 /**
- * Catalog router — modules 02 Product Management, 03 Barcode & QR, 32 Import/Export (catalog templates).
+ * Catalog router — module 03 PRODUCT & CATALOG (taxonomy, products, barcodes).
+ * Import templates stay on infrastructure + catalog mounts owned by module 39.
  * Mount: /api/v1/catalog. Repository: CatalogRepository.
  */
 export const catalogRouter = Router();

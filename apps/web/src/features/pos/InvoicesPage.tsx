@@ -4,7 +4,7 @@ export function InvoicesPage() {
   return (
     <SalesWorkspace
       title="Sales Dashboard"
-      subtitle="Retail transaction register from live POS sales."
+      subtitle="Sales Management register from live POS sales."
     />
   );
 }

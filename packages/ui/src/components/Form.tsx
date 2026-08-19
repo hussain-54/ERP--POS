@@ -5,7 +5,7 @@ export function Form({
   ...props
 }: FormHTMLAttributes<HTMLFormElement> & { children: ReactNode }) {
   return (
-    <form className="flex flex-col gap-4" {...props}>
+    <form className="flex flex-col gap-3" {...props}>
       {children}
     </form>
   );

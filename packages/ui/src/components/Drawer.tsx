@@ -16,18 +16,18 @@ export function Drawer({ open, title, children, onClose, side = "right" }: Drawe
     <div className="fixed inset-0 z-50">
       <button
         type="button"
-        className="absolute inset-0 bg-[rgba(18,32,46,0.35)]"
+        className="absolute inset-0 bg-[rgba(15,27,51,0.35)]"
         aria-label="Close drawer overlay"
         onClick={onClose}
       />
       <aside
         className={cn(
-          "absolute top-0 flex h-full w-full max-w-md flex-col bg-white shadow-[var(--erp-shadow)]",
-          side === "right" ? "right-0" : "left-0",
+          "absolute top-0 flex h-full w-full max-w-md flex-col border-[var(--erp-border)] bg-[var(--erp-surface)] shadow-[var(--erp-shadow-md)]",
+          side === "right" ? "right-0 border-l" : "left-0 border-r",
         )}
       >
-        <div className="flex items-center justify-between border-b border-[var(--erp-border)] px-4 py-3">
-          <h2 className="font-semibold">{title}</h2>
+        <div className="flex min-h-11 items-center justify-between border-b border-[var(--erp-border)] px-4">
+          <h2 className="text-sm font-semibold text-[var(--erp-ink)]">{title}</h2>
           <Button variant="ghost" size="sm" onClick={onClose}>
             Close
           </Button>

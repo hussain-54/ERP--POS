@@ -311,6 +311,10 @@ export function usePosSession() {
     [taxRate],
   );
 
+  const clearCartError = useCallback(() => {
+    setLastCartError(null);
+  }, []);
+
   const removeLine = useCallback((key: string) => {
     setCartState((prev) => removeCartLine(prev, key));
     setLastCartError(null);
@@ -368,7 +372,7 @@ export function usePosSession() {
     customerId,
     customer,
     lastCartError,
-    clearCartError: () => setLastCartError(null),
+    clearCartError,
     allowManualOverride,
     setAllowManualOverride,
     addProduct,

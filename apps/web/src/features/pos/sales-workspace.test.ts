@@ -5,6 +5,8 @@ import {
   kpiDisplay,
   parseSaleRow,
   parseSaleSummary,
+  remainingAmountClass,
+  SALE_KPI_CARDS,
   SALE_TABS,
   saleStatusLabel,
   saleStatusTone,
@@ -59,5 +61,10 @@ describe("sales workspace helpers", () => {
     expect(kpiDisplay(null, "totalInvoices")).toBe("0");
     expect(emptySaleFilters("b1").branchId).toBe("b1");
     expect(emptySaleFilters().search).toBe("");
+    expect(SALE_KPI_CARDS.find((card) => card.id === "totalSales")?.tone).toBe("primary");
+    expect(SALE_KPI_CARDS.find((card) => card.id === "netSales")?.tone).toBe("primary");
+    expect(SALE_KPI_CARDS.find((card) => card.id === "pendingAmount")?.tone).toBe("warning");
+    expect(remainingAmountClass(150)).toContain("pos-warning");
+    expect(remainingAmountClass(0)).toContain("pos-ink");
   });
 });
