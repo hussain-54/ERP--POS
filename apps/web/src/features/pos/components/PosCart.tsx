@@ -118,8 +118,8 @@ export const PosCart = memo(function PosCart({
       <div className="min-h-0 flex-1 overflow-auto">
         {cart.length === 0 ? (
           <POSEmptyState
-            title="Cart is empty"
-            description="Search or tap a product. The cart stays available while you browse."
+            title="CART IS EMPTY"
+            description="Add products from the catalog or search for a product above."
           />
         ) : (
           <POSTable className="pos-cart-table">

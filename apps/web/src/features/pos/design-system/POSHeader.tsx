@@ -5,6 +5,7 @@ import { POSSelect } from "./POSSelect";
 import { posCn } from "./posCn";
 
 export interface POSHeaderProps {
+  branchLabel?: string;
   terminalId: string;
   terminalOptions: Array<{ value: string; label: string }>;
   onTerminalChange: (id: string) => void;
@@ -20,7 +21,7 @@ function POSClock() {
     return () => window.clearInterval(id);
   }, []);
   const time = now.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", second: "2-digit" });
-  const date = now.toLocaleDateString();
+  const date = now.toLocaleDateString(undefined, { weekday: "short", day: "numeric", month: "short", year: "numeric" });
   return (
     <div className="pos-header-clock" aria-label="Date / Time">
       <span className="pos-header-time">{time}</span>
@@ -48,11 +49,9 @@ function HeaderField({
   );
 }
 
-/**
- * POS workspace status strip. Branch, user, notifications, and global menu
- * live on the ERP GlobalHeader — this is not a second application header.
- */
+/** Compact POS status strip inside the terminal workspace. */
 export function POSHeader({
+  branchLabel = "—",
   terminalId,
   terminalOptions,
   onTerminalChange,
@@ -61,10 +60,22 @@ export function POSHeader({
   shiftOpen = false,
 }: POSHeaderProps) {
   const cashier = cashierName ?? "—";
+  const initials = cashier
+    .split(/\s+/)
+    .filter(Boolean)
+    .slice(0, 2)
+    .map((part) => part[0]?.toUpperCase() ?? "")
+    .join("");
 
   return (
     <div className="pos-header relative z-10 min-w-0" role="region" aria-label="POS status">
       <div className="pos-header-left">
+        <HeaderField kicker="Branch" className="pos-header-branch">
+          <span className="pos-header-value" title={branchLabel} aria-label="POS Branch">
+            {branchLabel}
+          </span>
+        </HeaderField>
+
         <HeaderField kicker="Terminal" className="pos-header-terminal">
           <div className="pos-header-control">
             <POSSelect
@@ -77,17 +88,14 @@ export function POSHeader({
           </div>
         </HeaderField>
 
-        <div className="pos-header-field pos-header-cashier" aria-label="Cashier">
-          <span className="pos-header-kicker">Cashier</span>
-          <span className="pos-header-value" title={cashier}>
+        <HeaderField kicker="Cashier" className="pos-header-cashier">
+          <span className="pos-header-value" title={cashier} aria-label="Cashier">
             {cashier}
           </span>
-        </div>
+        </HeaderField>
 
         <span aria-label="Shift Status" className="shrink-0">
-          <POSBadge tone={shiftOpen ? "success" : "warning"}>
-            {shiftOpen ? "Shift Open" : "No Shift"}
-          </POSBadge>
+          <POSBadge tone={shiftOpen ? "success" : "warning"}>{shiftOpen ? "● Open" : "● Closed"}</POSBadge>
         </span>
       </div>
 
@@ -104,11 +112,26 @@ export function POSHeader({
             "hover:bg-[var(--pos-muted-bg)] focus-visible:outline-none focus-visible:shadow-[var(--pos-focus)]",
           )}
         >
-          Held
+          Held Sales
           <span className="rounded-[var(--pos-radius-sm)] bg-[var(--pos-light)] px-1.5 font-semibold text-[var(--pos-primary)]">
             {holdCount}
           </span>
         </Link>
+        <Link
+          to="/notifications"
+          aria-label="POS Notifications"
+          className="inline-flex h-8 w-8 items-center justify-center rounded-[var(--pos-radius-sm)] border border-[var(--pos-border)] text-xs font-semibold hover:bg-[var(--pos-muted-bg)]"
+          title="Notifications"
+        >
+          🔔
+        </Link>
+        <span
+          aria-label="POS User"
+          className="inline-flex h-8 w-8 items-center justify-center rounded-full bg-[var(--pos-primary-soft)] text-xs font-bold text-[var(--pos-primary)]"
+          title={cashier}
+        >
+          {initials || "U"}
+        </span>
       </div>
     </div>
   );

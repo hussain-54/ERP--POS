@@ -1,5 +1,5 @@
 import { memo } from "react";
-import { POSButton, POSEmptyState } from "../design-system";
+import { POSEmptyState } from "../design-system";
 import {
   paymentMethodKind,
   paymentMethodLabel,
@@ -16,6 +16,29 @@ export type PaymentMethodGridProps = {
   creditAllowed?: boolean;
   installmentAllowed?: boolean;
 };
+
+function paymentIcon(kind: string): string {
+  switch (kind) {
+    case "cash":
+      return "💵";
+    case "card":
+      return "💳";
+    case "bank":
+      return "🏦";
+    case "jazzcash":
+    case "easypaisa":
+    case "sadapay":
+    case "online":
+    case "other":
+      return "📱";
+    case "credit":
+      return "📒";
+    case "installment":
+      return "📅";
+    default:
+      return "◆";
+  }
+}
 
 export const PaymentMethodGrid = memo(function PaymentMethodGrid({
   methods,
@@ -50,17 +73,20 @@ export const PaymentMethodGrid = memo(function PaymentMethodGrid({
             ? "Installment requires a customer and installments.manage"
             : (note ?? paymentMethodLabel(method));
         return (
-          <POSButton
+          <button
             key={method.id}
-            size="sm"
-            variant={selected ? "primary" : "secondary"}
+            type="button"
+            className="pos-pay-tile"
             aria-pressed={selected}
             disabled={blocked}
             title={title}
             onClick={() => onSelect(method)}
           >
-            {paymentMethodLabel(method)}
-          </POSButton>
+            <span className="pos-pay-tile-icon" aria-hidden>
+              {paymentIcon(kind)}
+            </span>
+            <span>{paymentMethodLabel(method)}</span>
+          </button>
         );
       })}
     </div>

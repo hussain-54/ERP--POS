@@ -44,8 +44,8 @@ export interface PosOwnershipItem {
 export const POS_CANONICAL_ENTRY = "/pos";
 
 /**
- * POS feature navigation lives on ModuleWorkspace (registry children).
- * Do not add a second POS sidebar. Hub URLs below stay registered as aliases.
+ * POS feature navigation lives on ModuleWorkspace (registry children) and the
+ * in-terminal POSTerminalNav for quick POS operations.
  */
 
 export const POS_OWNERSHIP: readonly PosOwnershipItem[] = [
@@ -197,10 +197,22 @@ export function posNavItemForPath(pathname: string): PosOwnershipItem | undefine
   return POS_OWNERSHIP.find((item) => item.canonical === pathname);
 }
 
+/** Minimal in-terminal navigation — not a second ERP module tree. */
+export const POS_TERMINAL_NAV = [
+  { label: "POS", path: "/pos" },
+  { label: "Hold / Resume", path: "/held-sales", badge: "hold" as const },
+  { label: "Customers", path: "/pos/customers" },
+  { label: "Products", path: "/pos/products" },
+  { label: "Price & Discount", path: "/discounts" },
+  { label: "Reports", path: "/pos/reports" },
+  { label: "Settings", path: "/pos/settings" },
+] as const;
+
 export const POS_COMPONENT_OWNERS = {
   shell: [
     "features/pos/design-system/POSShell.tsx",
     "features/pos/design-system/POSHeader.tsx",
+    "features/pos/design-system/POSTerminalNav.tsx",
     "features/pos/design-system/POSWorkspace.tsx",
     "features/pos/design-system/POSShortcutBar.tsx",
     "features/pos/design-system/POSActionBar.tsx",

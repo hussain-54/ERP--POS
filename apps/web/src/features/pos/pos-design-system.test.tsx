@@ -50,10 +50,10 @@ describe("POS design tokens", () => {
     ]) {
       expect(tokens).toContain(name);
     }
-    expect(tokens).toContain("--pos-primary: #1877f2");
+    expect(tokens).toContain("--pos-primary: #2563eb");
     expect(tokens).toContain("--pos-workspace: #ffffff");
-    expect(tokens).toContain("--pos-navy: #0f1b33");
-    expect(tokens).toContain("--pos-bg: #f4f6f9");
+    expect(tokens).toContain("--pos-navy: #111827");
+    expect(tokens).toContain("--pos-bg: #f5f7fb");
     expect(tokens).toContain("var(--erp-font)");
     expect(tokens).toContain(":focus-within");
     expect(tokens).toContain(".pos-nav-link:focus-visible");

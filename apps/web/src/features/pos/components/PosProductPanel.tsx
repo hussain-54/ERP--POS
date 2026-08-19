@@ -141,7 +141,7 @@ const ProductCard = memo(function ProductCard({
         className="flex flex-1 flex-col text-left focus:outline-none focus-visible:shadow-[var(--pos-focus)]"
       >
         <div
-          className="pos-product-card-media relative flex h-16 items-center justify-center bg-[var(--pos-muted-bg)]"
+          className="pos-product-card-media relative flex items-center justify-center bg-[var(--pos-muted-bg)]"
           title={showPhoto ? title : "Product photos are not included in POS search"}
         >
           {showPhoto ? (
@@ -185,9 +185,6 @@ const ProductCard = memo(function ProductCard({
                 {stock != null ? `Stock ${p.stockAvailable}` : "Stock —"}
               </div>
             </div>
-            <span className="rounded-[var(--pos-radius-sm)] bg-[var(--pos-primary)] px-1.5 py-0.5 text-[10px] font-medium text-white">
-              Add
-            </span>
           </div>
         </div>
       </button>
@@ -295,7 +292,7 @@ export const PosProductPanel = memo(function PosProductPanel({
 
   return (
     <section className="pos-product-discovery flex min-h-0 flex-1 flex-col">
-      <div className="pos-product-search-block shrink-0 space-y-2">
+        <div className="pos-product-search-block shrink-0 space-y-2">
         <POSSearch
           ref={searchRef as React.RefObject<HTMLInputElement>}
           aria-label="Product search"
@@ -326,13 +323,14 @@ export const PosProductPanel = memo(function PosProductPanel({
           title="Type to search · ↑↓ navigate · Enter add · Esc clear"
         />
 
-        <div className="flex flex-wrap items-center justify-between gap-2">
-          <PosDiscoveryTools
-            onBarcodeScan={onBarcodeScanHint}
-            onQrScan={onQrScan}
-            onCamera={onCamera}
-            onManualEntry={onManualEntry}
-          />
+        <PosDiscoveryTools
+          onBarcodeScan={onBarcodeScanHint}
+          onQrScan={onQrScan}
+          onCamera={onCamera}
+          onManualEntry={onManualEntry}
+        />
+
+        <div className="flex flex-wrap items-center justify-end gap-2">
           {meta}
           <POSBadge tone={searching ? "warning" : "neutral"}>
             {searching ? "Searching…" : `${list.length} items`}

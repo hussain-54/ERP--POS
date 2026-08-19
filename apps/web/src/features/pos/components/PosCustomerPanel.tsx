@@ -269,6 +269,7 @@ export const PosCustomerPanel = memo(function PosCustomerPanel({
   return (
     <>
       <section className="pos-tx-customer px-3 py-2">
+        <h3 className="pos-field-label--compact mb-2">Customer</h3>
         <div className="flex flex-wrap items-end gap-2">
           <div className="min-w-0 flex-1">
             <POSInput
