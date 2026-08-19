@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import type { StockBalance, StockMovement } from "@electronic-erp/contracts";
-import { Badge, Button, Card, Input, useToast } from "@electronic-erp/ui";
+import { Badge, Button, Card, DataTable, FilterBar, Input, useToast } from "@electronic-erp/ui";
 import { inventoryApi } from "./inventory-api";
 
 export function InventoryPage() {
@@ -51,57 +51,87 @@ export function InventoryPage() {
         </div>
       </div>
 
-      <Card className="flex flex-wrap items-end gap-3">
-        <Input
-          label="Filter warehouse ID"
-          value={warehouseId}
-          onChange={(e) => setWarehouseId(e.target.value)}
-        />
-        <Button onClick={() => void load()}>Refresh</Button>
+      <Card>
+        <FilterBar>
+          <Input
+            label="Filter warehouse ID"
+            value={warehouseId}
+            onChange={(e) => setWarehouseId(e.target.value)}
+          />
+          <Button onClick={() => void load()}>Refresh</Button>
+        </FilterBar>
       </Card>
 
       <Card title="Balances">
-        <div className="overflow-x-auto">
-          <table className="min-w-full text-sm">
-            <thead>
-              <tr className="text-left text-[var(--erp-muted)]">
-                <th className="py-2 pr-3">Product</th>
-                <th className="py-2 pr-3">Available</th>
-                <th className="py-2 pr-3">Reserved</th>
-                <th className="py-2 pr-3">Damaged</th>
-                <th className="py-2 pr-3">In transit</th>
-                <th className="py-2 pr-3">Total</th>
-                <th className="py-2">Flags</th>
-              </tr>
-            </thead>
-            <tbody>
-              {balances.map((b) => (
-                <tr key={b.id} className="border-t border-[var(--erp-border)]">
-                  <td className="py-2 pr-3 font-mono text-xs">{b.productId.slice(0, 8)}…</td>
-                  <td className="py-2 pr-3">{b.qtyAvailable}</td>
-                  <td className="py-2 pr-3">{b.qtyReserved}</td>
-                  <td className="py-2 pr-3">{b.qtyDamaged}</td>
-                  <td className="py-2 pr-3">{b.qtyInTransit}</td>
-                  <td className="py-2 pr-3">{b.qtyTotal}</td>
-                  <td className="py-2">
-                    <div className="flex flex-wrap gap-1">
-                      {b.isOutOfStock ? <Badge tone="danger">Out</Badge> : null}
-                      {b.isLowStock ? <Badge tone="warning">Low</Badge> : null}
-                      {b.isOverstock ? <Badge>Over</Badge> : null}
-                    </div>
-                  </td>
-                </tr>
-              ))}
-              {!balances.length ? (
-                <tr>
-                  <td className="py-4 text-[var(--erp-muted)]" colSpan={7}>
-                    No balances yet. Post an opening or purchase movement.
-                  </td>
-                </tr>
-              ) : null}
-            </tbody>
-          </table>
-        </div>
+        <DataTable
+          rows={balances}
+          rowKey={(row) => row.id}
+          searchable
+          searchPlaceholder="Filter balances…"
+          pageSize={25}
+          columnVisibility
+          emptyTitle="No balances yet"
+          emptyDescription="Post an opening or purchase movement."
+          columns={[
+            {
+              key: "product",
+              header: "Product",
+              sortValue: (row) => row.productId,
+              filterValue: (row) => row.productId,
+              cell: (row) => <span className="font-mono text-xs">{row.productId.slice(0, 8)}…</span>,
+            },
+            {
+              key: "available",
+              header: "Available",
+              align: "right",
+              sortValue: (row) => Number(row.qtyAvailable),
+              cell: (row) => row.qtyAvailable,
+            },
+            {
+              key: "reserved",
+              header: "Reserved",
+              align: "right",
+              sortValue: (row) => Number(row.qtyReserved),
+              cell: (row) => row.qtyReserved,
+            },
+            {
+              key: "damaged",
+              header: "Damaged",
+              align: "right",
+              sortValue: (row) => Number(row.qtyDamaged),
+              cell: (row) => row.qtyDamaged,
+            },
+            {
+              key: "transit",
+              header: "In transit",
+              align: "right",
+              sortValue: (row) => Number(row.qtyInTransit),
+              cell: (row) => row.qtyInTransit,
+            },
+            {
+              key: "total",
+              header: "Total",
+              align: "right",
+              sortValue: (row) => Number(row.qtyTotal),
+              cell: (row) => row.qtyTotal,
+            },
+            {
+              key: "flags",
+              header: "Status",
+              filterValue: (row) =>
+                [row.isOutOfStock && "Out", row.isLowStock && "Low", row.isOverstock && "Over"]
+                  .filter(Boolean)
+                  .join(" "),
+              cell: (row) => (
+                <div className="flex flex-wrap gap-1">
+                  {row.isOutOfStock ? <Badge tone="danger">Out</Badge> : null}
+                  {row.isLowStock ? <Badge tone="warning">Low</Badge> : null}
+                  {row.isOverstock ? <Badge>Over</Badge> : null}
+                </div>
+              ),
+            },
+          ]}
+        />
       </Card>
 
       <Card title="Recent ledger movements">

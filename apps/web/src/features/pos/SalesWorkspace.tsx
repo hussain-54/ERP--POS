@@ -158,64 +158,68 @@ export function SalesWorkspace({
 
   useEffect(() => {
     let cancelled = false;
-    try {
-      void partiesApi
-        .listCustomers()
-        .then((res) => {
-          if (cancelled) return;
-          setCustomers(res.items.map((customer) => ({ id: String(customer.id), name: String(customer.name ?? "Customer") })));
-        })
-        .catch(() => undefined);
-    } catch {
-      /* not signed in */
-    }
-    try {
-      void adminApi
-        .listUsers()
-        .then((res) => {
-          if (cancelled) return;
-          setCashiers(
-            res.items
-              .map((user) => ({
-                id: String(user.id ?? ""),
-                name: String(user.full_name ?? user.fullName ?? user.email ?? "Cashier"),
-              }))
-              .filter((user) => user.id),
-          );
-        })
-        .catch(() => undefined);
-    } catch {
-      /* not signed in */
-    }
-    try {
-      void partiesApi
-        .listPaymentMethods()
-        .then((res) => {
-          if (cancelled) return;
-          setPaymentMethods(
-            res.items.map((method) => ({
-              id: String(method.id),
-              name: String(method.name ?? method.code ?? "Payment"),
-            })),
-          );
-        })
-        .catch(() => undefined);
-    } catch {
-      /* not signed in */
-    }
-    try {
-      void enterpriseApi
-        .listEmployees()
-        .then((res) => {
-          if (cancelled) return;
-          setSalesmen(mapSalesmanEmployees(res.items).map((salesman) => ({ id: salesman.id, name: salesman.name })));
-        })
-        .catch(() => undefined);
-    } catch {
-      /* not signed in */
-    }
+    const handle = window.setTimeout(() => {
+      if (cancelled) return;
+      try {
+        void partiesApi
+          .listCustomers()
+          .then((res) => {
+            if (cancelled) return;
+            setCustomers(res.items.map((customer) => ({ id: String(customer.id), name: String(customer.name ?? "Customer") })));
+          })
+          .catch(() => undefined);
+      } catch {
+        /* not signed in */
+      }
+      try {
+        void adminApi
+          .listUsers()
+          .then((res) => {
+            if (cancelled) return;
+            setCashiers(
+              res.items
+                .map((user) => ({
+                  id: String(user.id ?? ""),
+                  name: String(user.full_name ?? user.fullName ?? user.email ?? "Cashier"),
+                }))
+                .filter((user) => user.id),
+            );
+          })
+          .catch(() => undefined);
+      } catch {
+        /* not signed in */
+      }
+      try {
+        void partiesApi
+          .listPaymentMethods()
+          .then((res) => {
+            if (cancelled) return;
+            setPaymentMethods(
+              res.items.map((method) => ({
+                id: String(method.id),
+                name: String(method.name ?? method.code ?? "Payment"),
+              })),
+            );
+          })
+          .catch(() => undefined);
+      } catch {
+        /* not signed in */
+      }
+      try {
+        void enterpriseApi
+          .listEmployees()
+          .then((res) => {
+            if (cancelled) return;
+            setSalesmen(mapSalesmanEmployees(res.items).map((salesman) => ({ id: salesman.id, name: salesman.name })));
+          })
+          .catch(() => undefined);
+      } catch {
+        /* not signed in */
+      }
+    }, 0);
     return () => {
       cancelled = true;
+      window.clearTimeout(handle);
     };
   }, []);
 

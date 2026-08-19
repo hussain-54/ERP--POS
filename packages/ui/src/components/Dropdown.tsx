@@ -21,8 +21,9 @@ export function Dropdown({ trigger, items, align = "right" }: DropdownProps) {
       <div onClick={() => setOpen((v) => !v)}>{trigger}</div>
       {open ? (
         <div
+          role="menu"
           className={cn(
-            "absolute z-30 mt-2 min-w-[180px] rounded-xl border border-[var(--erp-border)] bg-white p-1 shadow-[var(--erp-shadow)]",
+            "absolute z-30 mt-1 min-w-[11rem] rounded-[var(--erp-radius)] border border-[var(--erp-border)] bg-[var(--erp-surface)] p-1 shadow-[var(--erp-shadow-md)]",
             align === "right" ? "right-0" : "left-0",
           )}
         >
@@ -30,8 +31,9 @@ export function Dropdown({ trigger, items, align = "right" }: DropdownProps) {
             <button
               key={item.id}
               type="button"
+              role="menuitem"
               className={cn(
-                "block w-full rounded-lg px-3 py-2 text-left text-sm hover:bg-[var(--erp-bg)]",
+                "block min-h-11 w-full rounded-[var(--erp-radius-sm)] px-3 text-left text-sm hover:bg-[var(--erp-bg)] focus-visible:outline-none focus-visible:bg-[var(--erp-bg)] active:bg-[var(--erp-bg)]",
                 item.danger && "text-[var(--erp-danger)]",
               )}
               onClick={() => {

@@ -14,7 +14,7 @@ import {
 
 describe("POS responsive layout modes", () => {
   it("classifies common register widths without shrinking the desktop terminal", () => {
-    expect(POS_TEST_WIDTHS).toEqual([375, 390, 768, 820, 1024, 1280, 1440, 1920]);
+    expect(POS_TEST_WIDTHS).toEqual([375, 390, 768, 820, 1024, 1280, 1366, 1440, 1920]);
     expect(posLayoutMode(375)).toBe("mobile");
     expect(posLayoutMode(390)).toBe("mobile");
     expect(posLayoutMode(767)).toBe("mobile");
@@ -46,7 +46,8 @@ describe("POS responsive layout modes", () => {
     expect(posSaleChrome(820)).toBe("stack");
     expect(posSaleChrome(1023)).toBe("stack");
     expect(posSaleChrome(1024)).toBe("split");
-    expect(posSaleChrome(1280)).toBe("split");
+    expect(posSaleChrome(1366)).toBe("split");
+    expect(posShowsTwoZoneTerminal(1366)).toBe(true);
     expect(posSaleLayoutClass("sheets")).toBe("pos-sale-mobile");
     expect(posSaleLayoutClass("stack")).toContain("pos-sale-grid--stack");
     expect(posSaleLayoutClass("split")).toBe("pos-sale-grid");

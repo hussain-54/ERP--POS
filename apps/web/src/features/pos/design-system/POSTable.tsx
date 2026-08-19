@@ -9,7 +9,7 @@ export function POSTable({
   return (
     <div className="w-full min-w-0 max-w-full overflow-x-auto">
       <table
-        className={posCn("pos-data-table w-full min-w-max border-collapse text-left text-[13px]", className)}
+        className={posCn("pos-data-table w-full border-collapse text-left text-[13px]", className)}
         {...props}
       >
         {children}

@@ -12,16 +12,16 @@ export interface ButtonProps extends ButtonHTMLAttributes<HTMLButtonElement> {
 }
 
 const variants: Record<Variant, string> = {
-  primary: "bg-[var(--erp-brand)] text-white hover:bg-[var(--erp-brand-strong)]",
-  secondary: "bg-white text-[var(--erp-ink)] border border-[var(--erp-border)] hover:bg-[var(--erp-bg)]",
+  primary: "bg-[var(--erp-brand)] text-[var(--erp-on-brand)] hover:bg-[var(--erp-brand-hover)]",
+  secondary: "bg-[var(--erp-surface)] text-[var(--erp-ink)] border border-[var(--erp-border)] hover:bg-[var(--erp-bg)]",
   ghost: "bg-transparent text-[var(--erp-ink)] hover:bg-[var(--erp-bg)]",
   danger: "bg-[var(--erp-danger)] text-white hover:opacity-90",
 };
 
 const sizes: Record<Size, string> = {
-  sm: "h-9 px-3 text-sm",
-  md: "h-10 px-4 text-sm",
-  lg: "h-12 px-5 text-base",
+  sm: "h-8 px-2.5 text-xs",
+  md: "h-9 px-3 text-sm",
+  lg: "h-10 px-4 text-sm",
 };
 
 export function Button({
@@ -37,7 +37,7 @@ export function Button({
   return (
     <button
       className={cn(
-        "inline-flex items-center justify-center gap-2 rounded-xl font-medium transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--erp-ring)] disabled:opacity-50",
+        "inline-flex shrink-0 items-center justify-center gap-2 rounded-[var(--erp-radius)] font-medium transition [touch-action:manipulation] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--erp-ring)] disabled:cursor-not-allowed disabled:opacity-50",
         variants[variant],
         sizes[size],
         className,

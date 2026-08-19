@@ -13,6 +13,47 @@ describe("module API ownership", () => {
     expect(MODULE_API_OWNERSHIP.map((row) => row.id)).toEqual(
       Array.from({ length: 39 }, (_, i) => String(i + 1).padStart(2, "0")),
     );
+    expect(MODULE_API_OWNERSHIP.map((row) => row.module)).toEqual([
+      "COMMAND CENTER",
+      "POS / SALES",
+      "PRODUCT & CATALOG",
+      "PURCHASING",
+      "INVENTORY",
+      "WAREHOUSE / WMS",
+      "DELIVERY / LOGISTICS",
+      "CUSTOMERS / CRM",
+      "SERVICE MANAGEMENT",
+      "WARRANTY",
+      "ACCOUNTS & FINANCE",
+      "BANKING & PAYMENTS",
+      "REPORTS & BUSINESS INTELLIGENCE",
+      "AI & AUTOMATION",
+      "MARKETING & LOYALTY",
+      "B2B / WHOLESALE",
+      "ONLINE STORE",
+      "MOBILE",
+      "ORGANIZATION / BRANCHES",
+      "HR & PAYROLL",
+      "TAX / FBR",
+      "DOCUMENT MANAGEMENT",
+      "WORKFLOW / APPROVALS",
+      "NOTIFICATIONS",
+      "USERS / ROLES / PERMISSIONS",
+      "SECURITY / AUDIT",
+      "OFFLINE / LOCAL OPERATIONS",
+      "SYNC CENTER",
+      "BACKUP / DISASTER RECOVERY",
+      "INTEGRATION HUB",
+      "DEVICES / PRINTING",
+      "INDUSTRY ENGINE",
+      "CUSTOMIZATION ENGINE",
+      "RULES / AUTOMATION ENGINE",
+      "CLIENT / TENANT MANAGEMENT",
+      "SUBSCRIPTION / BILLING",
+      "USAGE / METERING",
+      "DEVELOPER PLATFORM",
+      "SYSTEM ADMINISTRATION",
+    ]);
   });
 
   it("keeps grouped routers instead of one router per module", () => {
@@ -46,10 +87,11 @@ describe("module API ownership", () => {
   });
 
   it("keeps delivery on the purchases group", () => {
-    const delivery = MODULE_API_OWNERSHIP.find((row) => row.id === "08");
+    const delivery = MODULE_API_OWNERSHIP.find((row) => row.id === "07");
+    expect(delivery?.module).toBe("DELIVERY / LOGISTICS");
     expect(delivery?.apiGroup).toBe("purchases");
     expect(delivery?.mount).toContain("/api/v1/purchases/deliveries");
-    expect(API_GROUP_TO_MODULES.purchases).toContain("08");
+    expect(API_GROUP_TO_MODULES.purchases).toContain("07");
   });
 
   it("documents shared web clients and known ambiguities", () => {

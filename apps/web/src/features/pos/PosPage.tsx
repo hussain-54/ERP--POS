@@ -52,12 +52,10 @@ import { posCustomerRepository } from "./session/pos-customer-repository";
 import { partiesApi } from "@/features/customers/parties-api";
 import { cartToQuotationItems } from "./pos-quotation";
 import {
-  appendUniqueProducts,
   isLatestRequest,
-  mergeProductSearches,
   nextProductSearchLimit,
-  POS_PRODUCT_PAGE_SIZE,
   POS_PRODUCT_SEARCH_LIMIT,
+  productsMatchingCategory,
 } from "./pos-catalog-load";
 import {
   appendCharToSearchInput,
@@ -70,6 +68,7 @@ import {
   parseProductSearchCommand,
   priceOverrideWarning,
   saleHasUnsavedWork,
+  schedulePosFocus,
   stockAvailabilityWarning,
 } from "./pos-ux";
 import { posActionFlags } from "./pos-security";
@@ -198,7 +197,6 @@ export function PosPage({ entry = "sale" }: { entry?: "sale" | "holds" }) {
   const [categories, setCategories] = useState<Array<{ id: string; name: string }>>([]);
   const [selectedCategoryId, setSelectedCategoryId] = useState<string | null>(null);
   const [searchLimit, setSearchLimit] = useState(POS_PRODUCT_SEARCH_LIMIT);
-  const [categoryPage, setCategoryPage] = useState(1);
   const [catalogHasMore, setCatalogHasMore] = useState(false);
   const [warehouseId, setWarehouseId] = useState("");
   const [warehouses, setWarehouses] = useState<Array<{ id: string; name: string }>>([]);
@@ -439,50 +437,44 @@ export function PosPage({ entry = "sale" }: { entry?: "sale" | "holds" }) {
 
   useEffect(() => {
     if (tab !== "categories" || q.trim()) return;
-    let cancelled = false;
-    void (async () => {
-      setSearching(true);
-      try {
-        if (selectedCategoryId) {
-          const res = await catalogApi.listProducts({
-            categoryId: selectedCategoryId,
-            page: categoryPage,
-            pageSize: POS_PRODUCT_PAGE_SIZE,
-          });
-          if (cancelled) return;
-          setCatalogHasMore(categoryPage * POS_PRODUCT_PAGE_SIZE < res.total);
-          const names = res.items.map((p) => p.name);
-          const found = await mergeProductSearches(
-            names,
-            async (name) => {
-              const hit = await posApi.searchProducts({
-                q: name,
-                warehouseId: warehouseId || undefined,
-                customerId: walkIn ? undefined : customerId || undefined,
-                limit: 5,
-              });
-              return hit.items;
-            },
-            POS_PRODUCT_PAGE_SIZE,
-          );
-          if (!cancelled) {
-            setResults((prev) => (categoryPage === 1 ? found : appendUniqueProducts(prev, found)));
-          }
-        } else if (!cancelled) {
-          setCatalogHasMore(false);
-          setResults(recent);
-        }
-      } catch {
-        /* ignore */
-      } finally {
-        if (!cancelled) setSearching(false);
-      }
-    })();
-    return () => {
-      cancelled = true;
-    };
+    if (!selectedCategoryId) {
+      productSearchSeq.current += 1;
+      setCatalogHasMore(false);
+      setResults(recent);
+      return;
+    }
+    const categoryName = categories.find((item) => item.id === selectedCategoryId)?.name;
+    if (!categoryName) return;
+    if (!online) {
+      productSearchSeq.current += 1;
+      setResults([]);
+      return;
+    }
+    const started = ++productSearchSeq.current;
+    setSearching(true);
+    void posApi
+      .searchProducts({
+        q: categoryName,
+        warehouseId: warehouseId || undefined,
+        customerId: walkIn ? undefined : customerId || undefined,
+        limit: searchLimit,
+      })
+      .then((res) => {
+        if (!isLatestRequest(productSearchSeq.current, started)) return;
+        setCatalogHasMore(
+          res.items.length >= searchLimit && nextProductSearchLimit(searchLimit) > searchLimit,
+        );
+        setResults(productsMatchingCategory(res.items, categoryName));
+      })
+      .catch(() => {
+        if (!isLatestRequest(productSearchSeq.current, started)) return;
+        setCatalogHasMore(false);
+      })
+      .finally(() => {
+        if (isLatestRequest(productSearchSeq.current, started)) setSearching(false);
+      });
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [tab, selectedCategoryId, categoryPage, warehouseId, customerId, walkIn, q]);
+  }, [tab, selectedCategoryId, categories, warehouseId, customerId, walkIn, q, searchLimit, online]);
 
   useEffect(() => {
     if (!q.trim()) {
@@ -494,32 +486,29 @@ export function PosPage({ entry = "sale" }: { entry?: "sale" | "holds" }) {
       return;
     }
     const started = ++productSearchSeq.current;
-    const handle = window.setTimeout(() => {
-      void (async () => {
-        setSearching(true);
-        try {
-          const res = await posApi.searchProducts({
-            q,
-            warehouseId: warehouseId || undefined,
-            customerId: walkIn ? undefined : customerId || undefined,
-            limit: searchLimit,
-          });
-          if (!isLatestRequest(productSearchSeq.current, started)) return;
-          setResults(res.items);
-        } catch (err) {
-          if (!isLatestRequest(productSearchSeq.current, started)) return;
-          const failed = formatOnlineFailure(err, "generic");
-          toast.push({
-            title: failed.title,
-            description: failed.description,
-            tone: "danger",
-          });
-        } finally {
-          if (isLatestRequest(productSearchSeq.current, started)) setSearching(false);
-        }
-      })();
-    }, 50);
-    return () => window.clearTimeout(handle);
+    setSearching(true);
+    void (async () => {
+      try {
+        const res = await posApi.searchProducts({
+          q,
+          warehouseId: warehouseId || undefined,
+          customerId: walkIn ? undefined : customerId || undefined,
+          limit: searchLimit,
+        });
+        if (!isLatestRequest(productSearchSeq.current, started)) return;
+        setResults(res.items);
+      } catch (err) {
+        if (!isLatestRequest(productSearchSeq.current, started)) return;
+        const failed = formatOnlineFailure(err, "generic");
+        toast.push({
+          title: failed.title,
+          description: failed.description,
+          tone: "danger",
+        });
+      } finally {
+        if (isLatestRequest(productSearchSeq.current, started)) setSearching(false);
+      }
+    })();
   }, [q, warehouseId, customerId, walkIn, toast, online, tab, searchLimit]);
 
   useEffect(() => {
@@ -529,25 +518,22 @@ export function PosPage({ entry = "sale" }: { entry?: "sale" | "holds" }) {
     }
     const orgId = organizationId ?? "";
     const started = ++customerSearchSeq.current;
-    const handle = window.setTimeout(() => {
-      if (!online) {
-        setCustomerHits([]);
-        return;
-      }
-      void posCustomerRepository
-        .search({
-          q: customerQuery,
-          organizationId: orgId,
-          canRead: hasPermission("customers.read"),
-        })
-        .then((hits) => {
-          if (isLatestRequest(customerSearchSeq.current, started)) setCustomerHits(hits);
-        })
-        .catch(() => {
-          if (isLatestRequest(customerSearchSeq.current, started)) setCustomerHits([]);
-        });
-    }, 80);
-    return () => window.clearTimeout(handle);
+    if (!online) {
+      setCustomerHits([]);
+      return;
+    }
+    void posCustomerRepository
+      .search({
+        q: customerQuery,
+        organizationId: orgId,
+        canRead: hasPermission("customers.read"),
+      })
+      .then((hits) => {
+        if (isLatestRequest(customerSearchSeq.current, started)) setCustomerHits(hits);
+      })
+      .catch(() => {
+        if (isLatestRequest(customerSearchSeq.current, started)) setCustomerHits([]);
+      });
   }, [customerQuery, walkIn, online, organizationId, hasPermission]);
 
   const rememberRecent = useCallback((p: ProductSearchResult) => {
@@ -595,7 +581,7 @@ export function PosPage({ entry = "sale" }: { entry?: "sale" | "holds" }) {
 
   const selectCategory = useCallback((id: string | null) => {
     setSelectedCategoryId(id);
-    setCategoryPage(1);
+    setSearchLimit(POS_PRODUCT_SEARCH_LIMIT);
     setTab("categories");
   }, []);
   const setProductQuery = useCallback((next: string) => {
@@ -603,14 +589,8 @@ export function PosPage({ entry = "sale" }: { entry?: "sale" | "holds" }) {
     setQ(next);
   }, []);
   const onLoadMoreProducts = useCallback(() => {
-    if (q.trim()) {
-      setSearchLimit((current) => nextProductSearchLimit(current));
-      return;
-    }
-    if (tab === "categories" && selectedCategoryId) {
-      setCategoryPage((page) => page + 1);
-    }
-  }, [q, tab, selectedCategoryId]);
+    setSearchLimit((current) => nextProductSearchLimit(current));
+  }, []);
   const onCommitSearch = useCallback((raw: string, highlighted: ProductSearchResult | null) => {
     productHandlersRef.current.commit(raw, highlighted);
   }, []);
@@ -801,7 +781,7 @@ export function PosPage({ entry = "sale" }: { entry?: "sale" | "holds" }) {
         description: "Edit line rate directly in the cart.",
         tone: "info",
       });
-      queueMicrotask(() => focusLastCartRate());
+      focusLastCartRate();
       return;
     }
     setPendingDiscount({ kind: "price" });
@@ -1654,14 +1634,15 @@ export function PosPage({ entry = "sale" }: { entry?: "sale" | "holds" }) {
       case "customers":
         setWalkIn(false);
         if (layoutMode === "mobile") setMobileSheet("customer");
-        customerRef.current?.focus();
+        schedulePosFocus(() => customerRef.current);
         return;
       case "price-override":
+        if (layoutMode === "mobile") setMobileSheet("cart");
         requestPriceOverride();
         return;
       case "discount":
         if (layoutMode === "mobile") setMobileSheet("cart");
-        discountRef.current?.focus();
+        schedulePosFocus(() => discountRef.current);
         return;
       case "recalculate":
         recalculateTotals();

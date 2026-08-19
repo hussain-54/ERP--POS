@@ -6,7 +6,7 @@ export function SystemComingSoonPage({ module }: { module: ErpModuleRoute }) {
   return (
     <div className="space-y-3">
       <div>
-        <h1 className="text-xl font-semibold tracking-tight text-[var(--erp-ink)]">{module.title}</h1>
+        <h2 className="text-xl font-semibold tracking-tight text-[var(--erp-ink)]">{module.title}</h2>
         <p className="mt-1 text-sm text-[var(--erp-muted)]">{module.description}</p>
       </div>
       <EmptyState

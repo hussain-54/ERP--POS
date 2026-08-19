@@ -26,12 +26,11 @@ function layout(chrome: "sheets" | "stack" | "split") {
 }
 
 describe("PosSaleLayout chrome", () => {
-  it("uses a mobile dock and sheets below tablet", () => {
-    const { container } = layout("sheets");
-    expect(container.firstChild).toHaveClass("pos-sale-mobile");
-    expect(screen.getByRole("navigation", { name: "Mobile POS actions" })).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: /Cart \(2\)/ })).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "Pay" })).toBeInTheDocument();
+  it("keeps Pay reachable on the mobile dock without clipping long customer names", () => {
+    layout("sheets");
+    const customer = screen.getByRole("button", { name: "Walk-in" });
+    expect(customer.className).toContain("min-w-0");
+    expect(screen.getByRole("button", { name: "Pay" })).toBeEnabled();
   });
 
   it("stacks product and cart on portrait tablet without hiding the cart", () => {

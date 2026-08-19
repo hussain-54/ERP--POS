@@ -17,6 +17,8 @@ export * from "./components/DatePicker.js";
 export * from "./components/CurrencyInput.js";
 export * from "./components/QuantityInput.js";
 export * from "./components/SearchInput.js";
+export * from "./components/FilterBar.js";
+export * from "./components/Breadcrumb.js";
 export * from "./components/EmptyState.js";
 export * from "./components/LoadingState.js";
 export * from "./components/ErrorState.js";

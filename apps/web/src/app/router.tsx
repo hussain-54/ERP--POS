@@ -69,26 +69,23 @@ import { HrPage } from "@/features/system/HrPage";
 import { SecurityPage } from "@/features/system/SecurityPage";
 import { IntegrationsPage } from "@/features/system/IntegrationsPage";
 import { OnlineStorePage } from "@/features/system/OnlineStorePage";
-import { SystemAdminLayout } from "@/features/system/SystemAdminLayout";
 import { SystemAdminHome } from "@/features/system/SystemAdminHome";
 import { SystemComingSoonPage } from "@/features/system/SystemComingSoonPage";
 
 /**
  * Live page bindings grouped by the 39-module tree.
  * Paths not listed here still register via ERP_MODULES and render ModulePlaceholderPage
- * (Coming Soon), including 36–38. System Administration children use SystemComingSoonPage.
+ * (Coming Soon), including 18, 27–28, and 32–38. System Administration children use SystemComingSoonPage.
  * Duplicate URLs are route aliases of the same element (see DUPLICATE_ROUTE_PAIRS).
  * Do not delete aliases, merge page files, or introduce redirects.
  */
-function systemAdmin(page: ReactNode) {
-  return <SystemAdminLayout>{page}</SystemAdminLayout>;
-}
-
 const implemented: Record<string, ReactNode> = {
-  // 01 Dashboard — canonical /
+  // 01 COMMAND CENTER — canonical /command-center · alias /
+  "/command-center": <DashboardPage />,
   "/": <DashboardPage />,
 
-  // 02 Product Management — canonical /products
+  // 03 PRODUCT & CATALOG — canonical /product-catalog · alias /products
+  "/product-catalog": <ProductsPage />,
   "/products": <ProductsPage />,
   "/products/new": <ProductFormPage />,
   "/categories": <TaxonomyPage />,
@@ -98,16 +95,17 @@ const implemented: Record<string, ReactNode> = {
   "/units": <UnitsPage />,
   "/pricing": <PricingPage />,
 
-  // 03 Barcode & QR — canonical /barcodes · alias /qr
+  // barcodes / QR stay on the existing pages, owned by PRODUCT & CATALOG
   "/barcodes": <BarcodesPage />,
   "/qr": <BarcodesPage />,
 
-  // 04 AI Camera Product Recognition — canonical /ai-camera
+  // 14 AI & AUTOMATION — canonical /ai · alias /ai-camera
+  "/ai": <AiCameraPage />,
   "/ai-camera": <AiCameraPage />,
 
-  // 05 POS / Sales — canonical /pos
-  // IA: New Sale, Hold / Resume, Invoices, Register, Returns, Exchange,
-  // Payments, Discounts, References, Salesmen, Installments, Settings (Soon).
+  // 02 POS / SALES — canonical /pos
+  // Workspace children: New Sale, Hold / Resume, Invoices, Register, Returns, Exchange,
+  // Payments, Discounts, References, Salesmen, Installments, Settings.
   // /held-sales is the Hold / Resume workspace. Alias /pos/new stays PosPage.
   // /invoices is the invoice register (canonical sales-management search).
   // /sales-management is Register (cash shift), not a second sales list.
@@ -136,9 +134,11 @@ const implemented: Record<string, ReactNode> = {
   "/b2b": <B2bPage />,
 
   // 08 Delivery — canonical /deliveries
+  "/delivery": <DeliveriesPage />,
   "/deliveries": <DeliveriesPage />,
 
   // 09 Purchases — canonical /purchases
+  "/purchasing": <PurchasesPage />,
   "/purchases": <PurchasesPage />,
   "/purchase-returns": <PurchaseReturnsPage />,
 
@@ -153,6 +153,7 @@ const implemented: Record<string, ReactNode> = {
   "/inventory/expiry": <BatchSerialPage />,
 
   // 11 Warehouses — canonical /warehouses
+  "/warehouse": <WarehousesPage />,
   "/warehouses": <WarehousesPage />,
   "/warehouses/racks": <WarehousesPage />,
   "/warehouses/shelves": <WarehousesPage />,
@@ -216,6 +217,7 @@ const implemented: Record<string, ReactNode> = {
   "/installments": <CreditInstallmentsPage />,
 
   // 23 Loyalty — canonical /loyalty
+  "/marketing": <LoyaltyPage />,
   "/loyalty": <LoyaltyPage />,
   "/loyalty/offers": <LoyaltyPage />,
   "/loyalty/redeem": <LoyaltyPage />,
@@ -224,6 +226,7 @@ const implemented: Record<string, ReactNode> = {
   "/documents": <DocumentsPage />,
 
   // 25 Approval Workflow — canonical /approvals
+  "/workflows": <ApprovalsPage />,
   "/approvals": <ApprovalsPage />,
 
   // 26 Users & Role Management — canonical /users
@@ -241,6 +244,7 @@ const implemented: Record<string, ReactNode> = {
   "/notifications": <NotificationsPage />,
 
   // 30 Multi-Branch — canonical /branches
+  "/organization": <BranchesPage />,
   "/branches": <BranchesPage />,
   "/branches/membership": <BranchesPage />,
 
@@ -268,20 +272,27 @@ const implemented: Record<string, ReactNode> = {
   "/devices/drawer": <DevicesPage />,
   "/devices/events": <DevicesPage />,
 
-  // 36 Industry Engine — canonical /industry-engine (Coming Soon)
-  // 37 Customization Engine — canonical /customization-engine (Coming Soon)
-  // 38 Rules / Automation Engine — canonical /rules-engine (Coming Soon)
+  "/hr": <HrPage />,
+  "/security": <SecurityPage />,
+  "/integrations": <IntegrationsPage />,
+  "/online-store": <OnlineStorePage />,
 
-  // 39 System Administration — canonical /settings · live children keep existing pages
-  "/settings": systemAdmin(<SystemAdminHome />),
-  "/hr": systemAdmin(<HrPage />),
-  "/security": systemAdmin(<SecurityPage />),
-  "/integrations": systemAdmin(<IntegrationsPage />),
-  "/online-store": systemAdmin(<OnlineStorePage />),
+  // 39 System Administration — canonical /settings
+  "/settings": <SystemAdminHome />,
 };
 
 /** Canonical + alias path → existing page element. Used to lock duplicate ownership. */
 export const IMPLEMENTED_ROUTES: Readonly<Record<string, ReactNode>> = implemented;
+
+/** Same page binding the router uses. Coming Soon parents stay registered, never hidden. */
+export function elementForModulePath(path: string): ReactNode {
+  const implementedPage = implemented[path];
+  if (implementedPage) return implementedPage;
+  const module = ERP_MODULES.find((item) => item.path === path);
+  if (!module) return <NotFoundPage />;
+  if (isSystemAdminPath(path)) return <SystemComingSoonPage module={module} />;
+  return <ModulePlaceholderPage module={module} />;
+}
 
 export const router = createBrowserRouter([
   { path: "/login", element: <LoginPage /> },
@@ -296,15 +307,7 @@ export const router = createBrowserRouter([
           ...ERP_MODULES.map((module) => ({
             path: module.path === "/" ? undefined : module.path.replace(/^\//, ""),
             index: module.path === "/",
-            element:
-              implemented[module.path] ??
-              (isSystemAdminPath(module.path) ? (
-                <SystemAdminLayout>
-                  <SystemComingSoonPage module={module} />
-                </SystemAdminLayout>
-              ) : (
-                <ModulePlaceholderPage module={module} />
-              )),
+            element: elementForModulePath(module.path),
           })),
           { path: "products/:id", element: <ProductFormPage /> },
           { path: "pos/new", element: <PosPage /> },

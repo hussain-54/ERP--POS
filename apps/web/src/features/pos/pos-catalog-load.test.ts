@@ -10,6 +10,7 @@ import {
   POS_PRODUCT_SEARCH_LIMIT_MAX,
   POS_SEARCH_FLUSH_MS,
   productImageUrl,
+  productsMatchingCategory,
   visibleProductSlice,
 } from "./pos-catalog-load";
 
@@ -40,6 +41,30 @@ describe("POS catalog load", () => {
     expect(started).toEqual(["LED", "Wire"]);
     expect(active.max).toBe(2);
     expect(items.map((item) => item.sku)).toEqual(["LED", "Wire"]);
+  });
+
+  it("keeps a single category-name search on products tagged with that category", () => {
+    const wires = {
+      productId: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+      name: "Copper Wire",
+      sku: "W-1",
+      category: "Wires",
+      unitId: "11111111-1111-4111-8111-111111111111",
+      unitSymbolPlaces: 0,
+      retailPrice: 1,
+      wholesalePrice: 1,
+      dealerPrice: 1,
+      warrantyDays: 0,
+    };
+    const tape = {
+      ...wires,
+      productId: "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb",
+      name: "Wires tape",
+      sku: "T-1",
+      category: "Tape",
+    };
+    expect(productsMatchingCategory([wires, tape], "Wires")).toEqual([wires]);
+    expect(productsMatchingCategory([{ ...wires, category: null }], "Wires")).toHaveLength(1);
   });
 
   it("drops stale in-flight search generations", () => {

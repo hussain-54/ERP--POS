@@ -75,7 +75,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const authz = useMemo(() => {
-    if (!session) return null;
+    if (!session?.user) return null;
     return new AuthorizationService({
       userId: session.user.id,
       organizationId: session.user.organizationId,
@@ -90,7 +90,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       loading,
       session,
       user: session?.user ?? null,
-      organizationId: session?.user.organizationId ?? null,
+      organizationId: session?.user?.organizationId ?? null,
       branchId,
       permissions: session?.permissions ?? [],
       branches: session?.branches ?? [],

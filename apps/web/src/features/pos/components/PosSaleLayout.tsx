@@ -46,23 +46,26 @@ export function PosSaleLayout({
         <div className="pos-mobile-dock" role="navigation" aria-label="Mobile POS actions">
           <POSButton
             variant="secondary"
+            className="min-w-0"
             onClick={() => onMobileSheet("cart")}
             title="Open cart"
           >
             <span className="flex min-w-0 flex-col leading-tight">
-              <span>Cart ({cartCount})</span>
-              <span className="text-[10px] font-normal tabular-nums">Rs {grandTotal.toFixed(2)}</span>
+              <span className="truncate">Cart ({cartCount})</span>
+              <span className="truncate text-[10px] font-normal tabular-nums">Rs {grandTotal.toFixed(2)}</span>
             </span>
           </POSButton>
           <POSButton
             variant="secondary"
+            className="min-w-0"
             onClick={() => onMobileSheet("customer")}
-            title="Open customer"
+            title={customerLabel}
           >
-            {customerLabel}
+            <span className="truncate">{customerLabel}</span>
           </POSButton>
           <POSButton
             variant="success"
+            className="min-w-0"
             onClick={() => onMobileSheet("pay")}
             disabled={!canPay}
             title={payBlockedReason ?? "Open payment"}

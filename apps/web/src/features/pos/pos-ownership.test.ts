@@ -5,11 +5,7 @@ import {
   POS_ENVIRONMENT_PATHS,
   POS_IA_TITLES,
   POS_OWNERSHIP,
-  POS_SHELL_NAV,
-  POS_SHELL_NAV_TITLES,
-  POS_SHELL_NAV_GROUP,
   posNavItemForPath,
-  posShellNavItemForPath,
 } from "./pos-ownership";
 
 describe("POS ownership map", () => {
@@ -33,8 +29,8 @@ describe("POS ownership map", () => {
     expect(POS_OWNERSHIP[0]?.canonical).toBe("/pos");
   });
 
-  it("keeps module 05 children aligned with the POS ownership map", () => {
-    const sales = ERP_NAV_SECTIONS.find((s) => s.id === "05");
+  it("keeps module 02 children aligned with the POS ownership map", () => {
+    const sales = ERP_NAV_SECTIONS.find((s) => s.id === "02");
     expect(sales?.path).toBe("/pos");
     expect(sales?.children.map((c) => c.title)).toEqual([...POS_IA_TITLES]);
     expect(sales?.children.map((c) => c.path)).toEqual(POS_OWNERSHIP.map((item) => item.canonical));
@@ -97,31 +93,14 @@ describe("POS ownership map", () => {
     expect(posNavItemForPath("/pos/settings")?.title).toBe("Settings");
   });
 
-  it("keeps a dedicated POS terminal sidebar separate from ERP Sales children", () => {
-    expect(POS_SHELL_NAV.map((item) => item.title)).toEqual([...POS_SHELL_NAV_TITLES]);
-    expect(POS_SHELL_NAV_GROUP).toBe("POS");
-    expect(POS_SHELL_NAV.map((item) => item.path)).toEqual([
-      "/pos",
-      "/held-sales",
-      "/pos/customers",
-      "/pos/products",
-      "/discounts",
-      "/pos/reports",
-      "/pos/settings",
-    ]);
-    expect(POS_SHELL_NAV.map((item) => item.icon)).toEqual([
-      "pos",
-      "hold",
-      "customers",
-      "products",
-      "discount",
-      "reports",
-      "settings",
-    ]);
+  it("keeps POS hub aliases without a duplicate POS sidebar", () => {
+    expect(EXTRA_APP_PATHS).toEqual(
+      expect.arrayContaining(["/pos/new", "/pos/customers", "/pos/products", "/pos/reports"]),
+    );
     expect(isPosEnvironmentPath("/pos/customers")).toBe(true);
     expect(isPosEnvironmentPath("/pos/products")).toBe(true);
     expect(isPosEnvironmentPath("/pos/reports")).toBe(true);
-    expect(posShellNavItemForPath("/invoices")?.title).toBe("Reports");
-    expect(posShellNavItemForPath("/pos/new")?.title).toBe("New Sale");
+    expect(posNavItemForPath("/pos/new")?.title).toBe("New Sale");
+    expect(ERP_NAV_SECTIONS.find((s) => s.id === "02")?.children.some((c) => c.path === "/pos/customers")).toBe(false);
   });
 });

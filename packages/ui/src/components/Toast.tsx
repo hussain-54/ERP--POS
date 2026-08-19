@@ -6,6 +6,7 @@ import {
   useState,
   type ReactNode,
 } from "react";
+import { cn } from "../lib/cn.js";
 
 type ToastTone = "info" | "success" | "danger";
 
@@ -21,6 +22,12 @@ interface ToastContextValue {
 }
 
 const ToastContext = createContext<ToastContextValue | null>(null);
+
+const toneClass: Record<ToastTone, string> = {
+  info: "erp-toast-info",
+  success: "erp-toast-success",
+  danger: "erp-toast-danger",
+};
 
 export function ToastProvider({ children }: { children: ReactNode }) {
   const [items, setItems] = useState<ToastItem[]>([]);
@@ -38,13 +45,19 @@ export function ToastProvider({ children }: { children: ReactNode }) {
   return (
     <ToastContext.Provider value={value}>
       {children}
-      <div className="pointer-events-none fixed bottom-4 right-4 z-[60] flex w-80 flex-col gap-2">
+      <div
+        className="pointer-events-none fixed bottom-4 right-4 z-[60] flex w-80 flex-col gap-2"
+        aria-live="polite"
+      >
         {items.map((item) => (
           <div
             key={item.id}
-            className="pointer-events-auto rounded-xl border border-[var(--erp-border)] bg-white px-4 py-3 shadow-[var(--erp-shadow)]"
+            className={cn(
+              "pointer-events-auto rounded-[var(--erp-radius)] border border-[var(--erp-border)] bg-[var(--erp-surface)] px-3 py-2.5 shadow-[var(--erp-shadow-md)]",
+              toneClass[item.tone],
+            )}
           >
-            <p className="text-sm font-semibold">{item.title}</p>
+            <p className="text-sm font-semibold text-[var(--erp-ink)]">{item.title}</p>
             {item.description ? (
               <p className="text-xs text-[var(--erp-muted)]">{item.description}</p>
             ) : null}

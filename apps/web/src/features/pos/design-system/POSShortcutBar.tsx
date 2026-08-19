@@ -44,5 +44,3 @@ export function POSShortcutBar() {
     />
   );
 }
-
-export { POSShortcutBar as PosShortcutBar };

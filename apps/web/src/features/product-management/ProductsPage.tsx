@@ -7,6 +7,7 @@ import {
   Card,
   DataTable,
   ErrorState,
+  FilterBar,
   Pagination,
   SearchInput,
   useToast,
@@ -85,7 +86,7 @@ export function ProductsPage() {
       </div>
 
       <Card>
-        <div className="mb-4 flex flex-wrap items-end gap-3">
+        <FilterBar className="mb-3">
           <div className="min-w-[240px] flex-1">
             <SearchInput
               label="Search"
@@ -108,7 +109,7 @@ export function ProductsPage() {
           <Button variant="secondary" disabled={!selected.length} onClick={() => void bulk("restore")}>
             Restore
           </Button>
-        </div>
+        </FilterBar>
 
         {error ? (
           <ErrorState description={error} onRetry={() => void load()} />
@@ -119,10 +120,12 @@ export function ProductsPage() {
             rowKey={(r) => r.id}
             emptyTitle="No products yet"
             emptyDescription="Create your first product or import a CSV template."
+            columnVisibility
             columns={[
               {
                 key: "select",
                 header: "",
+                hideable: false,
                 cell: (r) => (
                   <input
                     type="checkbox"
@@ -138,6 +141,8 @@ export function ProductsPage() {
               {
                 key: "name",
                 header: "Product",
+                sortValue: (r) => r.name,
+                filterValue: (r) => `${r.name} ${r.nameUr ?? ""}`,
                 cell: (r) => (
                   <div>
                     <Link className="font-medium text-[var(--erp-brand)] underline" to={`/products/${r.id}`}>
@@ -147,13 +152,33 @@ export function ProductsPage() {
                   </div>
                 ),
               },
-              { key: "sku", header: "SKU", cell: (r) => r.sku },
-              { key: "code", header: "Code", cell: (r) => r.productCode },
-              { key: "price", header: "Retail", cell: (r) => r.retailPrice.toFixed(2) },
-              { key: "margin", header: "Margin", cell: (r) => `${r.profitMarginPercent ?? 0}%` },
+              { key: "sku", header: "SKU", sortValue: (r) => r.sku, filterValue: (r) => r.sku, cell: (r) => r.sku },
+              {
+                key: "code",
+                header: "Code",
+                sortValue: (r) => r.productCode,
+                filterValue: (r) => r.productCode,
+                cell: (r) => r.productCode,
+              },
+              {
+                key: "price",
+                header: "Retail",
+                align: "right",
+                sortValue: (r) => r.retailPrice,
+                cell: (r) => r.retailPrice.toFixed(2),
+              },
+              {
+                key: "margin",
+                header: "Margin",
+                align: "right",
+                sortValue: (r) => r.profitMarginPercent ?? 0,
+                cell: (r) => `${r.profitMarginPercent ?? 0}%`,
+              },
               {
                 key: "status",
                 header: "Status",
+                sortValue: (r) => r.status,
+                filterValue: (r) => r.status,
                 cell: (r) => <Badge tone={r.isActive ? "success" : "neutral"}>{r.status}</Badge>,
               },
             ]}

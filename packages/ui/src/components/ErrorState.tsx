@@ -13,12 +13,15 @@ export function ErrorState({
   action?: ReactNode;
 }) {
   return (
-    <div className="flex flex-col items-center justify-center gap-2 rounded-2xl border border-[var(--erp-danger)]/30 bg-[#fff8f7] px-6 py-12 text-center">
-      <h3 className="text-base font-semibold text-[var(--erp-danger)]">{title}</h3>
+    <div
+      role="alert"
+      className="flex flex-col items-center justify-center gap-1 rounded-[var(--erp-radius)] border border-[var(--erp-danger-soft)] bg-[var(--erp-danger-soft)] px-4 py-8 text-center"
+    >
+      <h3 className="text-sm font-semibold text-[var(--erp-danger)]">{title}</h3>
       {description ? <p className="max-w-md text-sm text-[var(--erp-muted)]">{description}</p> : null}
       <div className="mt-2 flex gap-2">
         {onRetry ? (
-          <Button variant="secondary" onClick={onRetry}>
+          <Button variant="secondary" size="sm" onClick={onRetry}>
             Retry
           </Button>
         ) : null}

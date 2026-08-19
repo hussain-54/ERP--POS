@@ -6,7 +6,7 @@ export function ModulePlaceholderPage({ module }: { module: ErpModuleRoute }) {
   return (
     <div className="space-y-4">
       <div className="flex flex-wrap items-center gap-2">
-        <h1 className="text-2xl font-semibold tracking-tight">{module.title}</h1>
+        <h2 className="text-2xl font-semibold tracking-tight">{module.title}</h2>
         <Badge tone="brand">{module.group}</Badge>
         <Badge>Coming Soon</Badge>
       </div>

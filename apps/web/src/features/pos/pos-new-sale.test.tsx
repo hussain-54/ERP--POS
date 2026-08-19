@@ -371,6 +371,26 @@ describe("industrial New Sale terminal", () => {
     expect(onQty).not.toHaveBeenCalled();
   });
 
+  it("warns when an overridden rate differs from catalog price", () => {
+    render(
+      <PosCart
+        cart={[{ ...cartLine, unitPrice: 200, retailPrice: 250 }]}
+        locale="en"
+        onQty={() => undefined}
+        onIncrease={() => undefined}
+        onDecrease={() => undefined}
+        onPrice={() => undefined}
+        onDiscount={() => undefined}
+        onUnitChange={() => undefined}
+        onRemove={() => undefined}
+        onClear={() => undefined}
+        canDiscount={false}
+        canPriceOverride
+      />,
+    );
+    expect(screen.getByText("Catalog 250.00 → 200.00")).toBeInTheDocument();
+  });
+
   it("shows real customer price tier, credit, outstanding, and loyalty", () => {
     render(
       <PosCustomerPanel

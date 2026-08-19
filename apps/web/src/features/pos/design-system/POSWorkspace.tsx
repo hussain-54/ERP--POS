@@ -9,15 +9,13 @@ export function POSWorkspace({
   dense?: boolean;
 }) {
   return (
-    <main
+    <div
       className={posCn(
         "pos-workspace flex min-h-0 min-w-0 flex-1 flex-col",
         dense ? "pos-workspace-dense overflow-hidden" : "pos-workspace-pad overflow-auto",
       )}
     >
       {children}
-    </main>
+    </div>
   );
 }
-
-export { POSWorkspace as PosWorkspace };

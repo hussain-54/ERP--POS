@@ -46,13 +46,13 @@ export function Combobox({
         }}
       />
       {query ? (
-        <ul className="absolute z-20 mt-1 max-h-56 w-full overflow-auto rounded-xl border border-[var(--erp-border)] bg-white shadow-[var(--erp-shadow)]">
+        <ul className="absolute z-20 mt-1 max-h-56 w-full overflow-auto rounded-[var(--erp-radius)] border border-[var(--erp-border)] bg-[var(--erp-surface)] shadow-[var(--erp-shadow-md)]">
           {filtered.map((opt) => (
             <li key={opt.value}>
               <button
                 type="button"
                 className={cn(
-                  "w-full px-3 py-2 text-left text-sm hover:bg-[var(--erp-bg)]",
+                  "min-h-11 w-full px-3 text-left text-sm hover:bg-[var(--erp-bg)]",
                   value === opt.value && "bg-[var(--erp-bg)] font-medium",
                 )}
                 onClick={() => {

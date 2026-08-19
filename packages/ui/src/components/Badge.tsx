@@ -9,14 +9,14 @@ export function Badge({
   tone?: "neutral" | "success" | "warning" | "danger" | "brand";
 }) {
   const tones = {
-    neutral: "bg-[var(--erp-bg)] text-[var(--erp-muted)]",
-    success: "bg-[#e8f8ef] text-[var(--erp-success)]",
-    warning: "bg-[#fff4e5] text-[var(--erp-warning)]",
-    danger: "bg-[#fdecea] text-[var(--erp-danger)]",
+    neutral: "bg-[var(--erp-muted-bg)] text-[var(--erp-muted)]",
+    success: "bg-[var(--erp-success-soft)] text-[var(--erp-success)]",
+    warning: "bg-[var(--erp-warning-soft)] text-[var(--erp-warning)]",
+    danger: "bg-[var(--erp-danger-soft)] text-[var(--erp-danger)]",
     brand: "bg-[var(--erp-brand-soft)] text-[var(--erp-brand)]",
   };
   return (
-    <span className={cn("inline-flex rounded-full px-2.5 py-0.5 text-xs font-medium", tones[tone])}>
+    <span className={cn("inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium", tones[tone])}>
       {children}
     </span>
   );

@@ -155,83 +155,97 @@ export function PaymentsPage() {
   }, [dates, search, invoiceNumber, customerId, paymentMethodId, cashierUserId, view, deviceId, filterBranchId]);
 
   useEffect(() => {
-    try {
-      void partiesApi
-        .listPaymentMethods()
-        .then((r) =>
-          setMethods(
-            r.items
-              .filter((m) => m.is_active !== false && m.isActive !== false)
-              .map((m) => ({
-                id: String(m.id),
-                name: String(m.name ?? m.code ?? "Payment"),
-                kind: String(m.kind ?? ""),
-              })),
-          ),
-        )
-        .catch(() => undefined);
-    } catch {
-      /* not signed in */
-    }
-    try {
-      void partiesApi
-        .listCustomers()
-        .then((r) => setCustomers(r.items.map((c) => ({ id: c.id, name: c.name }))))
-        .catch(() => undefined);
-    } catch {
-      /* not signed in */
-    }
-    try {
-      void adminApi
-        .listUsers()
-        .then((r) =>
-          setCashiers(
-            r.items
-              .map((u) => ({
-                id: String(u.id ?? ""),
-                name: String(u.full_name ?? u.fullName ?? u.email ?? "Cashier"),
-              }))
-              .filter((u) => u.id),
-          ),
-        )
-        .catch(() => undefined);
-    } catch {
-      /* not signed in */
-    }
-    try {
-      void adminApi
-        .listBranches()
-        .then((r) =>
-          setBranches(
-            r.items
-              .map((b) => ({ id: String(b.id ?? ""), name: String(b.name ?? "Branch") }))
-              .filter((b) => b.id),
-          ),
-        )
-        .catch(() => undefined);
-    } catch {
-      /* not signed in */
-    }
-    try {
-      void infrastructureApi
-        .devices()
-        .then((r) => {
-          const list: Array<{ id: string; name: string }> = [];
-          const names: Record<string, string> = {};
-          for (const d of r.items) {
-            const id = String(d.id ?? d.device_id ?? "");
-            if (!id) continue;
-            const name = String(d.name ?? d.label ?? d.code ?? "Terminal");
-            list.push({ id, name });
-            names[id] = name;
-          }
-          setTerminals(list);
-          setTerminalNames(names);
-        })
-        .catch(() => undefined);
-    } catch {
-      /* devices list is optional */
-    }
+    let cancelled = false;
+    const handle = window.setTimeout(() => {
+      if (cancelled) return;
+      try {
+        void partiesApi
+          .listPaymentMethods()
+          .then((r) => {
+            if (cancelled) return;
+            setMethods(
+              r.items
+                .filter((m) => m.is_active !== false && m.isActive !== false)
+                .map((m) => ({
+                  id: String(m.id),
+                  name: String(m.name ?? m.code ?? "Payment"),
+                  kind: String(m.kind ?? ""),
+                })),
+            );
+          })
+          .catch(() => undefined);
+      } catch {
+        /* not signed in */
+      }
+      try {
+        void partiesApi
+          .listCustomers()
+          .then((r) => {
+            if (!cancelled) setCustomers(r.items.map((c) => ({ id: c.id, name: c.name })));
+          })
+          .catch(() => undefined);
+      } catch {
+        /* not signed in */
+      }
+      try {
+        void adminApi
+          .listUsers()
+          .then((r) => {
+            if (cancelled) return;
+            setCashiers(
+              r.items
+                .map((u) => ({
+                  id: String(u.id ?? ""),
+                  name: String(u.full_name ?? u.fullName ?? u.email ?? "Cashier"),
+                }))
+                .filter((u) => u.id),
+            );
+          })
+          .catch(() => undefined);
+      } catch {
+        /* not signed in */
+      }
+      try {
+        void adminApi
+          .listBranches()
+          .then((r) => {
+            if (cancelled) return;
+            setBranches(
+              r.items
+                .map((b) => ({ id: String(b.id ?? ""), name: String(b.name ?? "Branch") }))
+                .filter((b) => b.id),
+            );
+          })
+          .catch(() => undefined);
+      } catch {
+        /* not signed in */
+      }
+      try {
+        void infrastructureApi
+          .devices()
+          .then((r) => {
+            if (cancelled) return;
+            const list: Array<{ id: string; name: string }> = [];
+            const names: Record<string, string> = {};
+            for (const d of r.items) {
+              const id = String(d.id ?? d.device_id ?? "");
+              if (!id) continue;
+              const name = String(d.name ?? d.label ?? d.code ?? "Terminal");
+              list.push({ id, name });
+              names[id] = name;
+            }
+            setTerminals(list);
+            setTerminalNames(names);
+          })
+          .catch(() => undefined);
+      } catch {
+        /* devices list is optional */
+      }
+    }, 0);
+    return () => {
+      cancelled = true;
+      window.clearTimeout(handle);
+    };
   }, []);
 
   async function openDetail(id: string) {

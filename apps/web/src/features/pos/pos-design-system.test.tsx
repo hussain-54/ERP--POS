@@ -68,6 +68,9 @@ describe("POS design tokens", () => {
     expect(tokens).toContain("@media (max-width: 767px)");
     expect(tokens).toContain("@media (max-width: 1023px) and (min-width: 768px)");
     expect(tokens).toContain("@media (min-width: 1024px)");
+    expect(tokens).toContain(".pos-header-terminal");
+    expect(tokens).toContain(".pos-header-cashier");
+    expect(tokens).toContain("overflow-x: hidden");
   });
 });
 

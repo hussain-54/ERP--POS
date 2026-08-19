@@ -10,7 +10,7 @@ export type PosMobileSheet = "cart" | "customer" | "pay" | null;
 export type PosSaleChrome = "sheets" | "stack" | "split";
 
 /** Common register widths used to lock layout behavior. */
-export const POS_TEST_WIDTHS = [375, 390, 768, 820, 1024, 1280, 1440, 1920] as const;
+export const POS_TEST_WIDTHS = [375, 390, 768, 820, 1024, 1280, 1366, 1440, 1920] as const;
 
 export function posLayoutMode(width: number): PosLayoutMode {
   if (width >= POS_DESKTOP_MIN) return "desktop";
