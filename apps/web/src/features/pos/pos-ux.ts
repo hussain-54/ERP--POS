@@ -118,15 +118,16 @@ export function matchPosFunctionShortcut(event: {
   return hit?.action ?? null;
 }
 
-/** Hold and price-override must not steal focus while the cashier is typing. */
+/** Hold must not fire while typing a hold reason; price override must not steal rate edits. */
 const SHORTCUTS_BLOCKED_WHILE_TYPING: ReadonlySet<PosShortcutAction> = new Set([
-  "hold-resume",
   "price-override",
 ]);
 
 export function resolvePosFunctionShortcut(event: KeyboardEvent): PosShortcutAction | null {
   const action = matchPosFunctionShortcut(event);
   if (!action) return null;
+  // F1–F8 stay available in product search (industrial cashier habit).
+  // Only block keys that would corrupt in-field editing.
   if (isTypingTarget(event.target) && SHORTCUTS_BLOCKED_WHILE_TYPING.has(action)) return null;
   return action;
 }
@@ -147,7 +148,9 @@ export function posShortcutFallbackPath(action: PosShortcutAction): string | nul
     case "customers":
       return "/pos/customer-selection";
     case "discount":
-      return "/discounts";
+      return "/pos?focus=discount";
+    case "payment":
+      return "/pos?focus=payment";
     default:
       return null;
   }

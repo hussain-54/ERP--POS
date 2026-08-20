@@ -17,26 +17,29 @@ export type PaymentMethodGridProps = {
   installmentAllowed?: boolean;
 };
 
-function paymentIcon(kind: string): string {
+function paymentGlyph(kind: string): string {
   switch (kind) {
     case "cash":
-      return "💵";
+      return "Rs";
     case "card":
-      return "💳";
+      return "CR";
     case "bank":
-      return "🏦";
+      return "BN";
     case "jazzcash":
+      return "JC";
     case "easypaisa":
+      return "EP";
     case "sadapay":
+      return "SP";
     case "online":
     case "other":
-      return "📱";
+      return "WL";
     case "credit":
-      return "📒";
+      return "UD";
     case "installment":
-      return "📅";
+      return "IN";
     default:
-      return "◆";
+      return "•";
   }
 }
 
@@ -68,7 +71,7 @@ export const PaymentMethodGrid = memo(function PaymentMethodGrid({
         const blocked = Boolean(disabled || blockedCredit || blockedInstallment);
         const note = paymentMethodSettlementNote(kind);
         const title = blockedCredit
-          ? "Select a customer for credit / udhar"
+          ? "Select a customer for credit / udhaar"
           : blockedInstallment
             ? "Installment requires a customer and installments.manage"
             : (note ?? paymentMethodLabel(method));
@@ -83,7 +86,7 @@ export const PaymentMethodGrid = memo(function PaymentMethodGrid({
             onClick={() => onSelect(method)}
           >
             <span className="pos-pay-tile-icon" aria-hidden>
-              {paymentIcon(kind)}
+              {paymentGlyph(kind)}
             </span>
             <span>{paymentMethodLabel(method)}</span>
           </button>

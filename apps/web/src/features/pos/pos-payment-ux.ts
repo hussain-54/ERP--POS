@@ -28,7 +28,7 @@ const KIND_LABEL: Record<string, string> = {
   sadapay: "SadaPay",
   online: "Other Wallet",
   other: "Other Wallet",
-  credit: "Credit / Udhar",
+  credit: "Credit / Udhaar",
   installment: "Installment",
 };
 
@@ -71,7 +71,7 @@ export function paymentMethodSettlementNote(kind: string | null | undefined): st
     return "Recorded locally — no gateway settlement";
   }
   if (isCreditPaymentKind(value)) {
-    return "Credit / Udhar — records AR, does not collect cash";
+    return "Credit / Udhaar — records AR, does not collect cash";
   }
   if (isInstallmentPaymentKind(value)) {
     return "Installment — uses the existing installment plan, not a card processor";
@@ -101,4 +101,25 @@ export function selectedPaymentKind(
   const id = selectedPaymentMethodId(payments);
   const method = methods.find((item) => item.id === id);
   return paymentMethodKind(method) || String(payments[0]?.methodKind ?? "");
+}
+
+/** Reject negatives; allow empty / decimal drafts while typing. */
+export function sanitizePaymentAmountInput(raw: string): string | null {
+  const trimmed = raw.trim();
+  if (!trimmed) return "";
+  if (trimmed.startsWith("-")) return null;
+  if (!/^\d*\.?\d*$/.test(trimmed)) return null;
+  return trimmed;
+}
+
+/** Suggest common cash tender amounts from grand total. */
+export function cashTenderSuggestions(grand: number): number[] {
+  if (!(grand > 0) || !Number.isFinite(grand)) return [];
+  const exact = Math.round(grand * 100) / 100;
+  const suggestions = new Set<number>([exact]);
+  for (const step of [50, 100, 500, 1000]) {
+    const rounded = Math.ceil(exact / step) * step;
+    if (rounded > exact) suggestions.add(rounded);
+  }
+  return [...suggestions].sort((a, b) => a - b).slice(0, 4);
 }

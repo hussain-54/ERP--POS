@@ -48,9 +48,9 @@ export function posShowsSplitRegister(width: number): boolean {
   return posShowsTwoZoneTerminal(width);
 }
 
-/** Tablet and mobile collapse the dedicated POS sidebar; desktop keeps it open. */
+/** Mobile collapses the dedicated POS sidebar; tablet/desktop keep the full reference rail. */
 export function posSidebarCollapsedByDefault(mode: PosLayoutMode): boolean {
-  return mode !== "desktop";
+  return mode === "mobile";
 }
 
 export const POS_TERMINAL_STORAGE_KEY = "erp_pos_terminal_id";

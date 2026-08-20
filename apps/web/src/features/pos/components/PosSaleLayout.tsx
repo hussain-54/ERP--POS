@@ -2,10 +2,17 @@ import type { ReactNode } from "react";
 import { POSButton, POSDrawer } from "../design-system";
 import { posSaleLayoutClass, type PosMobileSheet, type PosSaleChrome } from "../pos-layout";
 
+/**
+ * Terminal sale chrome:
+ * - Desktop / wide tablet: product discovery | cart + sticky payment
+ * - Portrait tablet: stacked zones still in viewport
+ * - Mobile: products → cart sheet → payment sheet
+ */
 export function PosSaleLayout({
   chrome,
   product,
   customer,
+  quickActions,
   cart,
   payment,
   cartCount,
@@ -20,6 +27,7 @@ export function PosSaleLayout({
   chrome: PosSaleChrome;
   product: ReactNode;
   customer: ReactNode;
+  quickActions?: ReactNode;
   cart: ReactNode;
   payment: ReactNode;
   cartCount: number;
@@ -32,13 +40,22 @@ export function PosSaleLayout({
   onCancelSale: () => void;
 }) {
   const ops = (
-    <div className="pos-sale-ops flex min-h-0 min-w-0 flex-col overflow-hidden rounded-none border-0 shadow-none">
-      <div className="pos-sale-ops-customer min-h-0 shrink-0 overflow-auto border-b border-[var(--pos-border)] bg-[var(--pos-workspace)]">
+    <aside className="pos-sale-ops flex min-h-0 min-w-0 flex-col overflow-hidden" aria-label="Current sale">
+      <div className="pos-sale-ops-customer shrink-0 overflow-y-auto border-b border-[var(--pos-border)] bg-[var(--pos-workspace)]">
         {customer}
       </div>
-      <div className="flex min-h-0 flex-1 flex-col overflow-hidden bg-[var(--pos-workspace)]">{cart}</div>
-      <div className="shrink-0 border-t border-[var(--pos-border)] bg-[var(--pos-workspace)]">{payment}</div>
-    </div>
+      {quickActions ? (
+        <div className="pos-sale-ops-quick shrink-0 border-b border-[var(--pos-border)] bg-[var(--pos-workspace)] px-3 py-2">
+          {quickActions}
+        </div>
+      ) : null}
+      <div className="pos-sale-ops-cart flex min-h-0 flex-1 flex-col overflow-hidden bg-[var(--pos-workspace)]">
+        {cart}
+      </div>
+      <div className="pos-sale-ops-pay shrink-0 overflow-y-auto border-t border-[var(--pos-border)] bg-[var(--pos-workspace)]">
+        {payment}
+      </div>
+    </aside>
   );
 
   if (chrome === "sheets") {
@@ -98,6 +115,7 @@ export function PosSaleLayout({
             </div>
           }
         >
+          {quickActions ? <div className="border-b border-[var(--pos-border)] px-3 py-2">{quickActions}</div> : null}
           {cart}
         </POSDrawer>
         <POSDrawer
@@ -125,8 +143,11 @@ export function PosSaleLayout({
   }
 
   return (
-    <div className={`${posSaleLayoutClass(chrome)} min-h-0 min-w-0 gap-0 overflow-hidden border border-[var(--pos-border)] bg-[var(--pos-bg)]`}>
-      <div className="min-h-0 min-w-0 overflow-hidden border-r border-[var(--pos-border)] bg-[var(--pos-workspace)] p-3">
+    <div
+      className={`${posSaleLayoutClass(chrome)} min-h-0 min-w-0 overflow-hidden bg-[var(--pos-bg)]`}
+      data-pos-chrome={chrome}
+    >
+      <div className="pos-sale-products min-h-0 min-w-0 overflow-hidden border-r border-[var(--pos-border)] bg-[var(--pos-discovery-bg)]">
         {product}
       </div>
       {ops}

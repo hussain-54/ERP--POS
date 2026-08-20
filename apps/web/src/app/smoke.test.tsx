@@ -928,7 +928,7 @@ describe("responsive ERP shell", () => {
     const terminalNav = screen.getByLabelText("POS navigation");
     expect(within(terminalNav).getByRole("link", { name: "POS" })).toHaveAttribute("href", "/pos");
     expect(within(terminalNav).getByRole("link", { name: "POS" })).toHaveAttribute("aria-current", "page");
-    expect(within(terminalNav).getByRole("link", { name: "Resume Sale" })).toHaveAttribute(
+    expect(within(terminalNav).getByRole("link", { name: "Hold / Resume" })).toHaveAttribute(
       "href",
       "/pos/resume-sale",
     );

@@ -1,6 +1,5 @@
 import { useEffect, useState, type ReactNode } from "react";
 import { Link } from "react-router-dom";
-import { POSBadge } from "./POSBadge";
 import { POSButton } from "./POSButton";
 import { POSSelect } from "./POSSelect";
 import { posCn } from "./posCn";
@@ -23,12 +22,17 @@ function POSClock() {
     const id = window.setInterval(() => setNow(new Date()), 1000);
     return () => window.clearInterval(id);
   }, []);
-  const time = now.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", second: "2-digit" });
-  const date = now.toLocaleDateString(undefined, { weekday: "short", day: "numeric", month: "short", year: "numeric" });
+  const time = now.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+  const date = now.toLocaleDateString(undefined, {
+    weekday: "short",
+    day: "numeric",
+    month: "short",
+    year: "numeric",
+  });
   return (
-    <div className="pos-header-clock" aria-label="Date / Time">
-      <span className="pos-header-time">{time}</span>
+    <div className="pos-header-clock text-right" aria-label="Date / Time">
       <span className="pos-header-date hidden sm:block">{date}</span>
+      <span className="pos-header-time">{time}</span>
     </div>
   );
 }
@@ -56,7 +60,7 @@ function openErpModules() {
   window.dispatchEvent(new Event(POS_TOGGLE_ERP_NAV_EVENT));
 }
 
-/** Compact POS status strip — Menu · Branch · Terminal · Cashier · Shift · Clock · Holds · Alerts · User */
+/** Reference-aligned POS status strip — Menu · Branch · Terminal · Cashier · Shift · Clock · Holds · Alerts · User */
 export function POSHeader({
   branchLabel = "—",
   terminalId,
@@ -75,17 +79,20 @@ export function POSHeader({
     .join("");
 
   return (
-    <div className="pos-header relative z-10 min-w-0" role="region" aria-label="POS status">
+    <header className="pos-header relative z-10 min-w-0" role="region" aria-label="POS status">
       <div className="pos-header-left">
         <POSButton
           size="sm"
           variant="secondary"
-          className="shrink-0"
+          className="pos-header-menu shrink-0"
           aria-label="Menu"
           title="ERP modules"
           onClick={openErpModules}
         >
-          Menu
+          <span aria-hidden className="text-base leading-none">
+            ≡
+          </span>
+          <span className="sr-only">Menu</span>
         </POSButton>
 
         <HeaderField kicker="Branch" className="pos-header-branch">
@@ -112,12 +119,24 @@ export function POSHeader({
           </span>
         </HeaderField>
 
-        <span aria-label="Shift Status" className="shrink-0">
-          <POSBadge tone={shiftOpen ? "success" : "warning"}>{shiftOpen ? "Shift Open" : "Shift Closed"}</POSBadge>
-        </span>
+        <HeaderField kicker="Shift" className="pos-header-shift">
+          <span
+            aria-label="Shift Status"
+            className={posCn(
+              "pos-header-value font-bold",
+              shiftOpen ? "text-[var(--pos-success)]" : "text-[var(--pos-warning)]",
+            )}
+          >
+            {shiftOpen ? "Open" : "Closed"}
+          </span>
+        </HeaderField>
       </div>
 
       <div className="pos-header-center">
+        <div className="pos-header-title hidden lg:block" aria-hidden>
+          <span className="pos-header-title-kicker">POS</span>
+          <span className="pos-header-title-text">Terminal</span>
+        </div>
         <POSClock />
       </div>
 
@@ -125,12 +144,9 @@ export function POSHeader({
         <Link
           to="/pos/resume-sale"
           aria-label="Held Sales"
-          className={posCn(
-            "inline-flex h-8 items-center gap-1.5 rounded-[var(--pos-radius-sm)] border border-[var(--pos-border)] px-2.5 text-xs font-semibold text-[var(--pos-ink)]",
-            "hover:border-[var(--pos-primary)] hover:bg-[var(--pos-primary-soft)] focus-visible:outline-none focus-visible:shadow-[var(--pos-focus)]",
-          )}
+          className="pos-header-held"
         >
-          Held sales
+          <span className="text-[10px] font-semibold text-[var(--pos-muted)]">Held Sales</span>
           <span className="inline-flex min-w-[1.25rem] items-center justify-center rounded-[var(--pos-radius-sm)] bg-[var(--pos-primary)] px-1.5 py-0.5 text-[10px] font-bold text-white">
             {holdCount}
           </span>
@@ -138,19 +154,20 @@ export function POSHeader({
         <Link
           to="/notifications"
           aria-label="POS Notifications"
-          className="inline-flex h-8 w-8 items-center justify-center rounded-[var(--pos-radius-sm)] border border-[var(--pos-border)] text-xs font-semibold text-[var(--pos-ink)] hover:bg-[var(--pos-muted-bg)]"
+          className="pos-header-alert"
           title="Notifications"
         >
-          Alerts
+          <span aria-hidden>◉</span>
+          <span className="sr-only">Alerts</span>
         </Link>
         <span
           aria-label="POS User"
-          className="inline-flex h-8 w-8 items-center justify-center rounded-full bg-[var(--pos-primary)] text-xs font-bold text-white"
+          className="inline-flex h-9 w-9 items-center justify-center rounded-full border border-[var(--pos-border-strong)] bg-[var(--pos-primary)] text-xs font-bold text-white shadow-sm"
           title={cashier}
         >
           {initials || "U"}
         </span>
       </div>
-    </div>
+    </header>
   );
 }

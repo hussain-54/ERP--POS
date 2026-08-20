@@ -58,7 +58,7 @@ export function confirmationStatusLabel(
 export function paymentTypeLabel(type: string): string {
   const labels: Record<string, string> = {
     cash: "Cash",
-    credit: "Credit / Udhar",
+    credit: "Credit / Udhaar",
     split: "Split payment",
     partial: "Partial payment",
     installment: "Installment",

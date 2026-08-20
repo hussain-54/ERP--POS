@@ -9,6 +9,7 @@ import { POSTerminalNav } from "./POSTerminalNav";
 import { POSShortcutBar } from "./POSShortcutBar";
 import { usePosShellStatus } from "../session/usePosShellStatus";
 import { posHardware } from "../hardware";
+import { posLayoutMode, posSidebarCollapsedByDefault } from "../pos-layout";
 import { dispatchPosShortcut, isPosOverlayOpen, posShortcutFallbackPath, resolvePosFunctionShortcut } from "../pos-ux";
 import "../pos-tokens.css";
 
@@ -25,13 +26,25 @@ export function POSShell({ children }: { children: ReactNode }) {
     branches,
   );
   const [drawerBusy, setDrawerBusy] = useState(false);
+  const [viewportWidth, setViewportWidth] = useState(() =>
+    typeof window === "undefined" ? 1440 : window.innerWidth,
+  );
   const dense = isPosTerminalPath(location.pathname);
+  const navCollapsed = posSidebarCollapsedByDefault(posLayoutMode(viewportWidth));
   const summary = drawer ?? { opening: "—", inHand: "—", sales: "—", expenses: "—", expected: "—" };
   const branchLabel = branchId
     ? branches.includes(branchId)
       ? `Branch ${branchId.slice(0, 8)}`
       : branchId.slice(0, 8)
     : "No branch";
+
+  useEffect(() => {
+    function onResize() {
+      setViewportWidth(window.innerWidth);
+    }
+    window.addEventListener("resize", onResize);
+    return () => window.removeEventListener("resize", onResize);
+  }, []);
 
   useEffect(() => {
     function onKey(event: KeyboardEvent) {
@@ -81,7 +94,8 @@ export function POSShell({ children }: { children: ReactNode }) {
           drawerBusy={drawerBusy}
           canOpenDrawer={hasPermission("cash_drawer.open")}
           onCashDrawer={() => void onCashDrawer()}
-          onCloseShift={() => navigate("/sales-management")}
+          onCloseShift={() => navigate("/pos/shift")}
+          collapsed={navCollapsed}
         />
         <POSWorkspace dense={dense}>{children}</POSWorkspace>
       </div>

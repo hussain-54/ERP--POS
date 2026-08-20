@@ -29,11 +29,11 @@ const INFRA_ERROR =
 const KNOWN_MESSAGES: Array<{ match: RegExp; message: string }> = [
   {
     match: /out of stock/i,
-    message: "This product is out of stock and cannot be sold right now.",
+    message: "Insufficient stock — this product cannot be sold right now.",
   },
   {
     match: /insufficient stock/i,
-    message: "Not enough stock for this quantity. Reduce the quantity or choose another product.",
+    message: "Insufficient stock for this quantity. Reduce the quantity or choose another product.",
   },
   {
     match: /already in progress|duplicate payment|duplicate sale|duplicate submission/i,
@@ -41,7 +41,27 @@ const KNOWN_MESSAGES: Array<{ match: RegExp; message: string }> = [
   },
   {
     match: /walk-in sales must be paid/i,
-    message: "Walk-in customers must pay the full amount before completing the sale.",
+    message: "Payment amount is incomplete. Walk-in customers must pay the full amount.",
+  },
+  {
+    match: /select a customer for partial|select a customer for credit|customer required/i,
+    message: "Customer required for credit / udhaar. Search and select a customer on this screen.",
+  },
+  {
+    match: /enter payment amount or select customer/i,
+    message: "Payment amount is incomplete. Enter cash/tender or select a customer for udhaar.",
+  },
+  {
+    match: /payment is less than grand|less than grand total/i,
+    message: "Payment amount is incomplete. Enter the full amount or select a customer for credit.",
+  },
+  {
+    match: /blocked.*credit|cannot buy on credit/i,
+    message: "This customer is blocked and cannot buy on credit / udhaar.",
+  },
+  {
+    match: /credit approval is required|requiresApproval|credit limit exceeded/i,
+    message: "Udhaar limit exceeded — credit approval is required before completing this sale.",
   },
   {
     match: /hold has expired/i,
@@ -60,8 +80,12 @@ const KNOWN_MESSAGES: Array<{ match: RegExp; message: string }> = [
     message: "Product could not be added because this SKU already exists.",
   },
   {
-    match: /payment is less than grand|less than grand total/i,
-    message: "Payment is less than the total. Enter the full amount or select a customer for credit.",
+    match: /could not be added|cannot add product|invalid product/i,
+    message: "Product could not be added. Check stock, unit, and try again.",
+  },
+  {
+    match: /negative|below zero/i,
+    message: "Payment amounts cannot be negative.",
   },
   {
     match: /internet|connection required|failed to fetch|network/i,
@@ -105,8 +129,15 @@ export function toPosUserDescription(err: unknown, fallback: string): string {
 
 export function humanizeCartError(raw: string | null | undefined): string {
   const text = String(raw ?? "").trim();
-  if (!text) return "This product could not be added. Check quantity and stock.";
-  return toPosUserDescription(text, "This product could not be added. Check quantity and stock.");
+  if (!text) return "Product could not be added. Check quantity and stock.";
+  return toPosUserDescription(text, "Product could not be added. Check quantity and stock.");
+}
+
+/** Settlement / checkout failures — never silent, never raw infra text. */
+export function humanizePaymentError(raw: string | null | undefined): string {
+  const text = String(raw ?? "").trim();
+  if (!text) return "Payment amount is incomplete. Check amounts and try again.";
+  return toPosUserDescription(text, "Payment could not be completed. Check amounts and try again.");
 }
 
 export function productSearchEmptyCopy(input: {
@@ -143,8 +174,8 @@ export function productSearchEmptyCopy(input: {
 
 export function cartEmptyCopy(): { title: string; description: string } {
   return {
-    title: "Cart is empty",
-    description: "Search or scan a product to start this sale.",
+    title: "Start a sale",
+    description: "Search or scan a product to add it to the cart.",
   };
 }
 

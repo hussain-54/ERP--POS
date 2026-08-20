@@ -1,4 +1,4 @@
-import { createRef } from "react";
+﻿import { createRef } from "react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { cleanup, fireEvent, render, screen, act, within } from "@testing-library/react";
 import type { ProductSearchResult } from "@electronic-erp/contracts";
@@ -9,6 +9,7 @@ import { POS_PRODUCT_PAGE_SIZE, POS_PRODUCT_SEARCH_PLACEHOLDER } from "./pos-cat
 import { PosCart } from "./components/PosCart";
 import { PosCustomerPanel } from "./components/PosCustomerPanel";
 import { PosPaymentPanel } from "./components/PosPaymentPanel";
+import { PosSaleQuickActions } from "./components/PosSaleQuickActions";
 import { PosTotals } from "./components/PosTotals";
 import { toPosTransactionSummary } from "./pos-transaction";
 import type { CartLine } from "./pos-types";
@@ -152,7 +153,7 @@ describe("industrial New Sale terminal", () => {
     expect(screen.getByText("Philips")).toBeInTheDocument();
     expect(screen.getByText("SKU LED-12")).toBeInTheDocument();
     expect(screen.getByText("Rs 250.00")).toBeInTheDocument();
-    expect(screen.getByText("Stock 15")).toBeInTheDocument();
+    expect(screen.getByText("Stock: 15")).toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: "Remove favorite" }));
     expect(onFav).toHaveBeenCalled();
     fireEvent.click(screen.getByText("LED Bulb 12W"));
@@ -221,7 +222,7 @@ describe("industrial New Sale terminal", () => {
     );
     expect(onQueryChange).not.toHaveBeenCalled();
     act(() => {
-      vi.advanceTimersByTime(200);
+      vi.advanceTimersByTime(250);
     });
     expect(onQueryChange).toHaveBeenCalledWith("LED");
     vi.useRealTimers();
@@ -294,7 +295,8 @@ describe("industrial New Sale terminal", () => {
     expect(screen.getByText("Discount")).toBeInTheDocument();
     expect(screen.getByText("Tax")).toBeInTheDocument();
     expect(screen.getByText("Total")).toBeInTheDocument();
-    expect(screen.getByText("LED-12 · Stock 15")).toBeInTheDocument();
+    expect(screen.getByText(/SKU: LED-12/)).toBeInTheDocument();
+    expect(screen.getByText(/Stock 15/)).toBeInTheDocument();
     expect(screen.getByText("507.00")).toBeInTheDocument();
     expect(screen.getByRole("heading", { name: "Cart · 1 item" })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Apply Discount" })).toBeDisabled();
@@ -339,10 +341,40 @@ describe("industrial New Sale terminal", () => {
       />,
     );
     expect(screen.getByRole("heading", { name: "Cart · 1 item" })).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "Apply Discount" })).toBeEnabled();
+    expect(screen.getByRole("button", { name: "Apply" })).toBeEnabled();
     expect(screen.getByRole("button", { name: "Clear Cart" })).toBeEnabled();
     fireEvent.change(screen.getByLabelText("Invoice discount"), { target: { value: "15" } });
+    fireEvent.click(screen.getByRole("button", { name: "Apply" }));
     expect(onInvoiceDiscount).toHaveBeenCalledWith("15");
+    fireEvent.click(screen.getByRole("button", { name: "%" }));
+    fireEvent.change(screen.getByLabelText("Invoice discount"), { target: { value: "10" } });
+    fireEvent.click(screen.getByRole("button", { name: "Apply" }));
+    expect(onInvoiceDiscount).toHaveBeenCalledWith("10%");
+  });
+
+  it("exposes sale quick actions for hold, resume, customer, and payment", () => {
+    const onAction = vi.fn();
+    render(
+      <PosSaleQuickActions
+        canHold
+        canDiscount
+        canClear
+        canPay
+        holdCount={2}
+        onAction={onAction}
+      />,
+    );
+    expect(screen.getByRole("toolbar", { name: "Sale quick actions" })).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Hold" }));
+    fireEvent.click(screen.getByRole("button", { name: "Resume (2)" }));
+    fireEvent.click(screen.getByRole("button", { name: "Customer" }));
+    fireEvent.click(screen.getByRole("button", { name: "Discount" }));
+    fireEvent.click(screen.getByRole("button", { name: "Payment" }));
+    expect(onAction).toHaveBeenCalledWith("hold");
+    expect(onAction).toHaveBeenCalledWith("resume");
+    expect(onAction).toHaveBeenCalledWith("customer");
+    expect(onAction).toHaveBeenCalledWith("discount");
+    expect(onAction).toHaveBeenCalledWith("payment");
   });
 
   it("warns on last units and ignores negative quantity input", () => {
@@ -423,8 +455,10 @@ describe("industrial New Sale terminal", () => {
     expect(screen.getAllByText("Wholesale").length).toBeGreaterThan(0);
     expect(screen.getByText("Credit Limit")).toBeInTheDocument();
     expect(screen.getByText("50000.00")).toBeInTheDocument();
-    expect(screen.getByText("Outstanding")).toBeInTheDocument();
+    expect(screen.getByText("Udhaar")).toBeInTheDocument();
     expect(screen.getByText("12000.00")).toBeInTheDocument();
+    expect(screen.getByText("Available")).toBeInTheDocument();
+    expect(screen.getByText("38000.00")).toBeInTheDocument();
     expect(screen.getByText("Loyalty Points")).toBeInTheDocument();
     expect(screen.getByText("80")).toBeInTheDocument();
     expect(screen.queryByText(customer.id)).not.toBeInTheDocument();
@@ -530,13 +564,13 @@ describe("industrial New Sale terminal", () => {
     });
     expect(onCustomerQuery).not.toHaveBeenCalled();
     act(() => {
-      vi.advanceTimersByTime(200);
+      vi.advanceTimersByTime(250);
     });
     expect(onCustomerQuery).toHaveBeenCalledWith("Ahmed");
     vi.useRealTimers();
   });
 
-  it("shows configured payment methods only and keeps grand total plus pay now", () => {
+  it("shows configured payment methods only and keeps grand total plus complete sale", () => {
     render(
       <PosPaymentPanel
         totals={{
@@ -584,32 +618,27 @@ describe("industrial New Sale terminal", () => {
         onLateFeeFixed={() => undefined}
         isAdvance={false}
         onIsAdvance={() => undefined}
-        cashReceived=""
+        cashReceived="573.3"
         onCashReceived={() => undefined}
       />,
     );
     expect(screen.getByText("Total Items")).toBeInTheDocument();
-    expect(screen.getByText("Total Quantity")).toBeInTheDocument();
-    expect(screen.getByText("Subtotal")).toBeInTheDocument();
-    expect(screen.getByText("Item Discount")).toBeInTheDocument();
-    expect(screen.getByText("Invoice Discount")).toBeInTheDocument();
-    expect(screen.getByText("Total Discount")).toBeInTheDocument();
-    expect(screen.getByText("Taxable Amount")).toBeInTheDocument();
-    expect(screen.getByText("Sales Tax")).toBeInTheDocument();
-    expect(screen.getByText("Delivery Charges")).toBeInTheDocument();
-    expect(screen.getByText("Round Off")).toBeInTheDocument();
     expect(screen.getByText("GRAND TOTAL")).toBeInTheDocument();
-    expect(screen.getByText("Rs 573.30")).toBeInTheDocument();
+    expect(screen.getAllByText("Rs 573.30").length).toBeGreaterThan(0);
+    expect(screen.getByText("Change to return")).toBeInTheDocument();
+    expect(screen.getByText("+ Split payment")).toBeInTheDocument();
+    expect(screen.getByText("Paid")).toBeInTheDocument();
+    expect(screen.getByText("Balance")).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Cash" })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "JazzCash" })).toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "SadaPay" })).not.toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "Easypaisa" })).not.toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "PAY NOW" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "COMPLETE SALE" })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "HOLD SALE" })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "QUOTATION" })).toBeInTheDocument();
   });
 
-  it("blocks PAY NOW while pending and hides invoice discount without permission", () => {
+  it("blocks COMPLETE SALE while pending and hides invoice discount without permission", () => {
     const onPay = vi.fn();
     render(
       <PosPaymentPanel
@@ -774,7 +803,7 @@ describe("industrial New Sale terminal", () => {
     expect(onPay).not.toHaveBeenCalled();
   });
 
-  it("opens a confirmation modal from PAY NOW and posts only after confirm", () => {
+  it("opens a confirmation modal from COMPLETE SALE and posts only after confirm", () => {
     const onPay = vi.fn();
     render(
       <PosPaymentPanel
@@ -825,15 +854,15 @@ describe("industrial New Sale terminal", () => {
         invoiceReference={null}
       />,
     );
-    fireEvent.click(screen.getByRole("button", { name: "PAY NOW" }));
+    fireEvent.click(screen.getByRole("button", { name: "COMPLETE SALE" }));
     expect(onPay).not.toHaveBeenCalled();
-    const dialog = screen.getByRole("dialog", { name: "Confirm payment" });
+    const dialog = screen.getByRole("dialog", { name: "Complete sale" });
     expect(within(dialog).getByText("Customer")).toBeInTheDocument();
     expect(within(dialog).getByText("Invoice / reference")).toBeInTheDocument();
     expect(within(dialog).getByText("Payment method")).toBeInTheDocument();
-    expect(within(dialog).getByText("Amount due")).toBeInTheDocument();
+    expect(within(dialog).getByText("Balance")).toBeInTheDocument();
     expect(within(dialog).getByText("Change")).toBeInTheDocument();
-    fireEvent.click(within(dialog).getByRole("button", { name: "PAY NOW" }));
+    fireEvent.click(within(dialog).getByRole("button", { name: "Complete Sale" }));
     expect(onPay).toHaveBeenCalledTimes(1);
   });
 
@@ -888,10 +917,10 @@ describe("industrial New Sale terminal", () => {
         invoiceReference={null}
       />,
     );
-    fireEvent.click(screen.getByRole("button", { name: "PAY NOW" }));
-    const dialog = screen.getByRole("dialog", { name: "Confirm payment" });
+    fireEvent.click(screen.getByRole("button", { name: "COMPLETE SALE" }));
+    const dialog = screen.getByRole("dialog", { name: "Complete sale" });
     fireEvent.click(within(dialog).getByRole("button", { name: "Cancel" }));
     expect(onPay).not.toHaveBeenCalled();
-    expect(screen.queryByRole("dialog", { name: "Confirm payment" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("dialog", { name: "Complete sale" })).not.toBeInTheDocument();
   });
 });

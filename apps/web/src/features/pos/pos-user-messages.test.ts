@@ -21,10 +21,13 @@ describe("POS user messages", () => {
   });
 
   it("maps stock and payment domain errors into plain language", () => {
-    expect(humanizeCartError("Product is out of stock")).toMatch(/out of stock/i);
-    expect(humanizeCartError("Insufficient stock (available 2)")).toMatch(/enough stock/i);
+    expect(humanizeCartError("Product is out of stock")).toMatch(/insufficient stock/i);
+    expect(humanizeCartError("Insufficient stock (available 2)")).toMatch(/insufficient stock/i);
     expect(toPosUserDescription("Walk-in sales must be paid in full", "fallback")).toMatch(
-      /walk-in/i,
+      /incomplete|walk-in/i,
+    );
+    expect(toPosUserDescription("Select a customer for partial / credit payment", "fallback")).toMatch(
+      /customer required/i,
     );
   });
 

@@ -1,7 +1,7 @@
 import type { ProductSearchResult } from "@electronic-erp/contracts";
 
 /** Flush typed search to the parent after this pause so cart/payment do not re-render per key. */
-export const POS_SEARCH_FLUSH_MS = 180;
+export const POS_SEARCH_FLUSH_MS = 220;
 
 /** Visible cards per "View More" page — 3-column desktop grid, 4 rows. */
 export const POS_PRODUCT_PAGE_SIZE = 12;
