@@ -247,11 +247,13 @@ posRouter.get("/holds", async (req: AuthedRequest, res, next) => {
     const branchId = String(req.query.branchId ?? req.authz?.branchId ?? "");
     if (!branchId) throw new Error("branchId required");
     const filter = HeldSaleFilterSchema.catch("all_pending").parse(req.query.filter ?? "all_pending");
+    const applyExpiry = req.query.applyExpiry !== "false";
     res.json({
       items: await repo(req).listHeldSales(orgId(req), branchId, {
         filter,
         userId: userId(req),
         resumeAny: authz(req).can("pos.resume_any"),
+        applyExpiry,
       }),
     });
   } catch (err) {

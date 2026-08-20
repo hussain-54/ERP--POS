@@ -51,7 +51,7 @@ export function POSTerminalNav({
       <div className="min-h-0 flex-1 space-y-0.5 overflow-y-auto px-2 py-2">
         {POS_TERMINAL_NAV.map((item) => {
           const active = isNavActive(pathname, item.path);
-          const badge = "badge" in item && item.badge === "hold" && holdCount > 0 ? holdCount : null;
+          const badge = item.badge === "hold" && holdCount > 0 ? holdCount : null;
           return (
             <Link
               key={item.path}
@@ -71,18 +71,18 @@ export function POSTerminalNav({
       </div>
 
       <div className="pos-sidebar-util space-y-2">
-        <div className="space-y-1 text-[11px]">
+        <div className="space-y-1.5 text-[11px]">
           <div className="text-[10px] font-bold uppercase tracking-wide text-[var(--pos-nav-muted)]">
             Cash Drawer
           </div>
-          <dl className="space-y-0.5 tabular-nums">
+          <dl className="space-y-1 tabular-nums">
             <div className="flex justify-between gap-2">
               <dt className="text-[var(--pos-nav-muted)]">Opening</dt>
               <dd>{drawer.opening}</dd>
             </div>
             <div className="flex justify-between gap-2">
               <dt className="text-[var(--pos-nav-muted)]">In Hand</dt>
-              <dd className="font-semibold text-[var(--pos-success)]">{drawer.inHand}</dd>
+              <dd className="font-semibold text-emerald-300">{drawer.inHand}</dd>
             </div>
             <div className="flex justify-between gap-2">
               <dt className="text-[var(--pos-nav-muted)]">Sales</dt>
@@ -90,9 +90,9 @@ export function POSTerminalNav({
             </div>
             <div className="flex justify-between gap-2">
               <dt className="text-[var(--pos-nav-muted)]">Expenses</dt>
-              <dd className="text-[var(--pos-danger)]">{drawer.expenses}</dd>
+              <dd className="text-rose-300">{drawer.expenses}</dd>
             </div>
-            <div className="flex justify-between gap-2 border-t border-white/10 pt-1 font-semibold">
+            <div className="flex justify-between gap-2 border-t border-white/10 pt-1.5 font-semibold">
               <dt>Expected</dt>
               <dd>{drawer.expected}</dd>
             </div>

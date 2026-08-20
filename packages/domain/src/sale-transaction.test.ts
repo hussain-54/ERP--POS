@@ -48,6 +48,8 @@ function basePorts(overrides: Partial<SaleTransactionPorts> = {}): SaleTransacti
     reverseStockSale: vi.fn(async () => undefined),
     postCustomerSaleLedger: vi.fn(async () => undefined),
     postSplitPayment: vi.fn(async () => undefined),
+    reverseCustomerSaleLedger: vi.fn(async () => undefined),
+    reverseSalePayments: vi.fn(async () => undefined),
     updateSalePaymentState: vi.fn(async () => undefined),
     finalizeSaleStatus: vi.fn(async () => undefined),
     voidIncompleteSale: vi.fn(async () => undefined),
@@ -433,6 +435,7 @@ describe("SaleTransactionService", () => {
         organizationId: org,
         branchId: branch,
         warehouseId: warehouse,
+        customerId: customer,
         items: [
           { productId: product, unitId: unit, qty: 1, unitPrice: 50, discount: 0, tax: 0 },
           { productId: productB, unitId: unit, qty: 1, unitPrice: 50, discount: 0, tax: 0 },
@@ -455,6 +458,10 @@ describe("SaleTransactionService", () => {
     expect(reverseOp).toMatch(UUID_RE);
     expect(reverseOp).not.toBe(forwardOp);
     expect(forwardOp.includes("-" + product)).toBe(false);
+    expect(ports.postCustomerSaleLedger).not.toHaveBeenCalled();
+    expect(ports.postSplitPayment).not.toHaveBeenCalled();
+    expect(ports.reverseCustomerSaleLedger).not.toHaveBeenCalled();
+    expect(ports.reverseSalePayments).not.toHaveBeenCalled();
     expect(ports.finalizeSaleStatus).not.toHaveBeenCalled();
     expect(ports.voidIncompleteSale).toHaveBeenCalled();
   });
@@ -481,6 +488,8 @@ describe("SaleTransactionService", () => {
 
     expect(ports.postStockSale).toHaveBeenCalled();
     expect(ports.reverseStockSale).toHaveBeenCalled();
+    expect(ports.reverseCustomerSaleLedger).toHaveBeenCalled();
+    expect(ports.reverseSalePayments).not.toHaveBeenCalled();
     const fwd = (ports.postStockSale as ReturnType<typeof vi.fn>).mock.calls[0]?.[0]?.operationId as string;
     const rev = (ports.reverseStockSale as ReturnType<typeof vi.fn>).mock.calls[0]?.[0]?.operationId as string;
     expect(fwd).toMatch(UUID_RE);
@@ -488,6 +497,84 @@ describe("SaleTransactionService", () => {
     expect(rev).not.toBe(fwd);
     expect(ports.finalizeSaleStatus).not.toHaveBeenCalled();
     expect(ports.voidIncompleteSale).toHaveBeenCalled();
+  });
+
+  it("does not void a posted sale when a post-commit journal fails", async () => {
+    const ports = basePorts({
+      postJournal: vi.fn(async () => {
+        throw new Error("journal unavailable");
+      }),
+    });
+    const service = new SaleTransactionService(ports);
+    const result = await service.postSale({
+      organizationId: org,
+      branchId: branch,
+      warehouseId: warehouse,
+      customerId: customer,
+      items: [{ productId: product, unitId: unit, qty: 1, unitPrice: 100, discount: 0, tax: 0 }],
+      payments: [{ paymentMethodId: method, amount: 100 }],
+      discounts: [],
+      idempotencyKey: key,
+    });
+    expect(result.invoiceNumber).toBe("INV-1");
+    expect(ports.finalizeSaleStatus).toHaveBeenCalled();
+    expect(ports.voidIncompleteSale).not.toHaveBeenCalled();
+    expect(ports.reverseStockSale).not.toHaveBeenCalled();
+  });
+
+  it("reverses payments, ledger, and stock when finalize fails after payment", async () => {
+    const ports = basePorts({
+      finalizeSaleStatus: vi.fn(async () => {
+        throw new Error("finalize conflict");
+      }),
+    });
+    const service = new SaleTransactionService(ports);
+    await expect(
+      service.postSale({
+        organizationId: org,
+        branchId: branch,
+        warehouseId: warehouse,
+        customerId: customer,
+        items: [{ productId: product, unitId: unit, qty: 1, unitPrice: 100, discount: 0, tax: 0 }],
+        payments: [{ paymentMethodId: method, amount: 100 }],
+        discounts: [],
+        idempotencyKey: key,
+      }),
+    ).rejects.toThrow(/finalize conflict/i);
+
+    expect(ports.postSplitPayment).toHaveBeenCalled();
+    expect(ports.postCustomerSaleLedger).toHaveBeenCalled();
+    expect(ports.reverseSalePayments).toHaveBeenCalled();
+    expect(ports.reverseCustomerSaleLedger).toHaveBeenCalled();
+    expect(ports.reverseStockSale).toHaveBeenCalled();
+    expect(ports.voidIncompleteSale).toHaveBeenCalled();
+  });
+
+  it("journals cash vs bank tenders separately", async () => {
+    const bankMethod = "77777777-7777-4777-8777-777777777778";
+    const ports = basePorts();
+    const service = new SaleTransactionService(ports);
+    await service.postSale({
+      organizationId: org,
+      branchId: branch,
+      warehouseId: warehouse,
+      customerId: customer,
+      items: [{ productId: product, unitId: unit, qty: 1, unitPrice: 100, discount: 0, tax: 0 }],
+      payments: [
+        { paymentMethodId: method, amount: 40, methodKind: "cash" },
+        { paymentMethodId: bankMethod, amount: 60, methodKind: "bank" },
+      ],
+      discounts: [],
+      idempotencyKey: key,
+    });
+    expect(ports.postJournal).toHaveBeenCalledWith(
+      expect.objectContaining({
+        lines: expect.arrayContaining([
+          expect.objectContaining({ code: "1000", debit: 40 }),
+          expect.objectContaining({ code: "1010", debit: 60 }),
+        ]),
+      }),
+    );
   });
 
   it("posts credit sale with remaining balance and accounting", async () => {

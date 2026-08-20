@@ -9,8 +9,6 @@ import {
 } from "@electronic-erp/domain";
 import {
   cartLineDisplayTotal,
-  POS_DELIVERY_CHARGES,
-  POS_ROUND_OFF,
   toPosTransactionSummary,
 } from "./pos-transaction";
 
@@ -56,9 +54,9 @@ describe("POS transaction summary", () => {
     expect(summary.invoiceDiscount).toBe(totals.invoiceDiscount);
     expect(summary.totalDiscount).toBe(totals.discount);
     expect(summary.salesTax).toBe(totals.tax);
-    expect(summary.taxableAmount).toBe(totals.taxInvoice?.taxableAmount);
-    expect(summary.deliveryCharges).toBe(POS_DELIVERY_CHARGES);
-    expect(summary.roundOff).toBe(POS_ROUND_OFF);
+    expect(summary.taxableAmount).toBe(totals.taxableAmount);
+    expect(summary.deliveryCharges).toBe(totals.deliveryCharges);
+    expect(summary.roundOff).toBe(totals.roundOff);
     expect(summary.grand).toBe(totals.grand);
     expect(cartLineDisplayTotal(cart[0]!)).toBe(lineTotal(cart[0]!));
   });

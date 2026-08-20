@@ -48,6 +48,11 @@ export const SaleItemInputSchema = z.object({
   discount: MoneySchema.default(0),
   discountPercent: z.number().min(0).max(100).default(0),
   tax: MoneySchema.default(0),
+  /**
+   * When inclusive, unitPrice already contains tax — grand total must not add tax again.
+   * Omitted defaults to exclusive (legacy / most catalogs).
+   */
+  taxPricingMode: z.enum(["inclusive", "exclusive"]).optional(),
   batchId: UuidSchema.optional(),
   serialNumberId: UuidSchema.optional(),
   warrantyDays: z.number().int().min(0).default(0),

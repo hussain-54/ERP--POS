@@ -21,3 +21,10 @@ export class ForbiddenDomainError extends DomainError {
     this.name = "ForbiddenDomainError";
   }
 }
+
+export class ConflictDomainError extends DomainError {
+  constructor(message: string) {
+    super(message, "CONFLICT");
+    this.name = "ConflictDomainError";
+  }
+}

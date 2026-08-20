@@ -23,7 +23,14 @@ describe("POS payment dock helpers", () => {
       "Credit / Udhar",
     ]);
     expect(paymentMethodSettlementNote("jazzcash")).toBe("Recorded locally — no gateway settlement");
+    expect(paymentMethodSettlementNote("other")).toBe("Recorded locally — no gateway settlement");
+    expect(paymentMethodSettlementNote("card")).toBe("Recorded locally — no gateway settlement");
     expect(paymentMethodSettlementNote("cash")).toBeNull();
+    expect(paymentMethodSettlementNote("bank")).toBeNull();
+    expect(paymentMethodSettlementNote("credit")).toBe("Credit / Udhar — records AR, does not collect cash");
+    expect(paymentMethodSettlementNote("installment")).toBe(
+      "Installment — uses the existing installment plan, not a card processor",
+    );
     expect(isCashPaymentKind("cash")).toBe(true);
     expect(isCreditLikePaymentKind("installment")).toBe(true);
     expect(selectedPaymentMethodId([{ id: "p1", paymentMethodId: "2", amount: "10" }])).toBe("2");

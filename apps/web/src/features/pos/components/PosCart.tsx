@@ -1,5 +1,6 @@
 import { memo, type RefObject } from "react";
 import type { CartLine, LocaleMode } from "../pos-types";
+import { cartEmptyCopy } from "../pos-user-messages";
 import {
   POSButton,
   POSEmptyState,
@@ -62,7 +63,7 @@ export const PosCart = memo(function PosCart({
     <section className="pos-tx-cart flex min-h-0 flex-1 flex-col overflow-hidden">
       <div className="pos-cart-header flex flex-wrap items-center justify-between gap-2 border-b border-[var(--pos-border)] px-3 py-2">
         <h3 className="pos-cart-title text-[var(--pos-ink)]">
-          CART ({cart.length} {itemLabel})
+          Cart · {cart.length} {itemLabel.toLowerCase()}
         </h3>
         <div className="flex flex-wrap items-center justify-end gap-1">
           {canInvoiceDiscount ? (
@@ -118,8 +119,8 @@ export const PosCart = memo(function PosCart({
       <div className="min-h-0 flex-1 overflow-auto">
         {cart.length === 0 ? (
           <POSEmptyState
-            title="CART IS EMPTY"
-            description="Add products from the catalog or search for a product above."
+            title={cartEmptyCopy().title}
+            description={cartEmptyCopy().description}
           />
         ) : (
           <POSTable className="pos-cart-table">

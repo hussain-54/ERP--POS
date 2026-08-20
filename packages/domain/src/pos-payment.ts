@@ -338,7 +338,7 @@ export class PaymentAttemptGate {
     return next;
   }
 
-  /** Mark for retry with same or new key after failure. */
+  /** Mark for retry with the same checkout key after failure. */
   retry(idempotencyKey: string): PaymentAttemptState {
     const prev = this.attempts.get(idempotencyKey);
     const next: PaymentAttemptState = {
@@ -366,4 +366,38 @@ export function decimalSum(values: string[]): string {
 
 export function decimalsEqual(a: string, b: string): boolean {
   return compareDecimal(a, b) === 0;
+}
+
+/**
+ * Split posted tenders for the sale journal.
+ * Cash → Cash (1000). Bank + record-only card/wallets → Bank (1010).
+ * Missing kind defaults to cash (legacy POS payloads).
+ */
+export function classifySaleSettlement(
+  splits: Array<{ amount: string | number; kind?: string | null }>,
+): { paidCash: number; paidBank: number } {
+  let paidCash = 0;
+  let paidBank = 0;
+  for (const split of splits) {
+    const amount = money(split.amount);
+    if (!(amount > 0)) continue;
+    const kind = String(split.kind ?? "").toLowerCase();
+    if (!kind || kind === "cash") paidCash = money(paidCash + amount);
+    else paidBank = money(paidBank + amount);
+  }
+  return { paidCash, paidBank };
+}
+
+export type CheckoutIdempotencyEvent = "posted" | "failed" | "retry" | "new-sale";
+
+/**
+ * Keep the checkout UUID on failure/retry so a lost response cannot create a second sale.
+ * Rotate only after a confirmed posted sale or an explicit new sale.
+ */
+export function resolveCheckoutIdempotencyKey(input: {
+  currentKey: string;
+  event: CheckoutIdempotencyEvent;
+}): { rotate: true } | { keep: string } {
+  if (input.event === "posted" || input.event === "new-sale") return { rotate: true };
+  return { keep: input.currentKey };
 }

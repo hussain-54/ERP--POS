@@ -53,6 +53,8 @@ interface Props {
   customerRef: React.RefObject<HTMLInputElement | null>;
   advanced: boolean;
   creditHint?: string | null;
+  /** Inline customer search failure (prefer over silent empty). */
+  searchError?: string | null;
 }
 
 const emptyForm = (): PosCustomerFormInput => ({
@@ -126,6 +128,7 @@ export const PosCustomerPanel = memo(function PosCustomerPanel({
   customerRef,
   advanced,
   creditHint,
+  searchError = null,
 }: Props) {
   const [newOpen, setNewOpen] = useState(false);
   const [editOpen, setEditOpen] = useState(false);
@@ -269,12 +272,28 @@ export const PosCustomerPanel = memo(function PosCustomerPanel({
   return (
     <>
       <section className="pos-tx-customer px-3 py-2">
-        <h3 className="pos-field-label--compact mb-2">Customer</h3>
+        <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
+          <h3 className="pos-field-label--compact">Customer</h3>
+          <div className="flex shrink-0 gap-1">
+            <POSButton size="sm" variant={walkIn ? "primary" : "ghost"} onClick={onWalkIn}>
+              Walk-in Customer
+            </POSButton>
+            <POSButton
+              size="sm"
+              variant="secondary"
+              onClick={openNew}
+              disabled={!canCreate || !onCreateCustomer}
+              title={canCreate ? "Create customer" : "Requires customers.write"}
+            >
+              New Customer
+            </POSButton>
+          </div>
+        </div>
         <div className="flex flex-wrap items-end gap-2">
           <div className="min-w-0 flex-1">
             <POSInput
               ref={customerRef as React.RefObject<HTMLInputElement>}
-              label="Customer"
+              label="Customer search"
               placeholder={canRead ? "Name, mobile, or code…" : "No customers.read permission"}
               value={queryDraft}
               onChange={(e) => setQueryDraft(e.target.value)}
@@ -288,21 +307,13 @@ export const PosCustomerPanel = memo(function PosCustomerPanel({
               }}
             />
           </div>
-          <div className="flex shrink-0 gap-1 pb-px">
-            <POSButton size="sm" variant={walkIn ? "primary" : "ghost"} onClick={onWalkIn}>
-              Walk-in
-            </POSButton>
-            <POSButton
-              size="sm"
-              variant="secondary"
-              onClick={openNew}
-              disabled={!canCreate || !onCreateCustomer}
-              title={canCreate ? "Create customer" : "Requires customers.write"}
-            >
-              New Customer
-            </POSButton>
-          </div>
         </div>
+
+        {!walkIn && searchError ? (
+          <p role="alert" className="mt-1.5 text-xs text-[var(--pos-danger)]">
+            {searchError}
+          </p>
+        ) : null}
 
         {!walkIn && customers.length > 0 ? (
           <ul className="mt-2 max-h-28 overflow-auto rounded-[var(--pos-radius-sm)] border border-[var(--pos-border)] text-sm">

@@ -222,22 +222,191 @@ export function cartLinesForResume(snapshot: Record<string, unknown>): unknown[]
   return [...cart];
 }
 
+/** Snapshot schema version stamped on new holds. */
+export const HOLD_SNAPSHOT_VERSION = 1;
+
+/**
+ * Full New Sale transaction state parked on a hold.
+ * Resume must restore these fields so checkout matches the held bill.
+ */
+export type HoldTransactionTotals = {
+  items: number;
+  qty: number;
+  subtotal: number;
+  itemDiscount: number;
+  invoiceDiscount: number;
+  discount: number;
+  tax: number;
+  grand: number;
+  taxableAmount: number;
+};
+
+export type HoldTransactionSnapshot = {
+  version: number;
+  cart: unknown[];
+  customerId: string;
+  customerName: string | null;
+  walkIn: boolean;
+  invoiceDiscount: string;
+  invoiceDiscountKind: "fixed" | "percentage";
+  invoiceDiscountPercent: number;
+  notes: string;
+  payments: unknown[];
+  cashReceived: string;
+  delivery: boolean;
+  priceLevel: string;
+  salesmanUserId: string;
+  commissionPercent: number;
+  referenceId: string;
+  locale: string;
+  mode: string;
+  useInstallment: boolean;
+  installmentCount: string;
+  downPayment: string;
+  installmentFrequency: string;
+  lateFeePercent: string;
+  lateFeeFixed: string;
+  isAdvance: boolean;
+  heldAtClient: string;
+  totals: HoldTransactionTotals | null;
+};
+
+function asString(v: unknown, fallback = ""): string {
+  return typeof v === "string" ? v : v == null ? fallback : String(v);
+}
+
+function asNumber(v: unknown, fallback = 0): number {
+  const n = typeof v === "number" ? v : Number(v);
+  return Number.isFinite(n) ? n : fallback;
+}
+
+function asBool(v: unknown, fallback = false): boolean {
+  return typeof v === "boolean" ? v : fallback;
+}
+
+/**
+ * Build the cart_snapshot written to held_sales.
+ * Parks exact line economics + session payment/discount state — never posts stock.
+ */
 export function buildHoldSnapshot(input: {
   cart: unknown[];
   customerId?: string | null;
+  customerName?: string | null;
   walkIn?: boolean;
   invoiceDiscount?: string;
+  invoiceDiscountKind?: "fixed" | "percentage";
+  invoiceDiscountPercent?: number;
   notes?: string;
   payments?: unknown[];
+  cashReceived?: string;
+  delivery?: boolean;
+  priceLevel?: string;
+  salesmanUserId?: string | null;
+  commissionPercent?: number;
+  referenceId?: string | null;
+  locale?: string;
+  mode?: string;
+  useInstallment?: boolean;
+  installmentCount?: string;
+  downPayment?: string;
+  installmentFrequency?: string;
+  lateFeePercent?: string;
+  lateFeeFixed?: string;
+  isAdvance?: boolean;
+  totals?: HoldTransactionTotals | null;
   [key: string]: unknown;
 }): Record<string, unknown> {
-  const snapshot = {
-    ...input,
+  const snapshot: HoldTransactionSnapshot = {
+    version: HOLD_SNAPSHOT_VERSION,
     cart: input.cart,
+    customerId: asString(input.customerId ?? ""),
+    customerName:
+      typeof input.customerName === "string" && input.customerName.trim()
+        ? input.customerName.trim()
+        : null,
+    walkIn: Boolean(input.walkIn),
+    invoiceDiscount: asString(input.invoiceDiscount ?? "0", "0"),
+    invoiceDiscountKind: input.invoiceDiscountKind === "percentage" ? "percentage" : "fixed",
+    invoiceDiscountPercent: asNumber(input.invoiceDiscountPercent, 0),
+    notes: asString(input.notes ?? ""),
+    payments: Array.isArray(input.payments) ? input.payments : [],
+    cashReceived: asString(input.cashReceived ?? ""),
+    delivery: Boolean(input.delivery),
+    priceLevel: asString(input.priceLevel ?? "retail", "retail"),
+    salesmanUserId: asString(input.salesmanUserId ?? ""),
+    commissionPercent: asNumber(input.commissionPercent, 0),
+    referenceId: asString(input.referenceId ?? ""),
+    locale: asString(input.locale ?? "en", "en"),
+    mode: asString(input.mode ?? "easy", "easy"),
+    useInstallment: Boolean(input.useInstallment),
+    installmentCount: asString(input.installmentCount ?? "3", "3"),
+    downPayment: asString(input.downPayment ?? "0", "0"),
+    installmentFrequency: asString(input.installmentFrequency ?? "monthly", "monthly"),
+    lateFeePercent: asString(input.lateFeePercent ?? "0", "0"),
+    lateFeeFixed: asString(input.lateFeeFixed ?? "0", "0"),
+    isAdvance: Boolean(input.isAdvance),
     heldAtClient: new Date().toISOString(),
+    totals: input.totals ?? null,
   };
-  assertHoldCartNonEmpty(snapshot);
-  return snapshot;
+  assertHoldCartNonEmpty(snapshot as unknown as Record<string, unknown>);
+  return snapshot as unknown as Record<string, unknown>;
+}
+
+/**
+ * Parse a parked cart_snapshot into a typed restore payload.
+ * Older snapshots missing fields get safe defaults; cart lines are always replaced.
+ */
+export function restoreHoldTransaction(snapshot: Record<string, unknown>): HoldTransactionSnapshot {
+  const cart = cartLinesForResume(snapshot);
+  const kind = snapshot.invoiceDiscountKind === "percentage" ? "percentage" : "fixed";
+  const totalsRaw = snapshot.totals;
+  let totals: HoldTransactionTotals | null = null;
+  if (totalsRaw && typeof totalsRaw === "object") {
+    const t = totalsRaw as Record<string, unknown>;
+    totals = {
+      items: asNumber(t.items),
+      qty: asNumber(t.qty),
+      subtotal: asNumber(t.subtotal),
+      itemDiscount: asNumber(t.itemDiscount),
+      invoiceDiscount: asNumber(t.invoiceDiscount),
+      discount: asNumber(t.discount),
+      tax: asNumber(t.tax),
+      grand: asNumber(t.grand),
+      taxableAmount: asNumber(t.taxableAmount),
+    };
+  }
+  return {
+    version: asNumber(snapshot.version, 0),
+    cart,
+    customerId: asString(snapshot.customerId ?? ""),
+    customerName:
+      typeof snapshot.customerName === "string" && snapshot.customerName.trim()
+        ? snapshot.customerName.trim()
+        : null,
+    walkIn: asBool(snapshot.walkIn, !asString(snapshot.customerId ?? "")),
+    invoiceDiscount: asString(snapshot.invoiceDiscount ?? "0", "0"),
+    invoiceDiscountKind: kind,
+    invoiceDiscountPercent: asNumber(snapshot.invoiceDiscountPercent, 0),
+    notes: asString(snapshot.notes ?? ""),
+    payments: Array.isArray(snapshot.payments) ? snapshot.payments : [],
+    cashReceived: asString(snapshot.cashReceived ?? ""),
+    delivery: asBool(snapshot.delivery),
+    priceLevel: asString(snapshot.priceLevel ?? "retail", "retail"),
+    salesmanUserId: asString(snapshot.salesmanUserId ?? ""),
+    commissionPercent: asNumber(snapshot.commissionPercent, 0),
+    referenceId: asString(snapshot.referenceId ?? ""),
+    locale: asString(snapshot.locale ?? "en", "en"),
+    mode: asString(snapshot.mode ?? "easy", "easy"),
+    useInstallment: asBool(snapshot.useInstallment),
+    installmentCount: asString(snapshot.installmentCount ?? "3", "3"),
+    downPayment: asString(snapshot.downPayment ?? "0", "0"),
+    installmentFrequency: asString(snapshot.installmentFrequency ?? "monthly", "monthly"),
+    lateFeePercent: asString(snapshot.lateFeePercent ?? "0", "0"),
+    lateFeeFixed: asString(snapshot.lateFeeFixed ?? "0", "0"),
+    isAdvance: asBool(snapshot.isAdvance),
+    heldAtClient: asString(snapshot.heldAtClient ?? ""),
+    totals,
+  };
 }
 
 export function nextStatusForAction(action: HeldSaleAction): HeldSaleStatus | null {

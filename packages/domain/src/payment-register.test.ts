@@ -26,6 +26,9 @@ describe("payment register display", () => {
     expect(isRecordOnlyPaymentKind("easypaisa")).toBe(true);
     expect(isRecordOnlyPaymentKind("sadapay")).toBe(true);
     expect(isRecordOnlyPaymentKind("online")).toBe(true);
+    expect(isRecordOnlyPaymentKind("other")).toBe(true);
+    expect(isRecordOnlyPaymentKind("credit")).toBe(false);
+    expect(isRecordOnlyPaymentKind("installment")).toBe(false);
   });
 
   it("searches receipt, invoice, and customer without requiring an id paste", () => {

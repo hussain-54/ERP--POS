@@ -68,6 +68,16 @@ describe("POS workspace chrome", () => {
       "Reports",
       "Settings",
     ]);
+    expect(POS_TERMINAL_NAV.map((item) => item.path)).toEqual([
+      "/pos",
+      "/held-sales",
+      "/pos/customers",
+      "/pos/products",
+      "/discounts",
+      "/pos/reports",
+      "/pos/settings",
+    ]);
+    expect(screen.getByRole("button", { name: "Menu" })).toBeInTheDocument();
   });
 
   it("maps canonical POS routes and aliases onto ownership helpers", () => {

@@ -32,9 +32,9 @@
   --pos-danger: #dc2626;
   --pos-danger-soft: #fef2f2;
 
-  --pos-navy: #111827;
-  --pos-navy-2: #1f2937;
-  --pos-navy-3: #374151;
+  --pos-navy: #0f1b33;
+  --pos-navy-2: #162440;
+  --pos-navy-3: #1e2f4d;
   --pos-nav-bg: var(--pos-navy);
   --pos-nav-ink: #e8eef8;
   --pos-nav-muted: #93a4c3;
@@ -561,7 +561,30 @@
 }
 
 .pos-terminal .pos-product-card-media {
-  height: 5.5rem;
+  height: 6rem;
+}
+
+.pos-terminal .pos-product-card-add {
+  margin-top: 0.375rem;
+  width: 100%;
+  min-height: 1.75rem;
+  border-radius: var(--pos-radius-sm);
+  border: 1px solid var(--pos-primary);
+  background: var(--pos-primary);
+  color: var(--pos-on-primary);
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.pos-terminal .pos-product-card-add:hover {
+  background: var(--pos-primary-hover);
+}
+
+.pos-terminal .pos-product-card-add:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
 }
 
 .pos-terminal .pos-pay-method-grid {

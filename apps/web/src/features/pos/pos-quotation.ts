@@ -48,9 +48,9 @@ export function confirmationStatusLabel(
   status: "idle" | "pending" | "success" | "failure" | "retry" | null | undefined,
 ): string | null {
   if (!status || status === "idle") return null;
-  if (status === "pending") return "Posting sale…";
-  if (status === "success") return "Sale posted";
-  if (status === "failure") return "Payment failed";
+  if (status === "pending") return "Processing payment…";
+  if (status === "success") return "Payment completed";
+  if (status === "failure") return "Payment could not be completed";
   if (status === "retry") return "Ready to retry";
   return null;
 }

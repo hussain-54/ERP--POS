@@ -42,13 +42,13 @@ export const PosTotals = memo(function PosTotals({ summary }: PosTotalsProps) {
         label="Delivery Charges"
         value={summary.deliveryCharges.toFixed(2)}
         muted
-        hint="Delivery is a sale flag only. POS checkout does not add a delivery fee."
+        hint="Delivery is a sale flag. Checkout adds a fee only when domain deliveryCharges is set."
       />
       <SummaryRow
         label="Round Off"
         value={summary.roundOff.toFixed(2)}
         muted
-        hint="Round off is not calculated by POS checkout yet."
+        hint="Round-off comes from calculateSaleTotals. Live POS currently posts 0."
       />
       <div className="pos-grand-block flex items-end justify-between border-t border-[var(--pos-border)] pt-2">
         <span className="text-sm font-semibold text-[var(--pos-ink)]">GRAND TOTAL</span>

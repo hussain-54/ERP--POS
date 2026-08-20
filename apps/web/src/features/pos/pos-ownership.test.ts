@@ -5,6 +5,7 @@ import {
   POS_ENVIRONMENT_PATHS,
   POS_IA_TITLES,
   POS_OWNERSHIP,
+  POS_TERMINAL_NAV,
   posNavItemForPath,
 } from "./pos-ownership";
 
@@ -34,6 +35,24 @@ describe("POS ownership map", () => {
     expect(sales?.path).toBe("/pos");
     expect(sales?.children.map((c) => c.title)).toEqual([...POS_IA_TITLES]);
     expect(sales?.children.map((c) => c.path)).toEqual(POS_OWNERSHIP.map((item) => item.canonical));
+    expect(POS_TERMINAL_NAV.map((item) => item.label)).toEqual([
+      "POS",
+      "Hold / Resume",
+      "Customers",
+      "Products",
+      "Price & Discount",
+      "Reports",
+      "Settings",
+    ]);
+    expect(POS_TERMINAL_NAV.map((item) => item.path)).toEqual([
+      "/pos",
+      "/held-sales",
+      "/pos/customers",
+      "/pos/products",
+      "/discounts",
+      "/pos/reports",
+      "/pos/settings",
+    ]);
   });
 
   it("registers canonical POS routes and preserves aliases", () => {

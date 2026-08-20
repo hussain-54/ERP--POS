@@ -2,8 +2,10 @@ import { describe, expect, it } from "vitest";
 import {
   PaymentAttemptGate,
   classifyPosPaymentType,
+  classifySaleSettlement,
   preparePosPayments,
   resolveCashTender,
+  resolveCheckoutIdempotencyKey,
   validatePosCreditPayment,
 } from "./pos-payment.js";
 import { buildInstallmentPlan, computeInstallmentLateFee, markOverdueSchedule } from "./installments.js";
@@ -38,12 +40,14 @@ describe("pos-payment methods and types", () => {
   });
 
   it("full payment via bank / card / wallets", () => {
+    const other = "88888888-8888-4888-8888-888888888888";
     for (const [id, kind] of [
       [bank, "bank"],
       [card, "card"],
       [jazz, "jazzcash"],
       [easy, "easypaisa"],
       [sada, "sadapay"],
+      [other, "other"],
     ] as const) {
       const prep = preparePosPayments({
         grandTotal: 500,
@@ -200,5 +204,81 @@ describe("pos-payment methods and types", () => {
         paidTowardBill: 100,
       }),
     ).toBe("full");
+  });
+
+  it("insufficient payment is rejected unless credit remainder is allowed", () => {
+    const walkIn = preparePosPayments({
+      grandTotal: 1000,
+      lines: [{ paymentMethodId: cash, kind: "cash", amount: 400 }],
+      walkIn: true,
+      hasCustomer: false,
+      allowCreditDue: false,
+    });
+    expect(walkIn.ok).toBe(false);
+    expect(walkIn.errors.join(" ")).toMatch(/walk-in|full|less than grand/i);
+
+    const noCredit = preparePosPayments({
+      grandTotal: 1000,
+      lines: [{ paymentMethodId: cash, kind: "cash", amount: 400 }],
+      walkIn: false,
+      hasCustomer: true,
+      allowCreditDue: false,
+      allowRemaining: false,
+    });
+    expect(noCredit.ok).toBe(false);
+    expect(noCredit.errors.join(" ")).toMatch(/less than grand/i);
+  });
+
+  it("installment and credit method rows are informational — they do not post payment splits", () => {
+    const installment = "99999999-9999-4999-8999-999999999999";
+    const prep = preparePosPayments({
+      grandTotal: 800,
+      lines: [
+        { paymentMethodId: cash, kind: "cash", amount: 200 },
+        { paymentMethodId: installment, kind: "installment", amount: 600 },
+      ],
+      walkIn: false,
+      hasCustomer: true,
+      allowCreditDue: true,
+      useInstallment: true,
+      allowRemaining: true,
+    });
+    expect(prep.ok).toBe(true);
+    expect(prep.paymentType).toBe("installment");
+    expect(prep.paidTowardBill).toBe(200);
+    expect(prep.remaining).toBe(600);
+    expect(prep.splits).toHaveLength(1);
+    expect(prep.splits[0]?.kind).toBe("cash");
+  });
+
+  it("classifySaleSettlement splits cash vs bank/record-only tenders", () => {
+    expect(classifySaleSettlement([{ amount: 100 }])).toEqual({ paidCash: 100, paidBank: 0 });
+    expect(
+      classifySaleSettlement([
+        { amount: 40, kind: "cash" },
+        { amount: 30, kind: "bank" },
+        { amount: 30, kind: "jazzcash" },
+      ]),
+    ).toEqual({ paidCash: 40, paidBank: 60 });
+    expect(classifySaleSettlement([{ amount: 50, kind: "card" }])).toEqual({
+      paidCash: 0,
+      paidBank: 50,
+    });
+  });
+
+  it("keeps the checkout UUID on failure/retry and rotates only after posted or new-sale", () => {
+    const current = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa";
+    expect(resolveCheckoutIdempotencyKey({ currentKey: current, event: "failed" })).toEqual({
+      keep: current,
+    });
+    expect(resolveCheckoutIdempotencyKey({ currentKey: current, event: "retry" })).toEqual({
+      keep: current,
+    });
+    expect(resolveCheckoutIdempotencyKey({ currentKey: current, event: "posted" })).toEqual({
+      rotate: true,
+    });
+    expect(resolveCheckoutIdempotencyKey({ currentKey: current, event: "new-sale" })).toEqual({
+      rotate: true,
+    });
   });
 });

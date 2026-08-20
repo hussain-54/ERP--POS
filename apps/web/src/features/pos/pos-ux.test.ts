@@ -45,10 +45,14 @@ describe("POS cashier UX helpers", () => {
 
   it("warns on low, last, and oversold stock without inventing availability", () => {
     expect(stockAvailabilityWarning("15", "1")).toBeNull();
-    expect(stockAvailabilityWarning("4", "1")).toBe("Low stock: 4");
-    expect(stockAvailabilityWarning("2", "2")).toBe("Last available units");
-    expect(stockAvailabilityWarning("1", "3")).toBe("Qty exceeds stock (1)");
-    expect(stockAvailabilityWarning("0", "1")).toBe("Out of stock");
+    expect(stockAvailabilityWarning("4", "1")).toBe("Low stock: 4 left");
+    expect(stockAvailabilityWarning("2", "2")).toBe("Last 2 units available");
+    expect(stockAvailabilityWarning("1", "3")).toBe(
+      "Only 1 in stock — reduce quantity or choose another product",
+    );
+    expect(stockAvailabilityWarning("0", "1")).toBe(
+      "Out of stock — this product cannot be sold right now",
+    );
     expect(stockAvailabilityWarning(null, "1")).toBeNull();
   });
 

@@ -3,7 +3,14 @@
  * Does not post, void, reverse, or talk to a payment gateway.
  */
 
-export const RECORD_ONLY_PAYMENT_KINDS = ["card", "jazzcash", "easypaisa", "sadapay", "online"] as const;
+export const RECORD_ONLY_PAYMENT_KINDS = [
+  "card",
+  "jazzcash",
+  "easypaisa",
+  "sadapay",
+  "online",
+  "other",
+] as const;
 
 export type PaymentDisplayStatus = "recorded" | "pending" | "failed" | "reversed";
 

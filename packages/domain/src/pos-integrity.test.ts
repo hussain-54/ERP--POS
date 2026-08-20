@@ -187,8 +187,18 @@ function createStore(opts?: { tax?: boolean; retail?: number }): {
     postCustomerSaleLedger: async (input) => {
       store.ledger.push({ customerId: input.customerId, amount: input.amount, saleId: input.saleId });
     },
+    reverseCustomerSaleLedger: async (input) => {
+      store.ledger.push({
+        customerId: input.customerId,
+        amount: `-${input.amount}`,
+        saleId: input.saleId,
+      });
+    },
     postSplitPayment: async (input) => {
       store.payments.push(input);
+    },
+    reverseSalePayments: async (input) => {
+      store.payments = store.payments.filter((p) => String(p.sourceId ?? "") !== input.saleId);
     },
     updateSalePaymentState: async (saleId, input) => {
       const sale = store.sales.find((s) => s.id === saleId);
@@ -671,6 +681,9 @@ describe("Phase 16 POS integrity — online write path", () => {
     expect(result.remainingTotal).toBe(0);
     const splits = store.payments[0]?.splits as Array<{ amount: string }>;
     expect(splits.map((s) => s.amount).sort()).toEqual(["40", "60"]);
+    const journal = store.journals[0] as { lines: Array<{ code: string; debit: number }> };
+    expect(journal.lines.find((l) => l.code === "1000")?.debit).toBe(40);
+    expect(journal.lines.find((l) => l.code === "1010")?.debit).toBe(60);
   });
 
   it("SCENARIO 15: cancel sale clears the local cart and never writes stock", () => {
@@ -775,5 +788,35 @@ describe("Phase 16 POS integrity — online write path", () => {
     expect(refreshed.id).not.toBe(posted.id);
     expect(store.sales).toHaveLength(2);
     expect(store.stock.get(product)).toBe(8);
+  });
+
+  it("SCENARIO 21: failed payment posting compensates stock and AR, then same key can retry", async () => {
+    const { store, ports, service } = createStore({ tax: false });
+    const originalPay = ports.postSplitPayment;
+    let failOnce = true;
+    ports.postSplitPayment = async (input) => {
+      if (failOnce) {
+        failOnce = false;
+        throw new Error("network");
+      }
+      return originalPay(input);
+    };
+    const input = cashSale({
+      customerId: customer,
+      idempotencyKey: key(22),
+      payments: [{ paymentMethodId: cash, amount: 100, methodKind: "cash" }],
+    });
+    await expect(service.postSale(input)).rejects.toThrow(/network/i);
+    expect(store.sales.filter((s) => s.status === "posted")).toHaveLength(0);
+    expect(store.sales[0]?.status).toBe("void");
+    expect(store.stock.get(product)).toBe(10);
+    expect(store.movements.some((m) => m.purpose === "reverse")).toBe(true);
+    expect(store.ledger.some((row) => row.amount.startsWith("-"))).toBe(true);
+    expect(store.payments).toHaveLength(0);
+
+    const retried = await service.postSale(input);
+    expect(retried.invoiceNumber).toBeTruthy();
+    expect(store.sales.filter((s) => s.status === "posted")).toHaveLength(1);
+    expect(store.stock.get(product)).toBe(9);
   });
 });

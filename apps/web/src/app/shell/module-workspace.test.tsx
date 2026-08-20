@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it } from "vitest";
-import { cleanup, fireEvent, render, screen, within } from "@testing-library/react";
+import { cleanup, render, screen, within } from "@testing-library/react";
 import { MemoryRouter } from "react-router-dom";
 import { AuthProvider } from "@/features/auth/AuthContext";
 import { ModuleWorkspace } from "./ModuleWorkspace";
@@ -21,35 +21,25 @@ function renderWorkspace(path: string) {
 }
 
 describe("ModuleWorkspace", () => {
-  it("uses one header and context nav for POS without a separate app shell", () => {
+  it("uses commercial POS chrome without a second module header stack", () => {
     renderWorkspace("/pos");
-    expect(screen.getByRole("heading", { name: "POS / SALES" })).toBeInTheDocument();
-    expect(screen.getByText("02")).toBeInTheDocument();
-    expect(screen.getByText(/Point of sale, billing, payments/i)).toBeInTheDocument();
-    expect(screen.getByPlaceholderText("Search sales...")).toBeInTheDocument();
-    const nav = screen.getByRole("navigation", { name: "POS / SALES workspace" });
-    expect(nav).toBeInTheDocument();
-    expect(nav.firstElementChild?.className).toContain("overflow-x-auto");
-    expect(document.querySelector("[data-erp-workspace-layout='stacked']")).toBeTruthy();
-    expect(within(nav).getByRole("link", { name: "Overview" })).toHaveAttribute("href", "/pos");
-    expect(within(nav).getByRole("link", { name: "Overview" })).toHaveAttribute("aria-current", "page");
-    expect(within(nav).getByRole("link", { name: "Hold / Resume" })).toHaveAttribute("href", "/held-sales");
-    expect(within(nav).getByRole("link", { name: "Invoices" })).toHaveAttribute("href", "/invoices");
-    expect(within(nav).getByRole("link", { name: "Payments" })).toHaveAttribute("href", "/payments");
-    expect(within(nav).getByRole("link", { name: "Returns" })).toHaveAttribute("href", "/returns");
+    expect(document.querySelector("[data-erp-workspace-layout='pos-terminal']")).toBeTruthy();
+    expect(screen.queryByRole("heading", { name: "POS / SALES" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("navigation", { name: "POS / SALES workspace" })).not.toBeInTheDocument();
+    expect(screen.getByLabelText("POS navigation")).toBeInTheDocument();
+    expect(screen.getByLabelText("POS status")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Menu" })).toBeInTheDocument();
+    expect(within(screen.getByLabelText("POS navigation")).getByRole("link", { name: "POS" })).toHaveAttribute(
+      "href",
+      "/pos",
+    );
     expect(screen.queryByLabelText("ERP modules")).not.toBeInTheDocument();
     expect(screen.getByText("Selected feature")).toBeInTheDocument();
   });
 
-  it("filters context navigation and highlights the selected POS feature", () => {
-    renderWorkspace("/invoices");
-    const nav = screen.getByRole("navigation", { name: "POS / SALES workspace" });
-    expect(within(nav).getByRole("link", { name: "Invoices" })).toHaveAttribute("aria-current", "page");
-    expect(within(nav).getByRole("link", { name: "Overview" })).not.toHaveAttribute("aria-current");
-    fireEvent.change(screen.getByRole("searchbox", { name: "Search POS / SALES" }), {
-      target: { value: "invoice" },
-    });
-    expect(within(nav).getByRole("link", { name: "Invoices" })).toBeInTheDocument();
-    expect(within(nav).queryByRole("link", { name: "Hold / Resume" })).not.toBeInTheDocument();
+  it("keeps stacked module chrome for non-POS workspaces", () => {
+    renderWorkspace("/inventory");
+    expect(document.querySelector("[data-erp-workspace-layout='stacked']")).toBeTruthy();
+    expect(screen.getByRole("heading", { name: /INVENTORY/i })).toBeInTheDocument();
   });
 });

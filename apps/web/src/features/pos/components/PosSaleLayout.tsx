@@ -32,10 +32,12 @@ export function PosSaleLayout({
   onCancelSale: () => void;
 }) {
   const ops = (
-    <div className="pos-sale-ops flex min-h-0 min-w-0 flex-col gap-3 overflow-hidden">
-      <div className="pos-sale-ops-customer min-h-0 shrink-0 overflow-auto">{customer}</div>
-      {cart}
-      <div className="shrink-0">{payment}</div>
+    <div className="pos-sale-ops flex min-h-0 min-w-0 flex-col overflow-hidden rounded-none border-0 shadow-none">
+      <div className="pos-sale-ops-customer min-h-0 shrink-0 overflow-auto border-b border-[var(--pos-border)] bg-[var(--pos-workspace)]">
+        {customer}
+      </div>
+      <div className="flex min-h-0 flex-1 flex-col overflow-hidden bg-[var(--pos-workspace)]">{cart}</div>
+      <div className="shrink-0 border-t border-[var(--pos-border)] bg-[var(--pos-workspace)]">{payment}</div>
     </div>
   );
 
@@ -123,8 +125,10 @@ export function PosSaleLayout({
   }
 
   return (
-    <div className={`${posSaleLayoutClass(chrome)} min-h-0 min-w-0 gap-3 overflow-hidden p-3`}>
-      {product}
+    <div className={`${posSaleLayoutClass(chrome)} min-h-0 min-w-0 gap-0 overflow-hidden border border-[var(--pos-border)] bg-[var(--pos-bg)]`}>
+      <div className="min-h-0 min-w-0 overflow-hidden border-r border-[var(--pos-border)] bg-[var(--pos-workspace)] p-3">
+        {product}
+      </div>
       {ops}
     </div>
   );

@@ -2,6 +2,7 @@ export * from "./errors.js";
 export * from "./authz-service.js";
 export * from "./sale-totals.js";
 export * from "./pos-cart.js";
+export * from "./pos-stock-availability.js";
 export * from "./pos-validation.js";
 export * from "./pos-customer.js";
 export * from "./unit-conversion.js";

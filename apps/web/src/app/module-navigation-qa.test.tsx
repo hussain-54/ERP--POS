@@ -10,6 +10,7 @@ import {
   ERP_STABLE_PARENT_PATHS,
   findSectionForPath,
   isComingSoonEngineSection,
+  isPosEnvironmentPath,
   isWorkspaceNavChild,
   resolveShellHeader,
 } from "@/app/modules";
@@ -198,11 +199,32 @@ describe("39-module navigation QA", () => {
       expect(screen.getAllByLabelText("ERP modules"), section.path).toHaveLength(1);
       expect(screen.queryByRole("link", { name: "ERP Home" }), section.path).not.toBeInTheDocument();
       expect(screen.queryByRole("heading", { name: "Page not found" }), section.path).not.toBeInTheDocument();
-      expect(screen.getByRole("heading", { level: 1, name: section.name }), section.path).toBeInTheDocument();
       expect(document.querySelector(`[data-module-workspace="${section.id}"]`), section.path).toBeTruthy();
       expect(parentLink(section.masterTitle, section.path), section.path).toHaveAttribute("aria-current", "page");
-      expect(screen.getByRole("navigation", { name: `${section.name} workspace` }), section.path).toBeInTheDocument();
-      expect(screen.getByRole("link", { name: "Overview" }), section.path).toHaveAttribute("href", section.path);
+
+      if (isPosEnvironmentPath(section.path)) {
+        expect(document.querySelector("[data-erp-workspace-layout='pos-terminal']"), section.path).toBeTruthy();
+        expect(screen.queryByRole("heading", { level: 1, name: section.name }), section.path).not.toBeInTheDocument();
+        expect(
+          screen.queryByRole("navigation", { name: `${section.name} workspace` }),
+          section.path,
+        ).not.toBeInTheDocument();
+        expect(screen.getByLabelText("POS navigation"), section.path).toBeInTheDocument();
+      } else {
+        expect(screen.getByRole("heading", { level: 1, name: section.name }), section.path).toBeInTheDocument();
+        expect(screen.getByRole("navigation", { name: `${section.name} workspace` }), section.path).toBeInTheDocument();
+        expect(screen.getByRole("link", { name: "Overview" }), section.path).toHaveAttribute("href", section.path);
+
+        const workspace = screen.getByRole("navigation", { name: `${section.name} workspace` });
+        for (const child of section.children.filter((item) => isWorkspaceNavChild(section, item))) {
+          expect(
+            within(workspace)
+              .getAllByRole("link")
+              .some((link) => link.getAttribute("href") === child.path && link.textContent?.includes(child.title)),
+            child.path,
+          ).toBe(true);
+        }
+      }
 
       if (section.status === "placeholder") {
         expect(screen.getAllByText(/Coming Soon/i).length, section.path).toBeGreaterThan(0);
@@ -211,15 +233,6 @@ describe("39-module navigation QA", () => {
         expect(IMPLEMENTED_ROUTES[section.path], section.path).toBeTruthy();
       }
 
-      const workspace = screen.getByRole("navigation", { name: `${section.name} workspace` });
-      for (const child of section.children.filter((item) => isWorkspaceNavChild(section, item))) {
-        expect(
-          within(workspace)
-            .getAllByRole("link")
-            .some((link) => link.getAttribute("href") === child.path && link.textContent?.includes(child.title)),
-          child.path,
-        ).toBe(true);
-      }
       unmount();
     }
   }, 120_000);
@@ -233,10 +246,25 @@ describe("39-module navigation QA", () => {
         expect(screen.getByLabelText("ERP modules"), child.path).toBeInTheDocument();
         expect(screen.getAllByLabelText("ERP modules"), child.path).toHaveLength(1);
         expect(screen.queryByRole("heading", { name: "Page not found" }), child.path).not.toBeInTheDocument();
-        expect(screen.getByRole("heading", { level: 1, name: section.name }), child.path).toBeInTheDocument();
         expect(document.querySelector(`[data-module-workspace="${section.id}"]`), child.path).toBeTruthy();
         expect(parentLink(section.masterTitle, section.path), child.path).toHaveAttribute("aria-current", "page");
-        expect(screen.getByRole("navigation", { name: `${section.name} workspace` }), child.path).toBeInTheDocument();
+
+        if (isPosEnvironmentPath(child.path)) {
+          expect(document.querySelector("[data-erp-workspace-layout='pos-terminal']"), child.path).toBeTruthy();
+          expect(screen.queryByRole("heading", { level: 1, name: section.name }), child.path).not.toBeInTheDocument();
+          expect(
+            screen.queryByRole("navigation", { name: `${section.name} workspace` }),
+            child.path,
+          ).not.toBeInTheDocument();
+          expect(screen.getByLabelText("POS navigation"), child.path).toBeInTheDocument();
+        } else {
+          expect(screen.getByRole("heading", { level: 1, name: section.name }), child.path).toBeInTheDocument();
+          expect(
+            screen.getByRole("navigation", { name: `${section.name} workspace` }),
+            child.path,
+          ).toBeInTheDocument();
+        }
+
         if (child.status === "placeholder") {
           expect(screen.getAllByText(/Coming Soon/i).length, child.path).toBeGreaterThan(0);
         }
@@ -254,7 +282,8 @@ describe("39-module navigation QA", () => {
     expect(posCard).toBeTruthy();
     fireEvent.click(posCard!);
     expect(screen.getByTestId("erp-location")).toHaveTextContent("/pos");
-    expect(screen.getByRole("heading", { level: 1, name: "POS / SALES" })).toBeInTheDocument();
+    expect(screen.queryByRole("heading", { level: 1, name: "POS / SALES" })).not.toBeInTheDocument();
+    expect(screen.getByLabelText("POS navigation")).toBeInTheDocument();
     expect(parentLink("POS / SALES", "/pos")).toHaveAttribute("aria-current", "page");
     fireEvent.click(screen.getByRole("button", { name: "History back" }));
     expect(screen.getByTestId("erp-location")).toHaveTextContent("/command-center");

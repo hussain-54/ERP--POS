@@ -1,4 +1,5 @@
 import { ValidationDomainError } from "./errors.js";
+import { roundMoney } from "./money.js";
 import { buildAuditRow, type AuditEntryInput } from "./audit-trail.js";
 
 export const RETURN_REASON_CODES = [
@@ -239,7 +240,7 @@ export function prepareSaleReturn(input: PrepareSaleReturnInput): PreparedSaleRe
       batchId: line.batchId ?? src.batchId ?? null,
       qty,
       maxReturnable: max,
-      lineTotal: Math.round(qty * line.unitPrice * 100) / 100,
+      lineTotal: roundMoney(qty * line.unitPrice),
       restockTarget: decision.target,
       restock: decision.restock,
     });
@@ -286,8 +287,7 @@ export function prepareSaleReturn(input: PrepareSaleReturnInput): PreparedSaleRe
     ? `${reasonLabel(input.reasonCode)}: ${detail}`
     : reasonLabel(input.reasonCode);
 
-  const refundAmount =
-    Math.round(prepared.reduce((s, l) => s + l.lineTotal, 0) * 100) / 100;
+  const refundAmount = roundMoney(prepared.reduce((s, l) => s + l.lineTotal, 0));
   assertRefundAmount(refundAmount);
 
   return {

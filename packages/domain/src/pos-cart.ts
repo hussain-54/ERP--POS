@@ -69,6 +69,8 @@ export interface PosCartLine {
   priceLevel?: PosPriceLevel;
   /** When true, qty/level changes must not overwrite a cashier override. */
   manualPrice?: boolean;
+  /** Stamped from session/catalog tax rate so line display matches checkout. */
+  taxPricingMode?: "inclusive" | "exclusive";
 }
 
 export interface PosPriceSource {
@@ -86,9 +88,17 @@ export interface PosCartTotals {
   discount: number;
   tax: number;
   grand: number;
+  taxableAmount: number;
+  deliveryCharges: number;
+  roundOff: number;
   saleTotals: SaleTotals | null;
   taxInvoice: TaxInvoiceSummary | null;
 }
+
+export type PosCartTotalsOptions = {
+  deliveryCharges?: number;
+  roundOff?: number;
+};
 
 export type CartOpResult = {
   cart: PosCartLine[];
@@ -139,7 +149,11 @@ export function lineTotal(line: PosCartLine): number {
   const price = roundMoney(moneyNumber(line.unitPrice));
   const disc = roundMoney(Math.max(0, moneyNumber(line.discount)));
   const tax = roundMoney(Math.max(0, moneyNumber(line.tax)));
-  return roundMoney(Math.max(0, roundMoney(q * price) - disc + tax));
+  const net = roundMoney(Math.max(0, roundMoney(q * price) - disc));
+  if (line.taxPricingMode === "inclusive") {
+    return net;
+  }
+  return roundMoney(Math.max(0, net + tax));
 }
 
 export function toSaleItems(cart: PosCartLine[]) {
@@ -151,6 +165,7 @@ export function toSaleItems(cart: PosCartLine[]) {
     discount: roundMoney(moneyNumber(c.discount)),
     discountPercent: c.discountPercent,
     tax: roundMoney(moneyNumber(c.tax)),
+    taxPricingMode: c.taxPricingMode,
     warrantyDays: c.warrantyDays,
     isManual: Boolean(c.isManual),
     manualName: c.isManual ? c.name : undefined,
@@ -161,16 +176,17 @@ export function calculatePosCartTotals(
   cart: PosCartLine[],
   invoiceDiscount: number | string = 0,
   taxRate?: PosTaxRate | null,
+  options: PosCartTotalsOptions = {},
 ): PosCartTotals {
   const requestedInvoice = Math.max(0, roundMoney(moneyNumber(invoiceDiscount)));
   let qtySum = 0;
-  let itemDiscount = 0;
   for (const line of cart) {
     qtySum += moneyNumber(line.qty);
-    itemDiscount += roundMoney(moneyNumber(line.discount));
   }
   qtySum = roundMoney(qtySum);
-  itemDiscount = roundMoney(itemDiscount);
+
+  const deliveryCharges = roundMoney(Math.max(0, moneyNumber(options.deliveryCharges)));
+  const roundOff = roundMoney(moneyNumber(options.roundOff));
 
   if (cart.length === 0) {
     return {
@@ -182,21 +198,34 @@ export function calculatePosCartTotals(
       discount: 0,
       tax: 0,
       grand: 0,
+      taxableAmount: 0,
+      deliveryCharges,
+      roundOff,
       saleTotals: null,
       taxInvoice: null,
     };
   }
 
-  const saleTotals = calculateSaleTotals(toSaleItems(cart), requestedInvoice);
+  const saleTotals = calculateSaleTotals(toSaleItems(cart), requestedInvoice, {
+    taxPricingMode: taxRate?.pricingMode,
+    deliveryCharges,
+    roundOff,
+  });
+
+  // Tax invoice uses STORED line.tax (same as grand) — do not recompute tax amounts.
   const taxInvoice = buildTaxInvoiceSummary(
     cart.map((line) => {
       const gross = roundMoney(moneyNumber(line.qty) * roundMoney(moneyNumber(line.unitPrice)));
       const disc = capLineDiscount(moneyNumber(line.qty), line.unitPrice, moneyNumber(line.discount));
-      const { displayNet, tax } = taxForLineNet(Math.max(0, gross - disc), taxRate ?? null);
-      return { taxableNet: displayNet, tax };
+      const amount = Math.max(0, gross - disc);
+      const mode = line.taxPricingMode ?? taxRate?.pricingMode ?? "exclusive";
+      const taxableNet =
+        mode === "inclusive" ? taxForLineNet(amount, taxRate ?? null).displayNet : amount;
+      return { taxableNet, tax: moneyNumber(line.tax) };
     }),
     taxRate ?? null,
   );
+
   return {
     items: cart.length,
     qty: qtySum,
@@ -206,6 +235,9 @@ export function calculatePosCartTotals(
     discount: saleTotals.discountTotal,
     tax: saleTotals.taxTotal,
     grand: saleTotals.grandTotal,
+    taxableAmount: saleTotals.taxableAmount,
+    deliveryCharges: saleTotals.deliveryCharges,
+    roundOff: saleTotals.roundOff,
     saleTotals,
     taxInvoice,
   };
@@ -363,6 +395,7 @@ function withRecalc(
     next.discount = capLineDiscount(moneyNumber(next.qty), next.unitPrice, moneyNumber(next.discount));
   }
   next.tax = lineTaxAmount(next.qty, next.unitPrice, next.discount, taxRate);
+  next.taxPricingMode = taxRate?.pricingMode ?? next.taxPricingMode ?? "exclusive";
   return next;
 }
 
@@ -408,6 +441,7 @@ export function createCartLineFromProduct(input: {
     unitPrice,
     discount: 0,
     tax: lineTaxAmount(qty, unitPrice, 0, input.taxRate),
+    taxPricingMode: input.taxRate?.pricingMode ?? "exclusive",
     warrantyDays: input.warrantyDays ?? 0,
     stock: input.stock,
     imageUrl: input.imageUrl,
@@ -452,6 +486,7 @@ export function createManualCartLine(input: {
     unitPrice: 0,
     discount: 0,
     tax: 0,
+    taxPricingMode: "exclusive",
     warrantyDays: 0,
     isManual: true,
   };

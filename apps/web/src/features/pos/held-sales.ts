@@ -125,18 +125,65 @@ export function snapshotCartLines(snapshot: Record<string, unknown> | undefined)
       sku: typeof row.sku === "string" ? row.sku : null,
       unitId: typeof row.unitId === "string" ? row.unitId : "",
       unitName: typeof row.unitName === "string" ? row.unitName : null,
+      unitSymbolPlaces:
+        typeof row.unitSymbolPlaces === "number" ? row.unitSymbolPlaces : undefined,
       qty,
       unitPrice,
       discount: Number(row.discount ?? 0) || 0,
+      discountPercent:
+        typeof row.discountPercent === "number" ? row.discountPercent : undefined,
       tax: Number(row.tax ?? 0) || 0,
+      taxPricingMode:
+        row.taxPricingMode === "inclusive" || row.taxPricingMode === "exclusive"
+          ? row.taxPricingMode
+          : undefined,
       warrantyDays: Number(row.warrantyDays ?? 0) || 0,
       isManual: Boolean(row.isManual),
+      stock: typeof row.stock === "string" ? row.stock : undefined,
+      retailPrice: typeof row.retailPrice === "number" ? row.retailPrice : undefined,
+      wholesalePrice: typeof row.wholesalePrice === "number" ? row.wholesalePrice : undefined,
+      dealerPrice: typeof row.dealerPrice === "number" ? row.dealerPrice : undefined,
+      customerPrice:
+        typeof row.customerPrice === "number" || row.customerPrice === null
+          ? (row.customerPrice as number | null)
+          : undefined,
+      promotionPrice:
+        typeof row.promotionPrice === "number" || row.promotionPrice === null
+          ? (row.promotionPrice as number | null)
+          : undefined,
+      priceLevel:
+        row.priceLevel === "retail" ||
+        row.priceLevel === "wholesale" ||
+        row.priceLevel === "dealer"
+          ? row.priceLevel
+          : undefined,
+      manualPrice: typeof row.manualPrice === "boolean" ? row.manualPrice : undefined,
     });
   }
   return lines;
 }
 
 export function snapshotTotals(snapshot: Record<string, unknown> | undefined) {
+  if (snapshot?.totals && typeof snapshot.totals === "object") {
+    const frozen = snapshot.totals as Record<string, unknown>;
+    if (typeof frozen.grand === "number" && Number.isFinite(frozen.grand)) {
+      return {
+        items: Number(frozen.items ?? 0) || 0,
+        qty: Number(frozen.qty ?? 0) || 0,
+        subtotal: Number(frozen.subtotal ?? 0) || 0,
+        itemDiscount: Number(frozen.itemDiscount ?? 0) || 0,
+        invoiceDiscount: Number(frozen.invoiceDiscount ?? 0) || 0,
+        discount: Number(frozen.discount ?? 0) || 0,
+        tax: Number(frozen.tax ?? 0) || 0,
+        grand: Number(frozen.grand ?? 0) || 0,
+        taxableAmount: Number(frozen.taxableAmount ?? frozen.subtotal ?? 0) || 0,
+        deliveryCharges: 0,
+        roundOff: 0,
+        saleTotals: null,
+        taxInvoice: null,
+      };
+    }
+  }
   const lines = snapshotCartLines(snapshot);
   const invoiceDiscount =
     typeof snapshot?.invoiceDiscount === "string" || typeof snapshot?.invoiceDiscount === "number"

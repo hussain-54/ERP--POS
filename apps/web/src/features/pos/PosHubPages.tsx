@@ -1,21 +1,28 @@
 import type { ReactNode } from "react";
 import { useNavigate } from "react-router-dom";
 import { POSBreadcrumb, POSButton, POSCard, POSPageHeader } from "./design-system";
+import { POS_OWNERSHIP } from "./pos-ownership";
 
-export const POS_REPORT_LINKS = [
-  { path: "/pos", title: "New Sale", description: "Ring a sale on this terminal." },
-  { path: "/held-sales", title: "Hold / Resume", description: "Parked tickets and resume." },
-  { path: "/invoices", title: "Invoices", description: "Posted sales register and reprints." },
-  { path: "/sales-management", title: "Register", description: "Shift, drawer totals, and close-out." },
-  { path: "/returns", title: "Returns", description: "Find an invoice and post a return." },
-  { path: "/exchange", title: "Exchange", description: "Return items and post a replacement sale." },
-  { path: "/payments", title: "Payments", description: "Receipt register and on-account collects." },
-  { path: "/discounts", title: "Discounts", description: "POS discount policy and approvals." },
-  { path: "/pos/references", title: "References", description: "Sale references from posted tickets." },
-  { path: "/pos/salesmen", title: "Salesmen", description: "POS salesman roster." },
-  { path: "/pos/installments", title: "Installments", description: "Installment plans from live records." },
-  { path: "/pos/settings", title: "Settings", description: "POS terminal, hardware, and tenders." },
-] as const;
+const POS_HUB_DESCRIPTIONS: Record<string, string> = {
+  "/pos": "Ring a sale on this terminal.",
+  "/held-sales": "Parked tickets and resume.",
+  "/invoices": "Posted sales register and reprints.",
+  "/sales-management": "Shift, drawer totals, and close-out.",
+  "/returns": "Find an invoice and post a return.",
+  "/exchange": "Return items and post a replacement sale.",
+  "/payments": "Receipt register and on-account collects.",
+  "/discounts": "POS discount policy and approvals.",
+  "/pos/references": "Sale references from posted tickets.",
+  "/pos/salesmen": "POS salesman roster.",
+  "/pos/installments": "Installment plans from live records.",
+  "/pos/settings": "POS terminal, hardware, and tenders.",
+};
+
+export const POS_REPORT_LINKS = POS_OWNERSHIP.map((item) => ({
+  path: item.canonical,
+  title: item.title,
+  description: POS_HUB_DESCRIPTIONS[item.canonical] ?? item.note,
+}));
 
 function HubShell({
   title,
@@ -67,9 +74,14 @@ export function PosProductsPage() {
         title="Product discovery"
         description="Barcode, search, favorites, and categories stay on New Sale. This screen does not load the full catalog."
       >
-        <POSButton size="sm" onClick={() => navigate("/pos")}>
-          Open POS
-        </POSButton>
+        <div className="flex flex-wrap gap-2">
+          <POSButton size="sm" onClick={() => navigate("/pos")}>
+            Open POS
+          </POSButton>
+          <POSButton size="sm" variant="secondary" onClick={() => navigate("/products/new")}>
+            Create product
+          </POSButton>
+        </div>
       </POSCard>
     </HubShell>
   );

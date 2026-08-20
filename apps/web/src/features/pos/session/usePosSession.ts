@@ -29,6 +29,7 @@ import {
   type PosTaxRate,
   type PosUnitOption,
 } from "@electronic-erp/domain";
+import { humanizeCartError } from "../pos-user-messages";
 
 export type PosSessionCustomer = PosCustomerProfile;
 
@@ -83,7 +84,7 @@ export function usePosSession() {
         });
         unitPrice = resolved.unitPrice;
       } catch (err) {
-        const error = err instanceof Error ? err.message : "Invalid price";
+        const error = humanizeCartError(err instanceof Error ? err.message : "Invalid price");
         setLastCartError(error);
         return { ok: false, error };
       }
@@ -146,7 +147,7 @@ export function usePosSession() {
             }
             const updated = updateCartLineQty(nextCart, key, desired, taxRate);
             if (!updated.ok) {
-              const error = updated.error ?? "Invalid quantity";
+              const error = humanizeCartError(updated.error ?? "Invalid quantity");
               setLastCartError(error);
               outcome = { ok: false, error };
               return prev;
@@ -157,7 +158,7 @@ export function usePosSession() {
           outcome = { ok: true, key };
           return nextCart;
         }
-        const error = result.error ?? "Cannot add product";
+        const error = humanizeCartError(result.error ?? "Cannot add product");
         setLastCartError(error);
         outcome = { ok: false, error };
         return prev;
@@ -180,7 +181,7 @@ export function usePosSession() {
           setLastCartError(null);
           return result.cart;
         }
-        setLastCartError(result.error ?? "Invalid quantity");
+        setLastCartError(humanizeCartError(result.error ?? "Invalid quantity"));
         return prev;
       });
     },
@@ -195,7 +196,7 @@ export function usePosSession() {
           setLastCartError(null);
           return result.cart;
         }
-        setLastCartError(result.error ?? "Cannot increase quantity");
+        setLastCartError(humanizeCartError(result.error ?? "Cannot increase quantity"));
         return prev;
       });
     },
@@ -210,7 +211,7 @@ export function usePosSession() {
           setLastCartError(null);
           return result.cart;
         }
-        setLastCartError(result.error ?? "Cannot decrease quantity");
+        setLastCartError(humanizeCartError(result.error ?? "Cannot decrease quantity"));
         return prev;
       });
     },
@@ -234,7 +235,7 @@ export function usePosSession() {
           allowManualOverride: true,
         });
       } catch (err) {
-        setLastCartError(err instanceof Error ? err.message : "Invalid price");
+        setLastCartError(humanizeCartError(err instanceof Error ? err.message : "Invalid price"));
         return;
       }
       setCartState((prev) => {
@@ -243,7 +244,7 @@ export function usePosSession() {
           setLastCartError(null);
           return result.cart;
         }
-        setLastCartError(result.error ?? "Invalid price");
+        setLastCartError(humanizeCartError(result.error ?? "Invalid price"));
         return prev;
       });
     },
@@ -266,7 +267,7 @@ export function usePosSession() {
           setLastCartError(null);
           return result.cart;
         }
-        setLastCartError(result.error ?? "Invalid discount");
+        setLastCartError(humanizeCartError(result.error ?? "Invalid discount"));
         return prev;
       });
     },
@@ -289,7 +290,7 @@ export function usePosSession() {
           setLastCartError(null);
           return result.cart;
         }
-        setLastCartError(result.error ?? "Invalid discount");
+        setLastCartError(humanizeCartError(result.error ?? "Invalid discount"));
         return prev;
       });
     },
@@ -304,7 +305,7 @@ export function usePosSession() {
           setLastCartError(null);
           return result.cart;
         }
-        setLastCartError(result.error ?? "Cannot change unit");
+        setLastCartError(humanizeCartError(result.error ?? "Cannot change unit"));
         return prev;
       });
     },

@@ -1,6 +1,7 @@
 import type { QuotationStatus, SalesOrderStatus } from "@electronic-erp/contracts";
 import type { QuoteLineInput } from "@electronic-erp/contracts";
 import { ValidationDomainError } from "./errors.js";
+import { calculateSaleTotals } from "./sale-totals.js";
 
 const QUOTE_TRANSITIONS: Record<QuotationStatus, QuotationStatus[]> = {
   draft: ["sent", "accepted", "cancelled"],
@@ -39,33 +40,14 @@ export interface QuoteTotals {
   grandTotal: number;
 }
 
-const round = (n: number) => Math.round(n * 100) / 100;
-
-function asNum(v: number | string | undefined, fallback = 0): number {
-  if (v == null) return fallback;
-  const n = typeof v === "number" ? v : Number(v);
-  return Number.isFinite(n) ? n : fallback;
-}
-
+/** Same engine as POS invoices — quotations cannot drift from sale math. */
 export function calculateQuoteTotals(items: QuoteLineInput[], invoiceDiscount = 0): QuoteTotals {
-  if (!items.length) throw new ValidationDomainError("At least one line required");
-  let subtotal = 0;
-  let lineDiscount = 0;
-  let taxTotal = 0;
-  for (const item of items) {
-    const qty = asNum(item.qty);
-    const price = asNum(item.unitPrice);
-    if (qty <= 0) throw new ValidationDomainError("Invalid quantity");
-    subtotal += qty * price;
-    lineDiscount += asNum(item.discount);
-    taxTotal += asNum(item.tax);
-  }
-  const discountTotal = round(lineDiscount + invoiceDiscount);
+  const totals = calculateSaleTotals(items, invoiceDiscount);
   return {
-    subtotal: round(subtotal),
-    discountTotal,
-    taxTotal: round(taxTotal),
-    grandTotal: round(Math.max(0, subtotal - discountTotal + taxTotal)),
+    subtotal: totals.subtotal,
+    discountTotal: totals.discountTotal,
+    taxTotal: totals.taxTotal,
+    grandTotal: totals.grandTotal,
   };
 }
 
