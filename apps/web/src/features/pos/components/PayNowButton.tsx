@@ -3,7 +3,7 @@ import { posCn } from "../design-system/posCn";
 
 export function PayNowButton({
   className,
-  children = "PAY NOW",
+  children = "PAY NOW →",
   ...props
 }: POSButtonProps) {
   return (

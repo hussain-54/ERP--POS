@@ -137,20 +137,36 @@ export const ProductAttributeValueSchema = z.object({
   valueBoolean: z.boolean().optional(),
 });
 
+const OptionalUuidSchema = z.preprocess(
+  (value) => (value === "" || value === null ? undefined : value),
+  UuidSchema.optional(),
+);
+
+const OptionalTrimmedSchema = z.preprocess(
+  (value) => (typeof value === "string" && value.trim() === "" ? undefined : value),
+  z.string().trim().max(250).optional(),
+);
+
 export const CreateProductMasterSchema = z.object({
   organizationId: UuidSchema,
-  productCode: z.string().min(1).max(64),
-  sku: z.string().min(1).max(64),
-  name: z.string().min(1).max(250),
-  nameUr: z.string().max(250).optional(),
-  shortDescription: z.string().max(500).optional(),
-  description: z.string().max(5000).optional(),
-  categoryId: UuidSchema.optional(),
-  subcategoryId: UuidSchema.optional(),
-  brandId: UuidSchema.optional(),
-  companyId: UuidSchema.optional(),
-  productTypeId: UuidSchema.optional(),
-  modelId: UuidSchema.optional(),
+  productCode: z.string().trim().min(1, "Product code is required").max(64),
+  sku: z.string().trim().min(1, "SKU is required").max(64),
+  name: z.string().trim().min(1, "Product name is required").max(250),
+  nameUr: OptionalTrimmedSchema,
+  shortDescription: z.preprocess(
+    (value) => (typeof value === "string" && value.trim() === "" ? undefined : value),
+    z.string().trim().max(500).optional(),
+  ),
+  description: z.preprocess(
+    (value) => (typeof value === "string" && value.trim() === "" ? undefined : value),
+    z.string().trim().max(5000).optional(),
+  ),
+  categoryId: OptionalUuidSchema,
+  subcategoryId: OptionalUuidSchema,
+  brandId: OptionalUuidSchema,
+  companyId: OptionalUuidSchema,
+  productTypeId: OptionalUuidSchema,
+  modelId: OptionalUuidSchema,
   baseUnitId: UuidSchema,
   warrantyDays: z.number().int().min(0).default(0),
   trackInventory: z.boolean().default(true),
@@ -165,7 +181,10 @@ export const CreateProductMasterSchema = z.object({
   dealerPrice: MoneySchema.default(0),
   specialPrice: MoneySchema.optional(),
   minimumSalePrice: MoneySchema.default(0),
-  primaryBarcode: z.string().max(64).optional(),
+  primaryBarcode: z.preprocess(
+    (value) => (typeof value === "string" && value.trim() === "" ? undefined : value),
+    z.string().trim().max(64).optional(),
+  ),
   specifications: ProductSpecificationsInputSchema.optional(),
   attributes: z.array(ProductAttributeValueSchema).default([]),
 });

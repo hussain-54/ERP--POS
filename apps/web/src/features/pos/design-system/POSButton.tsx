@@ -8,6 +8,8 @@ export interface POSButtonProps extends ButtonHTMLAttributes<HTMLButtonElement> 
   variant?: Variant;
   size?: Size;
   loading?: boolean;
+  /** Shown instead of children while loading (default: Loading…). */
+  loadingLabel?: string;
   leftIcon?: ReactNode;
 }
 
@@ -33,6 +35,7 @@ export function POSButton({
   variant = "primary",
   size = "md",
   loading,
+  loadingLabel,
   leftIcon,
   children,
   disabled,
@@ -58,7 +61,7 @@ export function POSButton({
       ) : (
         leftIcon
       )}
-      {loading ? "Loading…" : children}
+      {loading ? loadingLabel || "Loading…" : children}
     </button>
   );
 }

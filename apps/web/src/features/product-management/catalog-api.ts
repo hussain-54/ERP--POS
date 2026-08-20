@@ -13,6 +13,14 @@ function token(): string {
   return t;
 }
 
+/** Fired after product create/update so open POS / product lists can refetch without a full reload. */
+export const CATALOG_CHANGED_EVENT = "erp:catalog-changed";
+
+export function notifyCatalogChanged(detail?: { productId?: string }): void {
+  if (typeof window === "undefined") return;
+  window.dispatchEvent(new CustomEvent(CATALOG_CHANGED_EVENT, { detail }));
+}
+
 export const catalogApi = {
   listProducts(query: Partial<ProductListQuery> = {}) {
     const params = new URLSearchParams();
@@ -27,6 +35,7 @@ export const catalogApi = {
   getProduct(id: string) {
     return apiFetch<ProductMaster>(`/api/v1/catalog/products/${id}`, { token: token() });
   },
+  /** Canonical product writer. POS search/add does not create products. */
   createProduct(input: Omit<CreateProductMasterInput, "organizationId">) {
     return apiFetch<ProductMaster>("/api/v1/catalog/products", {
       method: "POST",

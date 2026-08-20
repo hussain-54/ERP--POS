@@ -22,6 +22,7 @@ describe("POS hub pages", () => {
     );
     expect(screen.getByRole("heading", { name: "Products" })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Open POS" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Create product" })).toBeInTheDocument();
     expect(screen.getByText(/does not load the full catalog/)).toBeInTheDocument();
   });
 

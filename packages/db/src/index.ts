@@ -1,4 +1,5 @@
 export * from "./client.js";
+export * from "./supabase-error.js";
 export * from "./repositories/user-repository.js";
 export * from "./repositories/catalog-repository.js";
 export * from "./repositories/inventory-repository.js";

@@ -1,15 +1,17 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
 import type { ProductSearchResult } from "@electronic-erp/contracts";
-import {
+  import {
   approverRoleFromPermissions,
   buildHoldSnapshot,
-  cartLinesForResume,
   evaluateDiscountApproval,
   evaluatePosCustomerCredit,
   pickExactProductMatch,
   preparePosPayments,
   PaymentAttemptGate,
+  restoreHoldTransaction,
+  roundMoney,
+  resolveCheckoutIdempotencyKey,
   validatePosCheckout,
   type InstallmentFrequency,
   type PosPaymentConfirmationStatus,
@@ -18,6 +20,7 @@ import type { HeldSaleFilter } from "@electronic-erp/contracts";
 import { useToast } from "@electronic-erp/ui";
 import { useAuth } from "@/features/auth/AuthContext";
 import { posApi } from "./pos-api";
+import { searchPosProducts } from "./pos-product-search";
 import { adminApi } from "@/features/users/admin-api";
 import {
   buildDiscountApprovalCreateBody,
@@ -45,7 +48,7 @@ import { PosPaymentPanel } from "./components/PosPaymentPanel";
 import { PosApprovalDialog } from "./components/PosApprovalDialog";
 import { ReceiptPreview, type InvoicePreview } from "./components/ReceiptPreview";
 import { PosHoldsPanel, type HeldSaleListItem } from "./components/PosHoldsPanel";
-import { catalogApi } from "@/features/product-management/catalog-api";
+import { catalogApi, CATALOG_CHANGED_EVENT } from "@/features/product-management/catalog-api";
 import { afterSalesApi } from "@/features/quotations/after-sales-api";
 import { usePosSession } from "./session/usePosSession";
 import { posCustomerRepository } from "./session/pos-customer-repository";
@@ -57,6 +60,7 @@ import {
   POS_PRODUCT_SEARCH_LIMIT,
   productsMatchingCategory,
 } from "./pos-catalog-load";
+import { cachedPosFetch, clearPosBootstrapCache } from "./pos-bootstrap-cache";
 import {
   appendCharToSearchInput,
   focusLastCartRate,
@@ -69,7 +73,6 @@ import {
   priceOverrideWarning,
   saleHasUnsavedWork,
   schedulePosFocus,
-  stockAvailabilityWarning,
 } from "./pos-ux";
 import { posActionFlags } from "./pos-security";
 import { type PosHoldNavigationState } from "./held-sales";
@@ -90,11 +93,17 @@ import {
   type ProductTab,
 } from "./pos-types";
 import {
-  formatOnlineFailure,
   INTERNET_REQUIRED_MESSAGE,
   INTERNET_REQUIRED_TITLE,
   requireInternetConnection,
 } from "@/lib/online-required";
+import {
+  formatPosFailure,
+  humanizeCartError,
+  logPosDeveloperError,
+  toPosUserDescription,
+  type PosCatalogFeedback,
+} from "./pos-user-messages";
 
 /** @deprecated use requireInternetConnection — kept name for call-site clarity in POS */
 function requireOnlineForPos(
@@ -198,6 +207,7 @@ export function PosPage({ entry = "sale" }: { entry?: "sale" | "holds" }) {
   const [selectedCategoryId, setSelectedCategoryId] = useState<string | null>(null);
   const [searchLimit, setSearchLimit] = useState(POS_PRODUCT_SEARCH_LIMIT);
   const [catalogHasMore, setCatalogHasMore] = useState(false);
+  const [catalogEpoch, setCatalogEpoch] = useState(0);
   const [warehouseId, setWarehouseId] = useState("");
   const [warehouses, setWarehouses] = useState<Array<{ id: string; name: string }>>([]);
   const [quoting, setQuoting] = useState(false);
@@ -206,6 +216,8 @@ export function PosPage({ entry = "sale" }: { entry?: "sale" | "holds" }) {
   >(null);
   const [customerQuery, setCustomerQuery] = useState("");
   const [customerHits, setCustomerHits] = useState<CustomerSearchHit[]>([]);
+  const [customerSearchError, setCustomerSearchError] = useState<string | null>(null);
+  const [catalogFeedback, setCatalogFeedback] = useState<PosCatalogFeedback | null>(null);
   const [pendingDiscount, setPendingDiscount] = useState<PendingDiscountRequest | null>(null);
   const [approvalReason, setApprovalReason] = useState("");
   const [approvalOpen, setApprovalOpen] = useState(false);
@@ -327,7 +339,7 @@ export function PosPage({ entry = "sale" }: { entry?: "sale" | "holds" }) {
   }, [holdEntry]);
 
   useEffect(() => {
-    void partiesApi.seedPaymentMethods().then((r) => {
+    void cachedPosFetch("pos:payment-methods", () => partiesApi.seedPaymentMethods()).then((r) => {
       const mapped = r.items.map((m) => ({
         id: String(m.id),
         name: String(m.name ?? m.kind ?? "Method"),
@@ -347,7 +359,7 @@ export function PosPage({ entry = "sale" }: { entry?: "sale" | "holds" }) {
         ]);
       }
     });
-    void inventoryApi.listWarehouses().then((r) => {
+    void cachedPosFetch("pos:warehouses", () => inventoryApi.listWarehouses()).then((r) => {
       const items = r.items.map((w) => ({
         id: String(w.id),
         name: String(w.name ?? w.code ?? "Warehouse"),
@@ -355,12 +367,10 @@ export function PosPage({ entry = "sale" }: { entry?: "sale" | "holds" }) {
       setWarehouses(items);
       if (items[0]) setWarehouseId(items[0].id);
     });
-    void enterpriseApi
-      .listEmployees()
+    void cachedPosFetch("pos:employees", () => enterpriseApi.listEmployees())
       .then((r) => setSalesmen(mapSalesmanEmployees(r.items)))
       .catch(() => undefined);
-    void enterpriseApi
-      .listReferences()
+    void cachedPosFetch("pos:references", () => enterpriseApi.listReferences())
       .then((r) =>
         setReferences(
           (r.items as Array<Record<string, unknown>>)
@@ -372,8 +382,7 @@ export function PosPage({ entry = "sale" }: { entry?: "sale" | "holds" }) {
         ),
       )
       .catch(() => undefined);
-    void enterpriseApi
-      .listTaxRates()
+    void cachedPosFetch("pos:tax-rates", () => enterpriseApi.listTaxRates())
       .then((r) => {
         const items = r.items as Array<Record<string, unknown>>;
         const preferred =
@@ -421,8 +430,7 @@ export function PosPage({ entry = "sale" }: { entry?: "sale" | "holds" }) {
 
   useEffect(() => {
     if (tab !== "categories" || categories.length) return;
-    void catalogApi
-      .listTaxonomy("categories")
+    void cachedPosFetch("pos:categories", () => catalogApi.listTaxonomy("categories"))
       .then((r) => {
         const items = (r as { items?: Array<Record<string, unknown>> }).items ?? [];
         setCategories(
@@ -434,6 +442,15 @@ export function PosPage({ entry = "sale" }: { entry?: "sale" | "holds" }) {
       })
       .catch(() => undefined);
   }, [tab, categories.length]);
+
+  useEffect(() => {
+    const onCatalogChanged = () => {
+      clearPosBootstrapCache("pos:categories");
+      setCatalogEpoch((n) => n + 1);
+    };
+    window.addEventListener(CATALOG_CHANGED_EVENT, onCatalogChanged);
+    return () => window.removeEventListener(CATALOG_CHANGED_EVENT, onCatalogChanged);
+  }, []);
 
   useEffect(() => {
     if (tab !== "categories" || q.trim()) return;
@@ -452,19 +469,18 @@ export function PosPage({ entry = "sale" }: { entry?: "sale" | "holds" }) {
     }
     const started = ++productSearchSeq.current;
     setSearching(true);
-    void posApi
-      .searchProducts({
-        q: categoryName,
-        warehouseId: warehouseId || undefined,
-        customerId: walkIn ? undefined : customerId || undefined,
-        limit: searchLimit,
-      })
-      .then((res) => {
+    void searchPosProducts({
+      q: categoryName,
+      warehouseId: warehouseId || undefined,
+      customerId: walkIn ? undefined : customerId || undefined,
+      limit: searchLimit,
+    })
+      .then((items) => {
         if (!isLatestRequest(productSearchSeq.current, started)) return;
         setCatalogHasMore(
-          res.items.length >= searchLimit && nextProductSearchLimit(searchLimit) > searchLimit,
+          items.length >= searchLimit && nextProductSearchLimit(searchLimit) > searchLimit,
         );
-        setResults(productsMatchingCategory(res.items, categoryName));
+        setResults(productsMatchingCategory(items, categoryName));
       })
       .catch(() => {
         if (!isLatestRequest(productSearchSeq.current, started)) return;
@@ -474,7 +490,7 @@ export function PosPage({ entry = "sale" }: { entry?: "sale" | "holds" }) {
         if (isLatestRequest(productSearchSeq.current, started)) setSearching(false);
       });
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [tab, selectedCategoryId, categories, warehouseId, customerId, walkIn, q, searchLimit, online]);
+  }, [tab, selectedCategoryId, categories, warehouseId, customerId, walkIn, q, searchLimit, online, catalogEpoch]);
 
   useEffect(() => {
     if (!q.trim()) {
@@ -489,37 +505,41 @@ export function PosPage({ entry = "sale" }: { entry?: "sale" | "holds" }) {
     setSearching(true);
     void (async () => {
       try {
-        const res = await posApi.searchProducts({
+        const items = await searchPosProducts({
           q,
           warehouseId: warehouseId || undefined,
           customerId: walkIn ? undefined : customerId || undefined,
           limit: searchLimit,
         });
         if (!isLatestRequest(productSearchSeq.current, started)) return;
-        setResults(res.items);
+        setResults(items);
+        setCatalogFeedback(null);
       } catch (err) {
         if (!isLatestRequest(productSearchSeq.current, started)) return;
-        const failed = formatOnlineFailure(err, "generic");
-        toast.push({
+        setResults([]);
+        const failed = formatPosFailure(err, "search");
+        setCatalogFeedback({
+          tone: "danger",
           title: failed.title,
           description: failed.description,
-          tone: "danger",
         });
       } finally {
         if (isLatestRequest(productSearchSeq.current, started)) setSearching(false);
       }
     })();
-  }, [q, warehouseId, customerId, walkIn, toast, online, tab, searchLimit]);
+  }, [q, warehouseId, customerId, walkIn, online, tab, searchLimit, catalogEpoch]);
 
   useEffect(() => {
     if (walkIn || !customerQuery.trim() || !hasPermission("customers.read")) {
       setCustomerHits([]);
+      setCustomerSearchError(null);
       return;
     }
     const orgId = organizationId ?? "";
     const started = ++customerSearchSeq.current;
     if (!online) {
       setCustomerHits([]);
+      setCustomerSearchError("Customer search needs an internet connection.");
       return;
     }
     void posCustomerRepository
@@ -529,10 +549,22 @@ export function PosPage({ entry = "sale" }: { entry?: "sale" | "holds" }) {
         canRead: hasPermission("customers.read"),
       })
       .then((hits) => {
-        if (isLatestRequest(customerSearchSeq.current, started)) setCustomerHits(hits);
+        if (isLatestRequest(customerSearchSeq.current, started)) {
+          setCustomerHits(hits);
+          setCustomerSearchError(null);
+        }
       })
-      .catch(() => {
-        if (isLatestRequest(customerSearchSeq.current, started)) setCustomerHits([]);
+      .catch((err) => {
+        if (isLatestRequest(customerSearchSeq.current, started)) {
+          logPosDeveloperError("customer-search", err);
+          setCustomerHits([]);
+          setCustomerSearchError(
+            toPosUserDescription(
+              err,
+              "Customers could not be searched. Check your connection and try again.",
+            ),
+          );
+        }
       });
   }, [customerQuery, walkIn, online, organizationId, hasPermission]);
 
@@ -561,22 +593,15 @@ export function PosPage({ entry = "sale" }: { entry?: "sale" | "holds" }) {
   const addProduct = useCallback((p: ProductSearchResult, qty?: string) => {
     const result = sessionAddProduct(p, undefined, qty);
     if (!result.ok) {
-      toast.push({
-        title: "Cannot add product",
-        description: result.error ?? "Check stock or quantity",
-        tone: "danger",
-      });
+      // lastCartError is set inline on the cart — avoid a duplicate toast.
       return false;
     }
     rememberRecent(p);
-    const warn = stockAvailabilityWarning(p.stockAvailable, qty ?? "1");
-    if (warn) {
-      toast.push({ title: warn, tone: "info" });
-    }
+    setCatalogFeedback(null);
     setQ("");
     queueMicrotask(() => searchRef.current?.focus());
     return true;
-  }, [sessionAddProduct, rememberRecent, toast]);
+  }, [sessionAddProduct, rememberRecent]);
   addProductRef.current = addProduct;
 
   const selectCategory = useCallback((id: string | null) => {
@@ -681,30 +706,46 @@ export function PosPage({ entry = "sale" }: { entry?: "sale" | "holds" }) {
       return;
     }
     if (!online) {
-      toast.push({ title: "Search unavailable while offline", tone: "danger" });
+      setCatalogFeedback({
+        tone: "danger",
+        title: "Search unavailable",
+        description: "Connect to the internet to search the product catalog.",
+      });
       return;
     }
     setSearching(true);
+    const started = ++productSearchSeq.current;
     try {
-      const res = await posApi.searchProducts({
+      const items = await searchPosProducts({
         q: needle,
         warehouseId: warehouseId || undefined,
         customerId: walkIn ? undefined : customerId || undefined,
       });
-      setResults(res.items);
+      if (!isLatestRequest(productSearchSeq.current, started)) return;
+      setResults(items);
       const match =
-        pickExactProductMatch(res.items, needle) ??
-        (res.items.length === 1 ? res.items[0] : null);
+        pickExactProductMatch(items, needle) ??
+        (items.length === 1 ? items[0] : null);
       if (!match) {
-        toast.push({ title: "No catalog match", description: needle, tone: "info" });
+        setCatalogFeedback({
+          tone: "info",
+          title: "No products found for this search.",
+          description: `Nothing matched “${needle}”. Try another name, barcode, SKU, brand, or category.`,
+        });
         return;
       }
+      setCatalogFeedback(null);
       addProduct(match, cmd.qty ?? undefined);
     } catch (err) {
-      const failed = formatOnlineFailure(err, "generic");
-      toast.push({ title: failed.title, description: failed.description, tone: "danger" });
+      if (!isLatestRequest(productSearchSeq.current, started)) return;
+      const failed = formatPosFailure(err, "search");
+      setCatalogFeedback({
+        tone: "danger",
+        title: failed.title,
+        description: failed.description,
+      });
     } finally {
-      setSearching(false);
+      if (isLatestRequest(productSearchSeq.current, started)) setSearching(false);
     }
   }
 
@@ -829,7 +870,7 @@ export function PosPage({ entry = "sale" }: { entry?: "sale" | "holds" }) {
     } catch (err) {
       toast.push({
         title: "Quotation failed",
-        description: err instanceof Error ? err.message : "Could not create quotation",
+        description: toPosUserDescription(err, "Could not create the quotation. Check your connection and try again."),
         tone: "danger",
       });
     } finally {
@@ -846,7 +887,7 @@ export function PosPage({ entry = "sale" }: { entry?: "sale" | "holds" }) {
   }
 
   function requestInvoiceDiscount(value: string) {
-    const base = Math.max(0, totals.subtotal - totals.itemDiscount);
+    const base = Math.max(0, roundMoney(totals.subtotal - totals.itemDiscount));
     const parsed = parseDiscountValueInput(value);
     let evaluated;
     try {
@@ -859,7 +900,7 @@ export function PosPage({ entry = "sale" }: { entry?: "sale" | "holds" }) {
     } catch (err) {
       toast.push({
         title: "Invalid discount",
-        description: err instanceof Error ? err.message : "Could not apply discount",
+        description: toPosUserDescription(err, "Could not apply the discount. Please try again."),
         tone: "danger",
       });
       return;
@@ -889,7 +930,7 @@ export function PosPage({ entry = "sale" }: { entry?: "sale" | "holds" }) {
     const line = cart.find((item) => item.key === key);
     if (!line) return;
     const parsed = parseDiscountValueInput(raw);
-    const base = Math.max(0, Number(line.qty) * Number(line.unitPrice));
+    const base = Math.max(0, roundMoney(Number(line.qty) * Number(line.unitPrice)));
     let evaluated;
     try {
       evaluated = evaluateDiscountAgainstPolicy({
@@ -901,7 +942,7 @@ export function PosPage({ entry = "sale" }: { entry?: "sale" | "holds" }) {
     } catch (err) {
       toast.push({
         title: "Invalid discount",
-        description: err instanceof Error ? err.message : "Could not apply discount",
+        description: toPosUserDescription(err, "Could not apply the discount. Please try again."),
         tone: "danger",
       });
       return;
@@ -978,7 +1019,7 @@ export function PosPage({ entry = "sale" }: { entry?: "sale" | "holds" }) {
     } catch (err) {
       toast.push({
         title: "Request failed",
-        description: err instanceof Error ? err.message : "Could not create approval",
+        description: toPosUserDescription(err, "Could not create the approval request. Please try again."),
         tone: "danger",
       });
     } finally {
@@ -1000,7 +1041,7 @@ export function PosPage({ entry = "sale" }: { entry?: "sale" | "holds" }) {
     } catch (err) {
       toast.push({
         title: "Customer load failed",
-        description: err instanceof Error ? err.message : "Error",
+        description: toPosUserDescription(err, "Please try again."),
         tone: "danger",
       });
     }
@@ -1030,7 +1071,7 @@ export function PosPage({ entry = "sale" }: { entry?: "sale" | "holds" }) {
     } catch (err) {
       toast.push({
         title: "Create customer failed",
-        description: err instanceof Error ? err.message : "Error",
+        description: toPosUserDescription(err, "Please try again."),
         tone: "danger",
       });
       throw err;
@@ -1072,7 +1113,7 @@ export function PosPage({ entry = "sale" }: { entry?: "sale" | "holds" }) {
     } catch (err) {
       toast.push({
         title: "Update failed",
-        description: err instanceof Error ? err.message : "Error",
+        description: toPosUserDescription(err, "Please try again."),
         tone: "danger",
       });
       throw err;
@@ -1105,10 +1146,12 @@ export function PosPage({ entry = "sale" }: { entry?: "sale" | "holds" }) {
         });
         applyCustomer(creditCustomer);
       } catch (err) {
-        const message = err instanceof Error ? err.message : "Could not refresh customer";
+        const message = toPosUserDescription(
+          err,
+          "Could not refresh this customer. Check your connection and try again.",
+        );
         setPaymentConfirmation("failure");
         setPaymentConfirmationError(message);
-        toast.push({ title: "Customer refresh failed", description: message, tone: "danger" });
         return;
       }
     }
@@ -1134,8 +1177,9 @@ export function PosPage({ entry = "sale" }: { entry?: "sale" | "holds" }) {
     });
     if (!prep.ok) {
       setPaymentConfirmation("failure");
-      setPaymentConfirmationError(prep.errors[0] ?? "Payment invalid");
-      toast.push({ title: prep.errors[0] ?? "Payment invalid", tone: "danger" });
+      setPaymentConfirmationError(
+        humanizeCartError(prep.errors[0] ?? "Payment is invalid. Check amounts and try again."),
+      );
       return;
     }
 
@@ -1152,8 +1196,9 @@ export function PosPage({ entry = "sale" }: { entry?: "sale" | "holds" }) {
     });
     if (!validation.ok) {
       setPaymentConfirmation("failure");
-      setPaymentConfirmationError(validation.errors[0] ?? "Checkout invalid");
-      toast.push({ title: validation.errors[0] ?? "Checkout invalid", tone: "danger" });
+      setPaymentConfirmationError(
+        humanizeCartError(validation.errors[0] ?? "Checkout is invalid. Review the cart and try again."),
+      );
       return;
     }
     if (!walkIn && creditCustomer && prep.remaining > 0) {
@@ -1163,18 +1208,15 @@ export function PosPage({ entry = "sale" }: { entry?: "sale" | "holds" }) {
       });
       if (creditCustomer.isBlocked) {
         setPaymentConfirmation("failure");
-        setPaymentConfirmationError("Customer is blocked");
-        toast.push({ title: "Customer is blocked", tone: "danger" });
+        setPaymentConfirmationError("This customer is blocked and cannot buy on credit.");
         return;
       }
       if (credit.requiresApproval && !hasPermission("credit.approve")) {
         setPaymentConfirmation("failure");
-        setPaymentConfirmationError(credit.reason ?? "Credit approval required");
-        toast.push({
-          title: "Credit approval required",
-          description: credit.reason ?? "Limit exceeded",
-          tone: "danger",
-        });
+        setPaymentConfirmationError(
+          credit.reason ??
+            "Credit approval is required before this sale can be completed.",
+        );
         return;
       }
     }
@@ -1190,8 +1232,12 @@ export function PosPage({ entry = "sale" }: { entry?: "sale" | "holds" }) {
     try {
       paymentGateRef.current.begin(idempotencyKey);
     } catch (err) {
-      const message = err instanceof Error ? err.message : "Duplicate payment blocked";
-      toast.push({ title: "Duplicate sale blocked", description: message, tone: "danger" });
+      const message = toPosUserDescription(
+        err,
+        "This payment is already being processed. Please wait.",
+      );
+      setPaymentConfirmation("failure");
+      setPaymentConfirmationError(message);
       return;
     }
 
@@ -1269,7 +1315,7 @@ export function PosPage({ entry = "sale" }: { entry?: "sale" | "holds" }) {
           } catch (err) {
             toast.push({
               title: "Sale posted; delivery note failed",
-              description: err instanceof Error ? err.message : "Create delivery manually",
+              description: toPosUserDescription(err, "Create the delivery note manually from Deliveries."),
               tone: "danger",
             });
           }
@@ -1299,16 +1345,12 @@ export function PosPage({ entry = "sale" }: { entry?: "sale" | "holds" }) {
         tone: "success",
       });
     } catch (err) {
-      const failed = formatOnlineFailure(err, "payment");
+      const failed = formatPosFailure(err, "payment");
       paymentGateRef.current.fail(idempotencyKey, failed.description);
       setPaymentConfirmation("failure");
       setPaymentConfirmationError(failed.description);
-      setCheckoutIdempotencyKey(uuid());
-      toast.push({
-        title: failed.title,
-        description: failed.description,
-        tone: "danger",
-      });
+      const nextKey = resolveCheckoutIdempotencyKey({ currentKey: idempotencyKey, event: "failed" });
+      if ("rotate" in nextKey) setCheckoutIdempotencyKey(uuid());
     } finally {
       payingRef.current = false;
       setBusy(false);
@@ -1317,10 +1359,37 @@ export function PosPage({ entry = "sale" }: { entry?: "sale" | "holds" }) {
 
   async function holdBill() {
     if (!canHold) {
-      toast.push({ title: "Hold requires pos.hold", tone: "danger" });
+      toast.push({
+        title: "Hold not available",
+        description: "This cashier needs pos.hold permission to hold a sale.",
+        tone: "danger",
+      });
       return;
     }
-    if (!branchId || !warehouseId || !cart.length) return;
+    if (!cart.length) {
+      toast.push({
+        title: "Nothing to hold",
+        description: "Add at least one product before holding this sale.",
+        tone: "info",
+      });
+      return;
+    }
+    if (!warehouseId) {
+      toast.push({
+        title: "Select a warehouse",
+        description: "A warehouse is required before holding this sale.",
+        tone: "info",
+      });
+      return;
+    }
+    if (!branchId) {
+      toast.push({
+        title: "No branch selected",
+        description: "Choose a branch before holding this sale.",
+        tone: "info",
+      });
+      return;
+    }
     if (busy || payingRef.current) return;
     if (!requireOnlineForPos(online, toast.push)) return;
     setBusy(true);
@@ -1328,16 +1397,39 @@ export function PosPage({ entry = "sale" }: { entry?: "sale" | "holds" }) {
       const cartSnapshot = buildHoldSnapshot({
         cart,
         customerId: walkIn ? "" : customerId,
+        customerName: walkIn ? null : customer?.name ?? null,
         walkIn,
         invoiceDiscount,
+        invoiceDiscountKind,
+        invoiceDiscountPercent,
         locale,
         mode,
         payments,
+        cashReceived,
         notes: holdNotes || notes,
         delivery,
         priceLevel,
         salesmanUserId,
+        commissionPercent,
         referenceId,
+        useInstallment,
+        installmentCount,
+        downPayment,
+        installmentFrequency,
+        lateFeePercent,
+        lateFeeFixed,
+        isAdvance,
+        totals: {
+          items: totals.items,
+          qty: totals.qty,
+          subtotal: totals.subtotal,
+          itemDiscount: totals.itemDiscount ?? 0,
+          invoiceDiscount: totals.invoiceDiscount ?? 0,
+          discount: totals.discount,
+          tax: totals.tax,
+          grand: totals.grand,
+          taxableAmount: totals.taxInvoice?.taxableAmount ?? totals.subtotal,
+        },
       });
       await posApi.hold({
         branchId,
@@ -1355,7 +1447,7 @@ export function PosPage({ entry = "sale" }: { entry?: "sale" | "holds" }) {
       await refreshHolds();
       setShowHolds(true);
     } catch (err) {
-      const failed = formatOnlineFailure(err, "hold");
+      const failed = formatPosFailure(err, "hold");
       toast.push({
         title: failed.title,
         description: failed.description,
@@ -1368,21 +1460,34 @@ export function PosPage({ entry = "sale" }: { entry?: "sale" | "holds" }) {
 
   function applyHoldSnapshot(snap: Record<string, unknown>) {
     // Always replace cart — never concat — to avoid duplicate lines on resume.
-    const lines = cartLinesForResume(snap) as CartLine[];
-    replaceCart(lines);
-    if (typeof snap.invoiceDiscount === "string") setInvoiceDiscount(snap.invoiceDiscount);
-    if (typeof snap.notes === "string") setNotes(snap.notes);
-    if (typeof snap.walkIn === "boolean") setWalkIn(snap.walkIn);
-    if (typeof snap.customerId === "string" && snap.customerId) {
-      void selectCustomer(snap.customerId);
-    } else if (snap.walkIn) {
+    const restored = restoreHoldTransaction(snap);
+    replaceCart(restored.cart as CartLine[]);
+    setInvoiceDiscount(restored.invoiceDiscount);
+    setInvoiceDiscountKind(restored.invoiceDiscountKind);
+    setInvoiceDiscountPercent(restored.invoiceDiscountPercent);
+    setNotes(restored.notes);
+    setWalkIn(restored.walkIn);
+    if (restored.customerId && !restored.walkIn) {
+      void selectCustomer(restored.customerId);
+    } else {
       selectWalkIn();
     }
-    if (Array.isArray(snap.payments)) setPayments(snap.payments as PaySplit[]);
-    if (typeof snap.priceLevel === "string") setPriceLevel(snap.priceLevel as PriceLevel);
-    if (typeof snap.salesmanUserId === "string") setSalesmanUserId(snap.salesmanUserId);
-    if (typeof snap.referenceId === "string") setReferenceId(snap.referenceId);
-    if (typeof snap.delivery === "boolean") setDelivery(snap.delivery);
+    setPayments(restored.payments as PaySplit[]);
+    setCashReceived(restored.cashReceived);
+    setPriceLevel(restored.priceLevel as PriceLevel);
+    setSalesmanUserId(restored.salesmanUserId);
+    setCommissionPercent(restored.commissionPercent);
+    setReferenceId(restored.referenceId);
+    setDelivery(restored.delivery);
+    setLocale(restored.locale as LocaleMode);
+    setMode(restored.mode as PosMode);
+    setUseInstallment(restored.useInstallment);
+    setInstallmentCount(restored.installmentCount);
+    setDownPayment(restored.downPayment);
+    setInstallmentFrequency(restored.installmentFrequency as InstallmentFrequency);
+    setLateFeePercent(restored.lateFeePercent);
+    setLateFeeFixed(restored.lateFeeFixed);
+    setIsAdvance(restored.isAdvance);
   }
 
   useEffect(() => {
@@ -1406,7 +1511,7 @@ export function PosPage({ entry = "sale" }: { entry?: "sale" | "holds" }) {
       } catch (err) {
         toast.push({
           title: "Could not restore held cart",
-          description: err instanceof Error ? err.message : "Resume the hold again from Hold / Resume",
+          description: toPosUserDescription(err, "Resume the hold again from Hold / Resume."),
           tone: "danger",
         });
       }
@@ -1417,6 +1522,8 @@ export function PosPage({ entry = "sale" }: { entry?: "sale" | "holds" }) {
 
   async function resume(id: string, andCheckout = false) {
     if (!requireOnlineForPos(online, toast.push)) return;
+    if (busy || payingRef.current) return;
+    setBusy(true);
     try {
       const held = await posApi.resumeHold(id, andCheckout);
       const snap =
@@ -1435,12 +1542,14 @@ export function PosPage({ entry = "sale" }: { entry?: "sale" | "holds" }) {
         setTimeout(() => void checkout(), 0);
       }
     } catch (err) {
-      const failed = formatOnlineFailure(err, "hold");
+      const failed = formatPosFailure(err, "hold");
       toast.push({
         title: failed.title,
         description: failed.description,
         tone: "danger",
       });
+    } finally {
+      setBusy(false);
     }
   }
 
@@ -1462,13 +1571,39 @@ export function PosPage({ entry = "sale" }: { entry?: "sale" | "holds" }) {
         cartSnapshot: buildHoldSnapshot({
           cart,
           customerId: walkIn ? "" : customerId,
+          customerName: walkIn ? null : customer?.name ?? null,
           walkIn,
           invoiceDiscount,
+          invoiceDiscountKind,
+          invoiceDiscountPercent,
           notes: note || notes,
           payments,
+          cashReceived,
           delivery,
           priceLevel,
           salesmanUserId,
+          commissionPercent,
+          referenceId,
+          locale,
+          mode,
+          useInstallment,
+          installmentCount,
+          downPayment,
+          installmentFrequency,
+          lateFeePercent,
+          lateFeeFixed,
+          isAdvance,
+          totals: {
+            items: totals.items,
+            qty: totals.qty,
+            subtotal: totals.subtotal,
+            itemDiscount: totals.itemDiscount ?? 0,
+            invoiceDiscount: totals.invoiceDiscount ?? 0,
+            discount: totals.discount,
+            tax: totals.tax,
+            grand: totals.grand,
+            taxableAmount: totals.taxInvoice?.taxableAmount ?? totals.subtotal,
+          },
         }),
         customerId: walkIn ? null : customerId || null,
       });
@@ -1477,7 +1612,7 @@ export function PosPage({ entry = "sale" }: { entry?: "sale" | "holds" }) {
     } catch (err) {
       toast.push({
         title: "Edit failed",
-        description: err instanceof Error ? err.message : "Error",
+        description: toPosUserDescription(err, "Please try again."),
         tone: "danger",
       });
     }
@@ -1492,7 +1627,7 @@ export function PosPage({ entry = "sale" }: { entry?: "sale" | "holds" }) {
     } catch (err) {
       toast.push({
         title: "Duplicate failed",
-        description: err instanceof Error ? err.message : "Error",
+        description: toPosUserDescription(err, "Please try again."),
         tone: "danger",
       });
     }
@@ -1508,7 +1643,7 @@ export function PosPage({ entry = "sale" }: { entry?: "sale" | "holds" }) {
     } catch (err) {
       toast.push({
         title: "Transfer failed",
-        description: err instanceof Error ? err.message : "Error",
+        description: toPosUserDescription(err, "Please try again."),
         tone: "danger",
       });
     }
@@ -1522,7 +1657,7 @@ export function PosPage({ entry = "sale" }: { entry?: "sale" | "holds" }) {
     } catch (err) {
       toast.push({
         title: "Cancel failed",
-        description: err instanceof Error ? err.message : "Error",
+        description: toPosUserDescription(err, "Please try again."),
         tone: "danger",
       });
     }
@@ -1536,7 +1671,7 @@ export function PosPage({ entry = "sale" }: { entry?: "sale" | "holds" }) {
     } catch (err) {
       toast.push({
         title: "Discard failed",
-        description: err instanceof Error ? err.message : "Error",
+        description: toPosUserDescription(err, "Please try again."),
         tone: "danger",
       });
     }
@@ -1614,7 +1749,10 @@ export function PosPage({ entry = "sale" }: { entry?: "sale" | "holds" }) {
       if (hwHint) setQ(hwHint);
       toast.push({
         title: "AI recognition unavailable",
-        description: err instanceof Error ? err.message : hw.error ?? "Fallback search",
+        description: toPosUserDescription(
+          err,
+          hw.error ?? "Use product search or scan a barcode instead.",
+        ),
         tone: "info",
       });
     }
@@ -1753,31 +1891,40 @@ export function PosPage({ entry = "sale" }: { entry?: "sale" | "holds" }) {
       scanLockRef.current = true;
       const cmd = parseProductSearchCommand(event.code);
       const needle = cmd.kind === "search" ? cmd.query : event.code;
-      void posApi
-        .searchProducts({
+      const started = ++productSearchSeq.current;
+      void searchPosProducts({
           q: needle,
           warehouseId: warehouseIdRef.current || undefined,
           customerId: walkInRef.current ? undefined : customerIdRef.current || undefined,
         })
-        .then((res) => {
-          setResults(res.items);
-          const match = pickExactProductMatch(res.items, needle) ?? res.items[0];
+        .then((items) => {
+          if (!isLatestRequest(productSearchSeq.current, started)) return;
+          setResults(items);
+          const match = pickExactProductMatch(items, needle) ?? items[0];
           if (match) {
             addProductRef.current(match, cmd.kind === "search" ? cmd.qty ?? undefined : undefined);
+            setCatalogFeedback(null);
           } else {
-            toast.push({ title: "No catalog match", description: needle, tone: "info" });
+            setCatalogFeedback({
+              tone: "info",
+              title: "No products found for this search.",
+              description: `Nothing matched “${needle}”. Try another barcode or SKU.`,
+            });
           }
           setQ("");
           searchRef.current?.focus();
         })
         .catch((err) => {
-          const failed = formatOnlineFailure(err, "generic");
-          toast.push({ title: failed.title, description: failed.description, tone: "danger" });
+          if (!isLatestRequest(productSearchSeq.current, started)) return;
+          const failed = formatPosFailure(err, "search");
+          setCatalogFeedback({
+            tone: "danger",
+            title: failed.title,
+            description: failed.description,
+          });
         })
         .finally(() => {
-          window.setTimeout(() => {
-            scanLockRef.current = false;
-          }, 80);
+          scanLockRef.current = false;
         });
     });
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -1800,8 +1947,20 @@ export function PosPage({ entry = "sale" }: { entry?: "sale" | "holds" }) {
   );
   const creditHint = useMemo(() => {
     if (!customer || walkIn) return null;
-    const paid = payments.reduce((s, p) => s + Number(p.amount || 0), 0);
-    const due = Math.max(0, totals.grand - paid);
+    const prep = preparePosPayments({
+      grandTotal: totals.grand,
+      lines: payments.map((p) => ({
+        paymentMethodId: p.paymentMethodId,
+        amount: p.amount,
+        amountReceived: p.amountReceived,
+        kind: p.methodKind,
+      })),
+      walkIn: false,
+      hasCustomer: true,
+      allowCreditDue: true,
+      allowRemaining: true,
+    });
+    const due = prep.remaining;
     if (due <= 0) return null;
     const credit = evaluatePosCustomerCredit({
       customer,
@@ -1830,11 +1989,11 @@ export function PosPage({ entry = "sale" }: { entry?: "sale" | "holds" }) {
         : quoteMapped.error;
   const canPayNow = Boolean(branchId && warehouseId && cart.length);
   const payBlockedReason = !branchId
-    ? "No branch selected"
+    ? "No branch selected — choose a branch to continue"
     : !warehouseId
-      ? "Select a warehouse"
+      ? "Select a warehouse before paying"
       : !cart.length
-        ? "Add products first"
+        ? "Add at least one product before paying"
         : null;
   const saleMeta = useMemo(
     () => (
@@ -1895,7 +2054,12 @@ export function PosPage({ entry = "sale" }: { entry?: "sale" | "holds" }) {
   pageOpsRef.current.retryPay = () => {
     setPaymentConfirmation("retry");
     setPaymentConfirmationError(null);
-    setCheckoutIdempotencyKey(uuid());
+    paymentGateRef.current.retry(checkoutIdempotencyKey);
+    const nextKey = resolveCheckoutIdempotencyKey({
+      currentKey: checkoutIdempotencyKey,
+      event: "retry",
+    });
+    if ("rotate" in nextKey) setCheckoutIdempotencyKey(uuid());
   };
   pageOpsRef.current.selectCustomer = (id) => {
     void selectCustomer(id);
@@ -1972,6 +2136,7 @@ export function PosPage({ entry = "sale" }: { entry?: "sale" | "holds" }) {
                 }
                 onLoadMore={onLoadMoreProducts}
                 meta={saleMeta}
+                catalogFeedback={catalogFeedback}
               />
             }
             customer={
@@ -2003,6 +2168,7 @@ export function PosPage({ entry = "sale" }: { entry?: "sale" | "holds" }) {
                 customerRef={customerRef}
                 advanced={advanced}
                 creditHint={creditHint}
+                searchError={customerSearchError}
               />
             }
             cart={

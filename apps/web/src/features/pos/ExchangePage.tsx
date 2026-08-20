@@ -27,6 +27,7 @@ import {
 } from "@/lib/online-required";
 import { PosInvoiceSearch, PosSaleReview, PosWorkflowAlert } from "./components/PosSaleReview";
 import { posApi } from "./pos-api";
+import { searchPosProducts } from "./pos-product-search";
 import { formatMoney } from "./sales-workspace";
 import {
   clampReturnQty,
@@ -299,12 +300,12 @@ export function ExchangePage() {
     }
     setSearchingProducts(true);
     try {
-      const res = await posApi.searchProducts({
+      const items = await searchPosProducts({
         q,
         warehouseId: warehouseId || undefined,
         customerId: sale?.customerId || undefined,
       });
-      setProductHits(res.items);
+      setProductHits(items);
     } catch (err) {
       toast.push({
         title: "Product search failed",

@@ -4,6 +4,7 @@ import { MemoryRouter } from "react-router-dom";
 import { AuthProvider } from "@/features/auth/AuthContext";
 import {
   POS_IA_TITLES,
+  POS_TERMINAL_NAV,
   posNavItemForPath,
 } from "./pos-ownership";
 import { POSShell } from "./design-system/POSShell";
@@ -41,11 +42,10 @@ function renderPos(path: string) {
 }
 
 describe("POS workspace chrome", () => {
-  it("keeps POS operational tools without replacing ERP navigation", () => {
+  it("keeps POS operational tools inside the ERP workspace without a second app shell", () => {
     renderPos("/pos");
     expect(screen.queryByLabelText("ERP modules")).not.toBeInTheDocument();
-    expect(screen.queryByLabelText("POS navigation")).not.toBeInTheDocument();
-    expect(screen.queryByLabelText("POS workspace")).not.toBeInTheDocument();
+    expect(screen.getByLabelText("POS navigation")).toBeInTheDocument();
     expect(screen.queryByRole("link", { name: "ERP Home" })).not.toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Cash Drawer" })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Close Shift" })).toBeInTheDocument();
@@ -59,6 +59,25 @@ describe("POS workspace chrome", () => {
     expect(screen.getByRole("button", { name: /F2/ })).toHaveAttribute("title", "F2 Hold / Resume");
     expect(screen.getByRole("button", { name: /F8/ })).toHaveAttribute("title", "F8 Cancel Sale");
     expect(POS_IA_TITLES).toHaveLength(12);
+    expect(POS_TERMINAL_NAV.map((item) => item.label)).toEqual([
+      "POS",
+      "Hold / Resume",
+      "Customers",
+      "Products",
+      "Price & Discount",
+      "Reports",
+      "Settings",
+    ]);
+    expect(POS_TERMINAL_NAV.map((item) => item.path)).toEqual([
+      "/pos",
+      "/held-sales",
+      "/pos/customers",
+      "/pos/products",
+      "/discounts",
+      "/pos/reports",
+      "/pos/settings",
+    ]);
+    expect(screen.getByRole("button", { name: "Menu" })).toBeInTheDocument();
   });
 
   it("maps canonical POS routes and aliases onto ownership helpers", () => {
@@ -74,16 +93,15 @@ describe("POS workspace chrome", () => {
     expect(posNavItemForPath("/pos/settings")?.title).toBe("Settings");
   });
 
-  it("keeps a compact POS status strip without duplicating ERP chrome", () => {
+  it("keeps a compact POS status strip with branch, terminal, cashier, and shift", () => {
     renderPos("/pos");
-    expect(screen.queryByRole("button", { name: "Menu" })).not.toBeInTheDocument();
-    expect(screen.queryByLabelText("Branch")).not.toBeInTheDocument();
+    expect(screen.getByLabelText("POS Branch")).toBeInTheDocument();
     expect(screen.getByLabelText("POS Terminal")).toBeInTheDocument();
     expect(screen.getByLabelText("Cashier")).toBeInTheDocument();
     expect(screen.getByLabelText("Shift Status")).toBeInTheDocument();
     expect(screen.getByLabelText("Date / Time")).toBeInTheDocument();
     expect(screen.getByRole("link", { name: "Held Sales" })).toHaveAttribute("href", "/held-sales");
-    expect(screen.queryByRole("link", { name: "Notifications" })).not.toBeInTheDocument();
-    expect(screen.queryByRole("button", { name: "User" })).not.toBeInTheDocument();
+    expect(screen.getByRole("link", { name: "POS Notifications" })).toHaveAttribute("href", "/notifications");
+    expect(screen.getByLabelText("POS User")).toBeInTheDocument();
   });
 });

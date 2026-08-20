@@ -4,6 +4,7 @@
  */
 export { posCn } from "./posCn";
 export { POSShell } from "./POSShell";
+export { POSTerminalNav } from "./POSTerminalNav";
 export { POSHeader } from "./POSHeader";
 export { POSWorkspace } from "./POSWorkspace";
 export { POSShortcutBar } from "./POSShortcutBar";

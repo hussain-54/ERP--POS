@@ -110,7 +110,7 @@ describe("Hold / Resume display helpers", () => {
     expect(displayCashierName({ heldBy: null }, {})).toBe("—");
   });
 
-  it("reads cart snapshot lines and totals from the parked cart", () => {
+  it("reads cart snapshot lines and prefers frozen totals from hold time", () => {
     const lines = snapshotCartLines(base.cartSnapshot);
     expect(lines).toHaveLength(1);
     expect(lines[0]?.name).toBe("LED Bulb");
@@ -119,6 +119,23 @@ describe("Hold / Resume display helpers", () => {
     expect(totals?.items).toBe(1);
     expect(totals?.qty).toBe(2);
     expect(totals?.grand).toBe(500);
+
+    const frozen = snapshotTotals({
+      ...base.cartSnapshot,
+      totals: {
+        items: 1,
+        qty: 2,
+        subtotal: 500,
+        itemDiscount: 0,
+        invoiceDiscount: 50,
+        discount: 50,
+        tax: 0,
+        grand: 450,
+        taxableAmount: 450,
+      },
+    });
+    expect(frozen?.grand).toBe(450);
+    expect(frozen?.discount).toBe(50);
   });
 
   it("searches hold #, customer, and cashier names", () => {

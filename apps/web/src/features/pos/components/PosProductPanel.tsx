@@ -15,10 +15,15 @@ import {
   POSButton,
   POSCard,
   POSEmptyState,
+  POSErrorState,
   POSLoadingState,
   POSSearch,
   POSTabs,
 } from "../design-system";
+import {
+  productSearchEmptyCopy,
+  type PosCatalogFeedback,
+} from "../pos-user-messages";
 import { PosDiscoveryTools } from "./PosDiscoveryTools";
 
 interface CategoryOption {
@@ -52,6 +57,8 @@ interface Props {
   hasMore?: boolean;
   onLoadMore?: () => void;
   meta?: ReactNode;
+  /** Inline catalog feedback (search miss / load error). Prefer over toasts. */
+  catalogFeedback?: PosCatalogFeedback | null;
 }
 
 const DISCOVERY_TABS: { id: ProductTab; label: string }[] = [
@@ -141,7 +148,7 @@ const ProductCard = memo(function ProductCard({
         className="flex flex-1 flex-col text-left focus:outline-none focus-visible:shadow-[var(--pos-focus)]"
       >
         <div
-          className="pos-product-card-media relative flex h-16 items-center justify-center bg-[var(--pos-muted-bg)]"
+          className="pos-product-card-media relative flex items-center justify-center bg-[var(--pos-muted-bg)]"
           title={showPhoto ? title : "Product photos are not included in POS search"}
         >
           {showPhoto ? (
@@ -170,7 +177,7 @@ const ProductCard = memo(function ProductCard({
             </span>
           ) : null}
         </div>
-        <div className="flex flex-1 flex-col gap-0.5 p-1.5">
+        <div className="flex flex-1 flex-col gap-0.5 p-1.5 pb-0">
           <div className="line-clamp-2 text-[12px] font-medium leading-snug text-[var(--pos-ink)]">{title}</div>
           {p.brand?.trim() ? (
             <div className="truncate text-[10px] text-[var(--pos-muted)]">{p.brand}</div>
@@ -185,12 +192,20 @@ const ProductCard = memo(function ProductCard({
                 {stock != null ? `Stock ${p.stockAvailable}` : "Stock —"}
               </div>
             </div>
-            <span className="rounded-[var(--pos-radius-sm)] bg-[var(--pos-primary)] px-1.5 py-0.5 text-[10px] font-medium text-white">
-              Add
-            </span>
           </div>
         </div>
       </button>
+      <div className="p-1.5 pt-1">
+        <button
+          type="button"
+          className="pos-product-card-add"
+          disabled={outOfStock}
+          title={outOfStock ? "Out of stock — this product cannot be sold right now" : "Add to cart"}
+          onClick={() => onAdd(p)}
+        >
+          {outOfStock ? "Out of stock" : "Add"}
+        </button>
+      </div>
     </div>
   );
 });
@@ -221,6 +236,7 @@ export const PosProductPanel = memo(function PosProductPanel({
   hasMore = false,
   onLoadMore,
   meta,
+  catalogFeedback = null,
 }: Props) {
   const searchingCatalog = query.trim().length > 0;
   const [draft, setDraft] = useState(query);
@@ -278,24 +294,15 @@ export const PosProductPanel = memo(function PosProductPanel({
     if (visibleCount >= list.length) onLoadMore?.();
   }
 
-  const emptyTitle = searchingCatalog
-    ? "No catalog match"
-    : visibleTab === "favorites"
-      ? "No favorites yet"
-      : visibleTab === "categories"
-        ? "No products in this category"
-        : "No recent products";
-  const emptyDescription = searchingCatalog
-    ? "Try name, barcode, SKU, brand, model, or category. Only live catalog items are shown."
-    : visibleTab === "favorites"
-      ? "Tap ★ on a product card to keep it here for fast add."
-      : visibleTab === "categories"
-        ? "Choose a category or search by name, barcode, SKU, brand, or model."
-        : "Add a catalog product and it will appear here. Nothing is pre-loaded.";
+  const empty = productSearchEmptyCopy({
+    searchingCatalog,
+    tab: visibleTab,
+    query,
+  });
 
   return (
     <section className="pos-product-discovery flex min-h-0 flex-1 flex-col">
-      <div className="pos-product-search-block shrink-0 space-y-2">
+        <div className="pos-product-search-block shrink-0 space-y-2">
         <POSSearch
           ref={searchRef as React.RefObject<HTMLInputElement>}
           aria-label="Product search"
@@ -326,13 +333,14 @@ export const PosProductPanel = memo(function PosProductPanel({
           title="Type to search · ↑↓ navigate · Enter add · Esc clear"
         />
 
-        <div className="flex flex-wrap items-center justify-between gap-2">
-          <PosDiscoveryTools
-            onBarcodeScan={onBarcodeScanHint}
-            onQrScan={onQrScan}
-            onCamera={onCamera}
-            onManualEntry={onManualEntry}
-          />
+        <PosDiscoveryTools
+          onBarcodeScan={onBarcodeScanHint}
+          onQrScan={onQrScan}
+          onCamera={onCamera}
+          onManualEntry={onManualEntry}
+        />
+
+        <div className="flex flex-wrap items-center justify-end gap-2">
           {meta}
           <POSBadge tone={searching ? "warning" : "neutral"}>
             {searching ? "Searching…" : `${list.length} items`}
@@ -376,7 +384,17 @@ export const PosProductPanel = memo(function PosProductPanel({
           <POSLoadingState label="Searching products…" rows={5} />
         ) : list.length === 0 ? (
           <POSCard className="border-dashed">
-            <POSEmptyState title={emptyTitle} description={emptyDescription} />
+            {catalogFeedback?.tone === "danger" ? (
+              <POSErrorState
+                title={catalogFeedback.title}
+                description={catalogFeedback.description}
+              />
+            ) : (
+              <POSEmptyState
+                title={catalogFeedback?.title ?? empty.title}
+                description={catalogFeedback?.description ?? empty.description}
+              />
+            )}
           </POSCard>
         ) : (
           <>

@@ -45,8 +45,8 @@ describe("POS quotation mapping", () => {
 
 describe("POS operator-facing labels", () => {
   it("never exposes raw confirmation status tokens", () => {
-    expect(confirmationStatusLabel("pending")).toBe("Posting sale…");
-    expect(confirmationStatusLabel("failure")).toBe("Payment failed");
+    expect(confirmationStatusLabel("pending")).toBe("Processing payment…");
+    expect(confirmationStatusLabel("failure")).toBe("Payment could not be completed");
     expect(paymentTypeLabel("credit")).toBe("Credit / Udhar");
   });
 });

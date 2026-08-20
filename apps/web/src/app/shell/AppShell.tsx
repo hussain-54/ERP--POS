@@ -97,11 +97,21 @@ export function AppShell() {
     };
   }, [mobileOpen]);
 
+  useEffect(() => {
+    function onPosToggleErpNav() {
+      if (overlayNav) setMobileOpen(true);
+      else setCollapsed((value) => !value);
+    }
+    window.addEventListener("pos:toggle-erp-nav", onPosToggleErpNav);
+    return () => window.removeEventListener("pos:toggle-erp-nav", onPosToggleErpNav);
+  }, [overlayNav]);
+
   function closeDrawer() {
     setMobileOpen(false);
   }
 
   const navMode = overlayNav ? (mobileOpen ? "drawer-open" : "drawer") : compact ? "collapsed" : "expanded";
+  const posChrome = isPosEnvironmentPath(location.pathname);
 
   return (
     <div
@@ -125,22 +135,24 @@ export function AppShell() {
       />
 
       <div className={`flex min-w-0 max-w-full flex-col ${fillWorkspace ? "h-full min-h-0 overflow-hidden" : ""}`}>
-        <GlobalHeader
-          compact={mode === "mobile"}
-          moduleTitle={header.moduleTitle}
-          pageTitle={header.pageTitle}
-          mobileOpen={mobileOpen}
-          onOpenMobileNav={() => setMobileOpen(true)}
-          onOpenSearch={() => setCommandOpen(true)}
-          branchId={branchId}
-          branches={branches}
-          onBranchChange={setBranchId}
-          userName={user?.fullName ?? "User"}
-          showAudit={hasPermission("audit.view")}
-          onLogout={() => {
-            void logout();
-          }}
-        />
+        {posChrome ? null : (
+          <GlobalHeader
+            compact={mode === "mobile"}
+            moduleTitle={header.moduleTitle}
+            pageTitle={header.pageTitle}
+            mobileOpen={mobileOpen}
+            onOpenMobileNav={() => setMobileOpen(true)}
+            onOpenSearch={() => setCommandOpen(true)}
+            branchId={branchId}
+            branches={branches}
+            onBranchChange={setBranchId}
+            userName={user?.fullName ?? "User"}
+            showAudit={hasPermission("audit.view")}
+            onLogout={() => {
+              void logout();
+            }}
+          />
+        )}
 
         <main
           className={

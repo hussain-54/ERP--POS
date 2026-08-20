@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState } from "react";
 import { adminApi } from "@/features/users/admin-api";
 import { infrastructureApi } from "@/features/system/infrastructure-api";
 import { posApi } from "../pos-api";
+import { cachedPosFetch } from "../pos-bootstrap-cache";
 import { POS_TERMINAL_STORAGE_KEY } from "../pos-layout";
 import { formatRegisterMoney, parseCashShift } from "../register-shift";
 
@@ -73,7 +74,7 @@ export function usePosShellStatus(
     }
     let cancelled = false;
     void posApi
-      .listHolds(branchId)
+      .listHolds(branchId, undefined, { applyExpiry: false })
       .then((res) => {
         if (!cancelled) setHoldCount(res.items.length);
       })
@@ -117,8 +118,7 @@ export function usePosShellStatus(
     const scopedIds = branchIdsKey ? branchIdsKey.split("\0") : [];
     let cancelled = false;
     try {
-      void adminApi
-        .listBranches()
+      void cachedPosFetch("pos:branches", () => adminApi.listBranches())
         .then((res) => {
           if (cancelled) return;
           const byId = new Map(
@@ -139,8 +139,7 @@ export function usePosShellStatus(
       setBranchOptions(scopedIds.map((id) => ({ value: id, label: `Branch ${id.slice(0, 8)}` })));
     }
     try {
-      void infrastructureApi
-        .devices()
+      void cachedPosFetch("pos:devices", () => infrastructureApi.devices())
         .then((res) => {
           if (cancelled) return;
           const options = res.items

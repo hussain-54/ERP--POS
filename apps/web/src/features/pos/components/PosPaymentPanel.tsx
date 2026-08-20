@@ -504,7 +504,17 @@ export const PosPaymentPanel = memo(function PosPaymentPanel({
         <HoldSaleButton
           onClick={onHold}
           disabled={busy || !canPay || !canHold}
-          title={canHold ? "F2 Hold" : "Requires pos.hold"}
+          loading={busy && confirmation !== "pending"}
+          loadingLabel="Holding sale…"
+          title={
+            !canHold
+              ? "Requires pos.hold permission"
+              : !canPay
+                ? payBlockedReason ?? "Add products before holding"
+                : busy
+                  ? "Hold in progress…"
+                  : "F2 Hold"
+          }
         />
         <QuotationButton
           onClick={onQuotation}
@@ -523,9 +533,14 @@ export const PosPaymentPanel = memo(function PosPaymentPanel({
           onDoubleClick={(event) => event.preventDefault()}
           disabled={payBlocked || !prep.ok || !methods.length}
           loading={busy || confirmation === "pending"}
+          loadingLabel="Processing payment…"
           title={payTitle}
         >
-          {prep.remaining > 0.009 && allowCreditDue ? "PAY NOW (credit remaining)" : "PAY NOW"}
+          {confirmation === "pending"
+            ? "Processing payment…"
+            : prep.remaining > 0.009 && allowCreditDue
+              ? "PAY NOW (credit remaining)"
+              : "PAY NOW"}
         </PayNowButton>
       </div>
 

@@ -10,6 +10,7 @@ function token(): string {
 }
 
 export const posApi = {
+  /** Low-level HTTP. UI callers should use `searchPosProducts`. */
   searchProducts(params: {
     q: string;
     warehouseId?: string;
@@ -77,9 +78,10 @@ export const posApi = {
       body: JSON.stringify(body),
     });
   },
-  listHolds(branchId: string, filter?: string) {
+  listHolds(branchId: string, filter?: string, opts?: { applyExpiry?: boolean }) {
     const qs = new URLSearchParams({ branchId });
     if (filter) qs.set("filter", filter);
+    if (opts?.applyExpiry === false) qs.set("applyExpiry", "false");
     return apiFetch<{ items: Array<Record<string, unknown>> }>(`/api/v1/pos/holds?${qs}`, {
       token: token(),
     });

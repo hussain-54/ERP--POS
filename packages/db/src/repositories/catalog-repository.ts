@@ -24,8 +24,12 @@ import {
   qrPayloadForProduct,
   validateConversionInput,
   validatePricing,
+  ConflictDomainError,
+  ValidationDomainError,
 } from "@electronic-erp/domain";
 import type { DatabaseClient } from "../client.js";
+import { mapSupabaseError, throwIfDbError } from "../supabase-error.js";
+import { InventoryRepository } from "./inventory-repository.js";
 
 type Row = Record<string, unknown>;
 
@@ -211,6 +215,10 @@ export class CatalogRepository {
   }
 
   // --- products ---
+  /**
+   * Canonical product creation path for the ERP.
+   * Import / API / forms must call this — do not duplicate product inserts elsewhere.
+   */
   async createProduct(input: CreateProductMasterInput): Promise<ProductMaster> {
     const costPrice = input.costPrice ?? 0;
     const retailPrice = input.retailPrice ?? 0;
@@ -218,6 +226,15 @@ export class CatalogRepository {
     const dealerPrice = input.dealerPrice ?? 0;
     const minimumSalePrice = input.minimumSalePrice ?? 0;
     const attributes = input.attributes ?? [];
+    const productCode = input.productCode.trim();
+    const sku = input.sku.trim();
+    const name = input.name.trim();
+
+    if (!productCode) throw new ValidationDomainError("Product code is required");
+    if (!sku) throw new ValidationDomainError("SKU is required");
+    if (!name) throw new ValidationDomainError("Product name is required");
+    if (!input.baseUnitId) throw new ValidationDomainError("Base unit is required");
+    if (!input.organizationId) throw new ValidationDomainError("Organization is required");
 
     validatePricing({
       costPrice,
@@ -230,13 +247,24 @@ export class CatalogRepository {
       averagePurchasePrice: 0,
     });
 
+    const barcode = input.primaryBarcode
+      ? normalizeBarcode(String(input.primaryBarcode))
+      : barcodeFromSku(sku);
+
+    await this.assertProductIdentityAvailable({
+      organizationId: input.organizationId,
+      sku,
+      productCode,
+      barcode,
+    });
+
     const { data, error } = await this.db
       .from("products")
       .insert({
         organization_id: input.organizationId,
-        product_code: input.productCode,
-        sku: input.sku,
-        name: input.name,
+        product_code: productCode,
+        sku,
+        name,
         name_ur: input.nameUr ?? null,
         short_description: input.shortDescription ?? null,
         description: input.description ?? null,
@@ -263,59 +291,153 @@ export class CatalogRepository {
       })
       .select("*")
       .single();
-    if (error) throw error;
+    if (error) throw mapSupabaseError(error);
+    if (!data?.id) throw new Error("Product insert did not return a valid ID");
 
-    if (input.specifications) {
-      const s = input.specifications;
-      await this.db.from("product_specifications").insert({
+    const productId = String(data.id);
+
+    try {
+      if (input.specifications) {
+        const s = input.specifications;
+        const { error: specError } = await this.db.from("product_specifications").insert({
+          organization_id: input.organizationId,
+          product_id: productId,
+          size: s.size ?? null,
+          color: s.color ?? null,
+          watt: s.watt ?? null,
+          voltage: s.voltage ?? null,
+          ampere: s.ampere ?? null,
+          length: s.length ?? null,
+          width: s.width ?? null,
+          height: s.height ?? null,
+          material: s.material ?? null,
+          gauge: s.gauge ?? null,
+          phase: s.phase ?? null,
+          frequency: s.frequency ?? null,
+          capacity: s.capacity ?? null,
+          model_label: s.modelLabel ?? null,
+          weight: s.weight ?? null,
+        });
+        throwIfDbError(specError);
+      }
+
+      for (const attr of attributes) {
+        const { error: attrError } = await this.db.from("product_attributes").insert({
+          organization_id: input.organizationId,
+          product_id: productId,
+          attribute_definition_id: attr.attributeDefinitionId,
+          value_text: attr.valueText ?? null,
+          value_number: attr.valueNumber ?? null,
+          value_boolean: attr.valueBoolean ?? null,
+        });
+        throwIfDbError(attrError);
+      }
+
+      const { error: barcodeError } = await this.db.from("barcodes").insert({
         organization_id: input.organizationId,
-        product_id: data.id,
-        size: s.size ?? null,
-        color: s.color ?? null,
-        watt: s.watt ?? null,
-        voltage: s.voltage ?? null,
-        ampere: s.ampere ?? null,
-        length: s.length ?? null,
-        width: s.width ?? null,
-        height: s.height ?? null,
-        material: s.material ?? null,
-        gauge: s.gauge ?? null,
-        phase: s.phase ?? null,
-        frequency: s.frequency ?? null,
-        capacity: s.capacity ?? null,
-        model_label: s.modelLabel ?? null,
-        weight: s.weight ?? null,
+        product_id: productId,
+        code: barcode,
+        code_type: input.primaryBarcode ? "custom" : "sku",
+        is_primary: true,
       });
+      throwIfDbError(barcodeError);
+
+      const { error: qrError } = await this.db.from("qr_codes").insert({
+        organization_id: input.organizationId,
+        product_id: productId,
+        payload: qrPayloadForProduct(productId, sku),
+      });
+      throwIfDbError(qrError);
+
+      await this.initializeWarehouseStockSlots({
+        organizationId: input.organizationId,
+        productId,
+      });
+    } catch (err) {
+      // Related-row failures must not leave a half-created product silently usable.
+      await this.db.from("stock_balances").delete().eq("product_id", productId);
+      await this.db.from("barcodes").delete().eq("product_id", productId);
+      await this.db.from("qr_codes").delete().eq("product_id", productId);
+      await this.db.from("product_attributes").delete().eq("product_id", productId);
+      await this.db.from("product_specifications").delete().eq("product_id", productId);
+      await this.db.from("products").delete().eq("id", productId);
+      throw err instanceof Error ? err : mapSupabaseError(err);
     }
 
-    for (const attr of attributes) {
-      await this.db.from("product_attributes").insert({
-        organization_id: input.organizationId,
-        product_id: data.id,
-        attribute_definition_id: attr.attributeDefinitionId,
-        value_text: attr.valueText ?? null,
-        value_number: attr.valueNumber ?? null,
-        value_boolean: attr.valueBoolean ?? null,
+    const created = mapProduct(data);
+    if (!created.id) throw new Error("Product mapping produced an invalid ID");
+    return created;
+  }
+
+  private async assertProductIdentityAvailable(input: {
+    organizationId: string;
+    sku: string;
+    productCode: string;
+    barcode: string;
+    excludeProductId?: string;
+  }): Promise<void> {
+    const skuQuery = this.db
+      .from("products")
+      .select("id")
+      .eq("organization_id", input.organizationId)
+      .eq("sku", input.sku)
+      .maybeSingle();
+    const codeQuery = this.db
+      .from("products")
+      .select("id")
+      .eq("organization_id", input.organizationId)
+      .eq("product_code", input.productCode)
+      .maybeSingle();
+    const barcodeQuery = this.db
+      .from("barcodes")
+      .select("id,product_id")
+      .eq("organization_id", input.organizationId)
+      .eq("code", input.barcode)
+      .maybeSingle();
+
+    const [skuRes, codeRes, barcodeRes] = await Promise.all([skuQuery, codeQuery, barcodeQuery]);
+    throwIfDbError(skuRes.error);
+    throwIfDbError(codeRes.error);
+    throwIfDbError(barcodeRes.error);
+
+    if (skuRes.data && String(skuRes.data.id) !== input.excludeProductId) {
+      throw new ConflictDomainError("A product with this SKU already exists");
+    }
+    if (codeRes.data && String(codeRes.data.id) !== input.excludeProductId) {
+      throw new ConflictDomainError("A product with this product code already exists");
+    }
+    if (
+      barcodeRes.data &&
+      String((barcodeRes.data as { product_id?: string }).product_id) !== input.excludeProductId
+    ) {
+      throw new ConflictDomainError("A product with this barcode already exists");
+    }
+  }
+
+  /** Ensure stock_balances slots exist for every active warehouse (qty 0, never moved). */
+  private async initializeWarehouseStockSlots(input: {
+    organizationId: string;
+    productId: string;
+  }): Promise<void> {
+    const { data: warehouses, error } = await this.db
+      .from("warehouses")
+      .select("id,branch_id")
+      .eq("organization_id", input.organizationId)
+      .eq("is_active", true)
+      .is("deleted_at", null);
+    throwIfDbError(error);
+
+    if (!warehouses?.length) return;
+
+    const inventory = new InventoryRepository(this.db);
+    for (const warehouse of warehouses) {
+      await inventory.getOrCreateBalance({
+        organizationId: input.organizationId,
+        branchId: String(warehouse.branch_id),
+        warehouseId: String(warehouse.id),
+        productId: input.productId,
       });
     }
-
-    const barcode = input.primaryBarcode
-      ? normalizeBarcode(input.primaryBarcode)
-      : barcodeFromSku(input.sku);
-    await this.db.from("barcodes").insert({
-      organization_id: input.organizationId,
-      product_id: data.id,
-      code: barcode,
-      code_type: input.primaryBarcode ? "custom" : "sku",
-      is_primary: true,
-    });
-    await this.db.from("qr_codes").insert({
-      organization_id: input.organizationId,
-      product_id: data.id,
-      payload: qrPayloadForProduct(String(data.id), input.sku),
-    });
-
-    return mapProduct(data);
   }
 
   async updateProduct(id: string, input: UpdateProductMasterInput): Promise<ProductMaster> {
@@ -353,8 +475,48 @@ export class CatalogRepository {
         patch[col] = (input as Row)[k];
       }
     }
+
+    if (input.sku != null || input.productCode != null || input.primaryBarcode != null) {
+      const current = await this.getProduct(id);
+      if (!current) throw new ValidationDomainError("Product not found");
+      const sku = String(input.sku ?? current.sku).trim();
+      const productCode = String(input.productCode ?? current.productCode).trim();
+      if (input.sku != null || input.productCode != null) {
+        const skuQuery = this.db
+          .from("products")
+          .select("id")
+          .eq("organization_id", input.organizationId ?? current.organizationId)
+          .eq("sku", sku)
+          .maybeSingle();
+        const codeQuery = this.db
+          .from("products")
+          .select("id")
+          .eq("organization_id", input.organizationId ?? current.organizationId)
+          .eq("product_code", productCode)
+          .maybeSingle();
+        const [skuRes, codeRes] = await Promise.all([skuQuery, codeQuery]);
+        throwIfDbError(skuRes.error);
+        throwIfDbError(codeRes.error);
+        if (skuRes.data && String(skuRes.data.id) !== id) {
+          throw new ConflictDomainError("A product with this SKU already exists");
+        }
+        if (codeRes.data && String(codeRes.data.id) !== id) {
+          throw new ConflictDomainError("A product with this product code already exists");
+        }
+      }
+      if (input.primaryBarcode != null && String(input.primaryBarcode).trim()) {
+        await this.assertProductIdentityAvailable({
+          organizationId: input.organizationId ?? current.organizationId,
+          sku,
+          productCode,
+          barcode: normalizeBarcode(String(input.primaryBarcode)),
+          excludeProductId: id,
+        });
+      }
+    }
+
     const { data, error } = await this.db.from("products").update(patch).eq("id", id).select("*").single();
-    if (error) throw error;
+    if (error) throw mapSupabaseError(error);
     return mapProduct(data);
   }
 

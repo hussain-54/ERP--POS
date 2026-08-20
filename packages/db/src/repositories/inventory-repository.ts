@@ -1,14 +1,15 @@
-import type {
-  CreateBatchInput,
-  CreateReservationInput,
-  CreateSerialInput,
-  CreateStockAdjustmentInput,
-  CreateStockCountSessionInput,
-  CreateWarehouseInput,
-  PostStockMovementInput,
-  StockBalance,
-  StockMovement,
-  UpsertStockCountLineInput,
+import {
+  UuidSchema,
+  type CreateBatchInput,
+  type CreateReservationInput,
+  type CreateSerialInput,
+  type CreateStockAdjustmentInput,
+  type CreateStockCountSessionInput,
+  type CreateWarehouseInput,
+  type PostStockMovementInput,
+  type StockBalance,
+  type StockMovement,
+  type UpsertStockCountLineInput,
 } from "@electronic-erp/contracts";
 import {
   applyMovementToBalance,
@@ -131,6 +132,8 @@ export class InventoryRepository {
   }
 
   async postMovement(input: PostStockMovementInput, userId?: string | null): Promise<StockMovement> {
+    UuidSchema.parse(input.operationId);
+
     const { data: existingOp } = await this.db
       .from("stock_movements")
       .select("*")
@@ -297,8 +300,9 @@ export class InventoryRepository {
   }
 
   /**
-   * Prefer Postgres RPC (one transaction). If the function is not deployed, fall back
-   * to two sequential writes — that fallback is NOT atomic.
+   * Movement + balance update must run in one Postgres transaction via RPC.
+   * Missing `apply_stock_movement_atomic` is a hard failure. Sequential
+   * insert+balance writes are not used — they can leave a posted sale without stock.
    */
   private async applyMovementAtomic(input: {
     movement: Row;
@@ -337,42 +341,16 @@ export class InventoryRepository {
       (/apply_stock_movement_atomic/i.test(rpc.error.message) ||
         rpc.error.code === "PGRST202" ||
         rpc.error.code === "42883");
-    if (!missingFn) {
-      const msg = rpc.error?.message ?? "Stock movement failed";
-      if (/concurrent stock update conflict/i.test(msg)) {
-        throw new ValidationDomainError("Concurrent stock update conflict");
-      }
-      throw rpc.error;
+    if (missingFn) {
+      throw new ValidationDomainError(
+        "Stock posting requires apply_stock_movement_atomic. Apply database migrations before selling.",
+      );
     }
-
-    const { data: movement, error: movErr } = await this.db
-      .from("stock_movements")
-      .insert(input.movement)
-      .select("*")
-      .single();
-    if (movErr) throw movErr;
-
-    const { data: updated, error: balErr } = await this.db
-      .from("stock_balances")
-      .update({
-        qty_on_hand: input.qtyOnHand,
-        qty_reserved: input.qtyReserved,
-        qty_damaged: input.qtyDamaged,
-        qty_in_transit: input.qtyInTransit,
-        average_unit_cost: input.averageUnitCost,
-        last_movement_at: input.occurredAt,
-        updated_at: new Date().toISOString(),
-        version: input.expectedVersion + 1,
-      })
-      .eq("id", input.balanceId)
-      .eq("version", input.expectedVersion)
-      .select("*")
-      .maybeSingle();
-    if (balErr) throw balErr;
-    if (!updated) {
+    const msg = rpc.error?.message ?? "Stock movement failed";
+    if (/concurrent stock update conflict/i.test(msg)) {
       throw new ValidationDomainError("Concurrent stock update conflict");
     }
-    return mapMovement(movement);
+    throw rpc.error;
   }
 
   async createAdjustmentRequest(input: CreateStockAdjustmentInput, userId?: string | null) {

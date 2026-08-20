@@ -8,9 +8,11 @@ import { lineTotal } from "@electronic-erp/domain";
 import { productImageUrl } from "./pos-catalog-load";
 import type { LocaleMode } from "./pos-types";
 
-/** Delivery is a sale flag only — checkout does not add a fee. */
+/**
+ * Defaults when a totals source omits delivery/round-off.
+ * Live cart/checkout set these from calculateSaleTotals (currently 0 — delivery is a flag).
+ */
 export const POS_DELIVERY_CHARGES = 0;
-/** Round-off is not part of POS checkout math yet. */
 export const POS_ROUND_OFF = 0;
 
 export type PosTotalsSource = {
@@ -22,6 +24,9 @@ export type PosTotalsSource = {
   discount: number;
   tax: number;
   grand: number;
+  taxableAmount?: number;
+  deliveryCharges?: number;
+  roundOff?: number;
   taxInvoice?: { taxableAmount: number; taxTotal: number } | null;
 };
 
@@ -47,10 +52,10 @@ export function toPosTransactionSummary(totals: PosTotalsSource): PosTransaction
     itemDiscount: totals.itemDiscount ?? 0,
     invoiceDiscount: totals.invoiceDiscount ?? 0,
     totalDiscount: totals.discount,
-    taxableAmount: totals.taxInvoice?.taxableAmount ?? 0,
+    taxableAmount: totals.taxableAmount ?? totals.taxInvoice?.taxableAmount ?? 0,
     salesTax: totals.tax,
-    deliveryCharges: POS_DELIVERY_CHARGES,
-    roundOff: POS_ROUND_OFF,
+    deliveryCharges: totals.deliveryCharges ?? POS_DELIVERY_CHARGES,
+    roundOff: totals.roundOff ?? POS_ROUND_OFF,
     grand: totals.grand,
   };
 }
@@ -68,3 +73,4 @@ export function cartLineTitle(line: Pick<PosCartLine, "name" | "nameUr">, locale
   if (locale === "en_ur" && line.nameUr) return `${line.name} / ${line.nameUr}`;
   return line.name;
 }
+

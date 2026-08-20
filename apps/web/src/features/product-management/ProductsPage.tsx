@@ -12,7 +12,7 @@ import {
   SearchInput,
   useToast,
 } from "@electronic-erp/ui";
-import { catalogApi } from "./catalog-api";
+import { catalogApi, CATALOG_CHANGED_EVENT } from "./catalog-api";
 
 export function ProductsPage() {
   const toast = useToast();
@@ -42,6 +42,15 @@ export function ProductsPage() {
   useEffect(() => {
     void load(1, "");
   }, []);
+
+  useEffect(() => {
+    const onCatalogChanged = () => {
+      void load(page, q);
+    };
+    window.addEventListener(CATALOG_CHANGED_EVENT, onCatalogChanged);
+    return () => window.removeEventListener(CATALOG_CHANGED_EVENT, onCatalogChanged);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [page, q]);
 
   async function bulk(action: "deactivate" | "activate" | "restore") {
     if (!selected.length) return;

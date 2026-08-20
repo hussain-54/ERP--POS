@@ -72,10 +72,12 @@ export function stockAvailabilityWarning(
   const available = Number(stock);
   const wanted = Number(qty);
   if (!Number.isFinite(available) || !Number.isFinite(wanted)) return null;
-  if (available <= 0) return "Out of stock";
-  if (wanted > available) return `Qty exceeds stock (${available})`;
-  if (wanted >= available) return "Last available units";
-  if (available <= 5) return `Low stock: ${available}`;
+  if (available <= 0) return "Out of stock — this product cannot be sold right now";
+  if (wanted > available) {
+    return `Only ${available} in stock — reduce quantity or choose another product`;
+  }
+  if (wanted >= available) return `Last ${available} unit${available === 1 ? "" : "s"} available`;
+  if (available <= 5) return `Low stock: ${available} left`;
   return null;
 }
 

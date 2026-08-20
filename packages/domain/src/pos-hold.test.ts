@@ -11,6 +11,7 @@ import {
   holdMustNotReduceInventory,
   holdsDueForExpiry,
   nextStatusForAction,
+  restoreHoldTransaction,
   statusAfterExpiry,
   type HeldSaleRecord,
 } from "./pos-hold.js";
@@ -133,6 +134,95 @@ describe("pos hold lifecycle", () => {
     const replaced = cartLinesForResume(base.cartSnapshot);
     expect([...existing, ...replaced]).toHaveLength(3); // concat would duplicate — don't do this
     expect(replaced).toHaveLength(2); // correct replace path
+  });
+
+  it("round-trips full transaction snapshot for exact resume", () => {
+    const snap = buildHoldSnapshot({
+      cart: [
+        {
+          key: "1",
+          productId: "p1",
+          name: "LED",
+          qty: "2",
+          unitId: "u1",
+          unitPrice: 100,
+          discount: 10,
+          discountPercent: 5,
+          tax: 17,
+          taxPricingMode: "exclusive",
+          warrantyDays: 30,
+        },
+      ],
+      customerId: "dddddddd-dddd-4ddd-8ddd-dddddddddddd",
+      customerName: "Ahmed Traders",
+      walkIn: false,
+      invoiceDiscount: "20",
+      invoiceDiscountKind: "fixed",
+      invoiceDiscountPercent: 0,
+      notes: "waiting",
+      payments: [{ id: "pay1", paymentMethodId: "cash", amount: "50", methodKind: "cash" }],
+      cashReceived: "50",
+      delivery: true,
+      priceLevel: "wholesale",
+      salesmanUserId: "cccccccc-cccc-4ccc-8ccc-cccccccccccc",
+      commissionPercent: 2,
+      referenceId: "ref-1",
+      locale: "ur",
+      mode: "advanced",
+      useInstallment: false,
+      isAdvance: false,
+      totals: {
+        items: 1,
+        qty: 2,
+        subtotal: 200,
+        itemDiscount: 10,
+        invoiceDiscount: 20,
+        discount: 30,
+        tax: 17,
+        grand: 187,
+        taxableAmount: 170,
+      },
+    });
+    const restored = restoreHoldTransaction(snap);
+    expect(restored.customerId).toBe("dddddddd-dddd-4ddd-8ddd-dddddddddddd");
+    expect(restored.customerName).toBe("Ahmed Traders");
+    expect(restored.invoiceDiscount).toBe("20");
+    expect(restored.invoiceDiscountKind).toBe("fixed");
+    expect(restored.payments).toHaveLength(1);
+    expect(restored.cashReceived).toBe("50");
+    expect(restored.priceLevel).toBe("wholesale");
+    expect(restored.locale).toBe("ur");
+    expect(restored.mode).toBe("advanced");
+    expect(restored.delivery).toBe(true);
+    expect(restored.totals?.grand).toBe(187);
+    expect(restored.cart).toHaveLength(1);
+    expect((restored.cart[0] as { discountPercent?: number }).discountPercent).toBe(5);
+  });
+
+  it("blocks duplicate resume and concurrent foreign cashier without resume_any", () => {
+    const now = new Date("2026-08-12T09:00:00.000Z");
+    expect(() =>
+      assertHoldActionAllowed({ ...base, status: "resumed" }, "resume", {
+        actorUserId: base.heldBy,
+        now,
+      }),
+    ).toThrow(/Cannot resume/i);
+    expect(() =>
+      assertHoldActionAllowed({ ...base, status: "cancelled" }, "resume", {
+        actorUserId: base.heldBy,
+        now,
+      }),
+    ).toThrow(/Cannot resume/i);
+    expect(() =>
+      assertHoldActionAllowed(base, "resume", { actorUserId: "other-cashier", now }),
+    ).toThrow(/another cashier/i);
+    expect(() =>
+      assertHoldActionAllowed(base, "resume", {
+        actorUserId: "other-cashier",
+        resumeAny: true,
+        now,
+      }),
+    ).not.toThrow();
   });
 
   it("supports edit, duplicate, transfer, cancel action gates", () => {

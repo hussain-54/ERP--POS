@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { isValidElement } from "react";
-import { cleanup, fireEvent, render, screen } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, within } from "@testing-library/react";
 import { MemoryRouter, Route, Routes } from "react-router-dom";
 import { ToastProvider } from "@electronic-erp/ui";
 import { ModulePlaceholderPage } from "@/features/modules/ModulePlaceholderPage";
@@ -906,10 +906,20 @@ describe("responsive ERP shell", () => {
       const { unmount } = renderShell(path);
       expect(screen.getByLabelText("ERP modules"), path).toBeInTheDocument();
       expect(screen.getByRole("button", { name: "Menu" }), path).toBeInTheDocument();
-      expect(screen.getByLabelText("Branch"), path).toBeInTheDocument();
-      expect(screen.getByRole("link", { name: "Notifications" }), path).toHaveAttribute("href", "/notifications");
-      expect(screen.getByRole("navigation", { name: "Breadcrumb" }), path).toBeInTheDocument();
-      expect(screen.getByRole("button", { name: "User" }), path).toBeInTheDocument();
+      if (isPosEnvironmentPath(path)) {
+        expect(screen.getByLabelText("POS Branch"), path).toBeInTheDocument();
+        expect(screen.getByRole("link", { name: "POS Notifications" }), path).toHaveAttribute(
+          "href",
+          "/notifications",
+        );
+        expect(screen.getByLabelText("POS navigation"), path).toBeInTheDocument();
+        expect(screen.queryByRole("navigation", { name: "Breadcrumb" }), path).not.toBeInTheDocument();
+      } else {
+        expect(screen.getByRole("combobox", { name: "Branch" }), path).toBeInTheDocument();
+        expect(screen.getByRole("link", { name: "Notifications" }), path).toHaveAttribute("href", "/notifications");
+        expect(screen.getByRole("navigation", { name: "Breadcrumb" }), path).toBeInTheDocument();
+        expect(screen.getByRole("button", { name: "User" }), path).toBeInTheDocument();
+      }
       expect(screen.queryByRole("link", { name: "ERP Home" }), path).not.toBeInTheDocument();
       unmount();
     }
@@ -921,39 +931,43 @@ describe("responsive ERP shell", () => {
     expect(screen.getByRole("link", { name: "POS / SALES" })).toHaveAttribute("href", "/pos");
     expect(screen.getByRole("link", { name: "COMMAND CENTER" })).toHaveAttribute("href", "/command-center");
     expect(screen.queryByRole("link", { name: "ERP Home" })).not.toBeInTheDocument();
-    expect(screen.getByRole("navigation", { name: "POS / SALES workspace" })).toBeInTheDocument();
-    expect(screen.getByRole("heading", { name: "POS / SALES" })).toBeInTheDocument();
+    expect(screen.queryByRole("navigation", { name: "POS / SALES workspace" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("heading", { name: "POS / SALES" })).not.toBeInTheDocument();
     expect(screen.getByLabelText("Cashier")).toBeInTheDocument();
     expect(screen.getByLabelText("Shift Status")).toBeInTheDocument();
     expect(screen.getByLabelText("Date / Time")).toBeInTheDocument();
-    expect(screen.getByLabelText("Branch")).toBeInTheDocument();
+    expect(screen.getByLabelText("POS Branch")).toBeInTheDocument();
+    expect(screen.getByLabelText("POS navigation")).toBeInTheDocument();
     expect(screen.getByRole("link", { name: "Held Sales" })).toHaveAttribute("href", "/held-sales");
-    expect(screen.getByRole("link", { name: "Notifications" })).toHaveAttribute("href", "/notifications");
-    expect(screen.getByRole("button", { name: "User" })).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: "POS Notifications" })).toHaveAttribute("href", "/notifications");
+    expect(screen.getByLabelText("POS User")).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Menu" })).toBeInTheDocument();
-    const nav = screen.getByRole("navigation", { name: "POS / SALES workspace" });
-    expect(screen.getByRole("link", { name: "Overview" })).toHaveAttribute("href", "/pos");
-    expect(screen.getByRole("link", { name: "Overview" })).toHaveAttribute("aria-current", "page");
-    expect(screen.getByRole("link", { name: "Hold / Resume" }).closest("nav")).toBe(nav);
-    expect(screen.getByRole("link", { name: "Invoices" })).toHaveAttribute("href", "/invoices");
-    expect(screen.getByRole("link", { name: "Payments" })).toHaveAttribute("href", "/payments");
+    const terminalNav = screen.getByLabelText("POS navigation");
+    expect(within(terminalNav).getByRole("link", { name: "POS" })).toHaveAttribute("href", "/pos");
+    expect(within(terminalNav).getByRole("link", { name: "POS" })).toHaveAttribute("aria-current", "page");
+    expect(within(terminalNav).getByRole("link", { name: "Hold / Resume" })).toHaveAttribute("href", "/held-sales");
+    expect(within(terminalNav).getByRole("link", { name: "Customers" })).toHaveAttribute("href", "/pos/customers");
+    expect(within(terminalNav).getByRole("link", { name: "Price & Discount" })).toHaveAttribute("href", "/discounts");
     expect(POS_IA_TITLES).toHaveLength(12);
     unmount();
 
     renderShell("/invoices");
     expect(screen.getByLabelText("ERP modules")).toBeInTheDocument();
-    expect(screen.getByRole("navigation", { name: "POS / SALES workspace" })).toBeInTheDocument();
-    expect(screen.getByRole("link", { name: "Invoices" })).toHaveAttribute("aria-current", "page");
+    expect(screen.getByLabelText("POS navigation")).toBeInTheDocument();
+    expect(screen.getByLabelText("POS status")).toBeInTheDocument();
+    expect(screen.queryByRole("navigation", { name: "POS / SALES workspace" })).not.toBeInTheDocument();
+    expect(screen.getByText("workspace")).toBeInTheDocument();
     cleanup();
 
     renderShell("/pos/salesmen");
     expect(screen.getByLabelText("ERP modules")).toBeInTheDocument();
-    expect(screen.getByRole("link", { name: "Salesmen" })).toHaveAttribute("aria-current", "page");
+    expect(screen.getByLabelText("POS navigation")).toBeInTheDocument();
+    expect(screen.getByText("workspace")).toBeInTheDocument();
     expect(screen.queryByRole("link", { name: "ERP Home" })).not.toBeInTheDocument();
     cleanup();
 
     renderShell("/salesman");
     expect(screen.getByLabelText("ERP modules")).toBeInTheDocument();
-    expect(screen.queryByRole("navigation", { name: "POS / SALES workspace" })).not.toBeInTheDocument();
+    expect(screen.queryByLabelText("POS navigation")).not.toBeInTheDocument();
   }, 20_000);
 });

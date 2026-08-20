@@ -44,8 +44,8 @@ export interface PosOwnershipItem {
 export const POS_CANONICAL_ENTRY = "/pos";
 
 /**
- * POS feature navigation lives on ModuleWorkspace (registry children).
- * Do not add a second POS sidebar. Hub URLs below stay registered as aliases.
+ * POS feature navigation lives on ModuleWorkspace (registry children) and the
+ * in-terminal POSTerminalNav for quick POS operations.
  */
 
 export const POS_OWNERSHIP: readonly PosOwnershipItem[] = [
@@ -197,10 +197,32 @@ export function posNavItemForPath(pathname: string): PosOwnershipItem | undefine
   return POS_OWNERSHIP.find((item) => item.canonical === pathname);
 }
 
+export type PosTerminalNavItem = {
+  label: string;
+  path: string;
+  badge?: "hold";
+};
+
+/**
+ * Retail terminal sidebar IA (reference screenshot).
+ * Module 02 ERP workspace nav stays on POS_OWNERSHIP (12 children).
+ * Hub aliases remain routed for bookmarks / F-keys.
+ */
+export const POS_TERMINAL_NAV: readonly PosTerminalNavItem[] = [
+  { label: "POS", path: "/pos" },
+  { label: "Hold / Resume", path: "/held-sales", badge: "hold" },
+  { label: "Customers", path: "/pos/customers" },
+  { label: "Products", path: "/pos/products" },
+  { label: "Price & Discount", path: "/discounts" },
+  { label: "Reports", path: "/pos/reports" },
+  { label: "Settings", path: "/pos/settings" },
+] as const;
+
 export const POS_COMPONENT_OWNERS = {
   shell: [
     "features/pos/design-system/POSShell.tsx",
     "features/pos/design-system/POSHeader.tsx",
+    "features/pos/design-system/POSTerminalNav.tsx",
     "features/pos/design-system/POSWorkspace.tsx",
     "features/pos/design-system/POSShortcutBar.tsx",
     "features/pos/design-system/POSActionBar.tsx",
@@ -228,8 +250,8 @@ export const POS_COMPONENT_OWNERS = {
     "features/pos/session/usePosSession.ts",
     "features/pos/session/pos-customer-runtime.ts",
     "features/pos/session/pos-customer-repository.ts",
-    "features/pos/session/pos-repository.ts",
     "features/pos/pos-api.ts",
+    "features/pos/pos-product-search.ts",
     "features/pos/pos-quotation.ts",
     "features/pos/pos-catalog-load.ts",
     "features/pos/pos-transaction.ts",
@@ -280,5 +302,6 @@ export const POS_API_DOMAIN_OWNERS = {
   returns: "packages/domain/src/pos-return.ts + pos-exchange.ts",
   customer: "packages/domain/src/pos-customer.ts",
   commission: "packages/domain/src/pos-commission.ts",
+  productCreate: "packages/db/src/repositories/catalog-repository.ts createProduct · POST /api/v1/catalog/products",
   rbac: "packages/domain/src/pos-security.ts + rbac-catalog.ts (pos.sell, pos.hold, pos.resume_any, pos.return, pos.view_invoices, pos.discount_*, pos.configure, pos.shift, payments.receive, credit.approve, installments.manage)",
 } as const;

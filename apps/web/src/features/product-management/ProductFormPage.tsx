@@ -1,7 +1,12 @@
 import { useEffect, useState, type FormEvent } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
 import { Button, Card, Form, FormActions, Input, Select, useToast } from "@electronic-erp/ui";
-import { catalogApi } from "./catalog-api";
+import { catalogApi, notifyCatalogChanged } from "./catalog-api";
+import {
+  firstProductFormError,
+  validateProductForm,
+  type ProductFormFieldErrors,
+} from "./product-form-validation";
 import { getSupabase } from "@/lib/supabase";
 import { useAuth } from "@/features/auth/AuthContext";
 
@@ -14,6 +19,7 @@ export function ProductFormPage() {
   const toast = useToast();
   const { organizationId } = useAuth();
   const [saving, setSaving] = useState(false);
+  const [fieldErrors, setFieldErrors] = useState<ProductFormFieldErrors>({});
   const [units, setUnits] = useState<Option[]>([]);
   const [categories, setCategories] = useState<Option[]>([]);
   const [brands, setBrands] = useState<Option[]>([]);
@@ -130,19 +136,35 @@ export function ProductFormPage() {
 
   function set<K extends keyof typeof form>(key: K, value: string) {
     setForm((prev) => ({ ...prev, [key]: value }));
+    setFieldErrors((prev) => {
+      if (!(key in prev)) return prev;
+      const next = { ...prev };
+      delete next[key as keyof ProductFormFieldErrors];
+      return next;
+    });
   }
 
   async function onSubmit(e: FormEvent) {
     e.preventDefault();
+    if (saving) return;
+
+    const localErrors = validateProductForm(form);
+    setFieldErrors(localErrors);
+    const firstLocal = firstProductFormError(localErrors);
+    if (firstLocal) {
+      toast.push({ title: "Check required fields", description: firstLocal, tone: "danger" });
+      return;
+    }
+
     setSaving(true);
     try {
       const payload = {
-        productCode: form.productCode,
-        sku: form.sku,
-        name: form.name,
-        nameUr: form.nameUr || undefined,
-        shortDescription: form.shortDescription || undefined,
-        description: form.description || undefined,
+        productCode: form.productCode.trim(),
+        sku: form.sku.trim(),
+        name: form.name.trim(),
+        nameUr: form.nameUr.trim() || undefined,
+        shortDescription: form.shortDescription.trim() || undefined,
+        description: form.description.trim() || undefined,
         baseUnitId: form.baseUnitId,
         categoryId: form.categoryId || undefined,
         brandId: form.brandId || undefined,
@@ -154,7 +176,7 @@ export function ProductFormPage() {
         dealerPrice: Number(form.dealerPrice || 0),
         minimumSalePrice: Number(form.minimumSalePrice || 0),
         specialPrice: form.specialPrice === "" ? undefined : Number(form.specialPrice),
-        primaryBarcode: form.primaryBarcode || undefined,
+        primaryBarcode: form.primaryBarcode.trim() || undefined,
         specifications: {
           size: form.size || undefined,
           color: form.color || undefined,
@@ -165,12 +187,25 @@ export function ProductFormPage() {
       };
       if (isNew) {
         const created = await catalogApi.createProduct(payload);
+        if (!created?.id) {
+          throw new Error("Product was created but the API did not return a valid ID");
+        }
+        notifyCatalogChanged({ productId: created.id });
         toast.push({ title: "Product created", tone: "success" });
         navigate(`/products/${created.id}`);
       } else if (id) {
         await catalogApi.updateProduct(id, payload);
+        notifyCatalogChanged({ productId: id });
         toast.push({ title: "Product updated", tone: "success" });
-        await catalogApi.generateBarcode(id).catch(() => undefined);
+        try {
+          await catalogApi.generateBarcode(id);
+        } catch (barcodeErr) {
+          toast.push({
+            title: "Product saved, barcode refresh failed",
+            description: barcodeErr instanceof Error ? barcodeErr.message : "Error",
+            tone: "danger",
+          });
+        }
       }
     } catch (err) {
       toast.push({
@@ -195,22 +230,83 @@ export function ProductFormPage() {
       <Card>
         <Form onSubmit={onSubmit}>
           <div className="grid gap-4 md:grid-cols-2">
-            <Input label="Product Code" required value={form.productCode} onChange={(e) => set("productCode", e.target.value)} />
-            <Input label="SKU" required value={form.sku} onChange={(e) => set("sku", e.target.value)} />
-            <Input label="Product Name" required value={form.name} onChange={(e) => set("name", e.target.value)} />
+            <Input
+              label="Product Code"
+              required
+              value={form.productCode}
+              error={fieldErrors.productCode}
+              onChange={(e) => set("productCode", e.target.value)}
+            />
+            <Input
+              label="SKU"
+              required
+              value={form.sku}
+              error={fieldErrors.sku}
+              onChange={(e) => set("sku", e.target.value)}
+            />
+            <Input
+              label="Product Name"
+              required
+              value={form.name}
+              error={fieldErrors.name}
+              onChange={(e) => set("name", e.target.value)}
+            />
             <Input label="Urdu Product Name" value={form.nameUr} onChange={(e) => set("nameUr", e.target.value)} />
-            <Select label="Base Unit" required options={units} value={form.baseUnitId} onChange={(e) => set("baseUnitId", e.target.value)} placeholder="Select unit" />
+            <Select
+              label="Base Unit"
+              required
+              options={units}
+              value={form.baseUnitId}
+              error={fieldErrors.baseUnitId}
+              onChange={(e) => set("baseUnitId", e.target.value)}
+              placeholder="Select unit"
+            />
             <Select label="Category" options={categories} value={form.categoryId} onChange={(e) => set("categoryId", e.target.value)} placeholder="Optional" />
             <Select label="Brand" options={brands} value={form.brandId} onChange={(e) => set("brandId", e.target.value)} placeholder="Optional" />
             <Select label="Company" options={companies} value={form.companyId} onChange={(e) => set("companyId", e.target.value)} placeholder="Optional" />
-            <Input label="Warranty (days)" value={form.warrantyDays} onChange={(e) => set("warrantyDays", e.target.value)} />
+            <Input
+              label="Warranty (days)"
+              value={form.warrantyDays}
+              error={fieldErrors.warrantyDays}
+              onChange={(e) => set("warrantyDays", e.target.value)}
+            />
             <Input label="Primary Barcode" value={form.primaryBarcode} onChange={(e) => set("primaryBarcode", e.target.value)} />
-            <Input label="Cost Price" value={form.costPrice} onChange={(e) => set("costPrice", e.target.value)} />
-            <Input label="Retail Price" value={form.retailPrice} onChange={(e) => set("retailPrice", e.target.value)} />
-            <Input label="Wholesale Price" value={form.wholesalePrice} onChange={(e) => set("wholesalePrice", e.target.value)} />
-            <Input label="Dealer Price" value={form.dealerPrice} onChange={(e) => set("dealerPrice", e.target.value)} />
-            <Input label="Special Price" value={form.specialPrice} onChange={(e) => set("specialPrice", e.target.value)} />
-            <Input label="Minimum Sale Price" value={form.minimumSalePrice} onChange={(e) => set("minimumSalePrice", e.target.value)} />
+            <Input
+              label="Cost Price"
+              value={form.costPrice}
+              error={fieldErrors.costPrice}
+              onChange={(e) => set("costPrice", e.target.value)}
+            />
+            <Input
+              label="Retail Price"
+              value={form.retailPrice}
+              error={fieldErrors.retailPrice}
+              onChange={(e) => set("retailPrice", e.target.value)}
+            />
+            <Input
+              label="Wholesale Price"
+              value={form.wholesalePrice}
+              error={fieldErrors.wholesalePrice}
+              onChange={(e) => set("wholesalePrice", e.target.value)}
+            />
+            <Input
+              label="Dealer Price"
+              value={form.dealerPrice}
+              error={fieldErrors.dealerPrice}
+              onChange={(e) => set("dealerPrice", e.target.value)}
+            />
+            <Input
+              label="Special Price"
+              value={form.specialPrice}
+              error={fieldErrors.specialPrice}
+              onChange={(e) => set("specialPrice", e.target.value)}
+            />
+            <Input
+              label="Minimum Sale Price"
+              value={form.minimumSalePrice}
+              error={fieldErrors.minimumSalePrice}
+              onChange={(e) => set("minimumSalePrice", e.target.value)}
+            />
             <Input label="Size" value={form.size} onChange={(e) => set("size", e.target.value)} />
             <Input label="Color" value={form.color} onChange={(e) => set("color", e.target.value)} />
             <Input label="Watt" value={form.watt} onChange={(e) => set("watt", e.target.value)} />
@@ -220,7 +316,7 @@ export function ProductFormPage() {
           <Input label="Short Description" value={form.shortDescription} onChange={(e) => set("shortDescription", e.target.value)} />
           <Input label="Description" value={form.description} onChange={(e) => set("description", e.target.value)} />
           <FormActions>
-            <Button type="submit" loading={saving}>
+            <Button type="submit" loading={saving} disabled={saving}>
               {isNew ? "Create product" : "Save changes"}
             </Button>
           </FormActions>

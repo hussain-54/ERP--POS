@@ -27,6 +27,7 @@ import {
   summarizeReturnHistory,
   summarizeSaleManagement,
   ValidationDomainError,
+  resolvePosSearchStockAvailable,
   type CommissionRecord,
   type HeldSaleFilter,
   type HeldSaleRecord,
@@ -55,156 +56,251 @@ export class PosRepository {
     query: ProductSearchQuery,
   ): Promise<ProductSearchResult[]> {
     const q = query.q.trim();
+    const limit = query.limit ?? 20;
     const productSelect =
-      "id,name,name_ur,sku,base_unit_id,retail_price,wholesale_price,dealer_price,warranty_days,brand_id,company_id,category_id,model_id";
-    const { data: products, error } = await this.db
-      .from("products")
-      .select(productSelect)
-      .eq("organization_id", organizationId)
-      .is("deleted_at", null)
-      .or(`name.ilike.%${q}%,name_ur.ilike.%${q}%,sku.ilike.%${q}%`)
-      .limit(query.limit ?? 20);
-    if (error) throw error;
-
-    // Barcode + QR codes
-    const { data: barcodes } = await this.db
-      .from("barcodes")
-      .select("product_id,code")
-      .eq("organization_id", organizationId)
-      .ilike("code", `%${q}%`)
-      .limit(20);
-    const { data: qrs } = await this.db
-      .from("qr_codes")
-      .select("product_id,payload")
-      .eq("organization_id", organizationId)
-      .ilike("payload", `%${q}%`)
-      .limit(20);
-
-    // Taxonomy / attribute name matches → product ids
-    const taxonomyIds: string[] = [];
-    for (const table of ["brands", "companies", "categories", "product_models"] as const) {
-      const { data } = await this.db
-        .from(table)
-        .select("id")
-        .eq("organization_id", organizationId)
-        .ilike("name", `%${q}%`)
-        .limit(20);
-      for (const row of data ?? []) taxonomyIds.push(String(row.id));
-    }
+      "id,name,name_ur,sku,product_code,base_unit_id,retail_price,wholesale_price,dealer_price,warranty_days,brand_id,company_id,category_id,model_id,is_active,updated_at";
     const numericQ = Number(q);
-    let specsQuery = this.db
-      .from("product_specifications")
-      .select("product_id,size,color,watt,voltage,ampere")
-      .or(`size.ilike.%${q}%,color.ilike.%${q}%,material.ilike.%${q}%,gauge.ilike.%${q}%,model_label.ilike.%${q}%`)
-      .limit(30);
-    if (Number.isFinite(numericQ)) {
-      specsQuery = this.db
-        .from("product_specifications")
-        .select("product_id,size,color,watt,voltage,ampere")
-        .or(
-          `size.ilike.%${q}%,color.ilike.%${q}%,watt.eq.${numericQ},voltage.eq.${numericQ},ampere.eq.${numericQ}`,
-        )
-        .limit(30);
-    }
-    const { data: specs } = await specsQuery;
+    const specsOr = Number.isFinite(numericQ)
+      ? `size.ilike.%${q}%,color.ilike.%${q}%,watt.eq.${numericQ},voltage.eq.${numericQ},ampere.eq.${numericQ}`
+      : `size.ilike.%${q}%,color.ilike.%${q}%,material.ilike.%${q}%,gauge.ilike.%${q}%,model_label.ilike.%${q}%`;
 
-    let taxonomyProducts: Row[] = [];
-    if (taxonomyIds.length) {
-      const { data } = await this.db
+    // Wave 1 — discovery in parallel (no per-product awaits).
+    const [
+      productsRes,
+      barcodesRes,
+      qrsRes,
+      brandsTaxRes,
+      companiesTaxRes,
+      categoriesTaxRes,
+      modelsTaxRes,
+      specsHitRes,
+    ] = await Promise.all([
+      this.db
         .from("products")
         .select(productSelect)
         .eq("organization_id", organizationId)
+        .eq("is_active", true)
         .is("deleted_at", null)
-        .or(
-          [
-            `brand_id.in.(${taxonomyIds.join(",")})`,
-            `company_id.in.(${taxonomyIds.join(",")})`,
-            `category_id.in.(${taxonomyIds.join(",")})`,
-            `model_id.in.(${taxonomyIds.join(",")})`,
-          ].join(","),
-        )
-        .limit(query.limit ?? 20);
-      taxonomyProducts = (data ?? []) as Row[];
-    }
+        .or(`name.ilike.%${q}%,name_ur.ilike.%${q}%,sku.ilike.%${q}%,product_code.ilike.%${q}%`)
+        .order("updated_at", { ascending: false })
+        .limit(limit),
+      this.db
+        .from("barcodes")
+        .select("product_id,code")
+        .eq("organization_id", organizationId)
+        .ilike("code", `%${q}%`)
+        .limit(20),
+      this.db
+        .from("qr_codes")
+        .select("product_id,payload")
+        .eq("organization_id", organizationId)
+        .ilike("payload", `%${q}%`)
+        .limit(20),
+      this.db
+        .from("brands")
+        .select("id")
+        .eq("organization_id", organizationId)
+        .ilike("name", `%${q}%`)
+        .limit(20),
+      this.db
+        .from("companies")
+        .select("id")
+        .eq("organization_id", organizationId)
+        .ilike("name", `%${q}%`)
+        .limit(20),
+      this.db
+        .from("categories")
+        .select("id")
+        .eq("organization_id", organizationId)
+        .ilike("name", `%${q}%`)
+        .limit(20),
+      this.db
+        .from("product_models")
+        .select("id")
+        .eq("organization_id", organizationId)
+        .ilike("name", `%${q}%`)
+        .limit(20),
+      this.db
+        .from("product_specifications")
+        .select("product_id,size,color,watt,voltage,ampere")
+        .or(specsOr)
+        .limit(30),
+    ]);
+
+    if (productsRes.error) throw productsRes.error;
+    if (barcodesRes.error) throw barcodesRes.error;
+    if (qrsRes.error) throw qrsRes.error;
+
+    const taxonomyIds = [
+      ...(brandsTaxRes.data ?? []),
+      ...(companiesTaxRes.data ?? []),
+      ...(categoriesTaxRes.data ?? []),
+      ...(modelsTaxRes.data ?? []),
+    ].map((row) => String(row.id));
 
     const byId = new Map<string, Row>();
-    for (const p of products ?? []) byId.set(String(p.id), p as Row);
-    for (const p of taxonomyProducts) byId.set(String(p.id), p);
-    for (const s of specs ?? []) {
-      if (!byId.has(String(s.product_id))) {
-        const { data: p } = await this.db
-          .from("products")
-          .select(productSelect)
-          .eq("id", s.product_id)
-          .maybeSingle();
-        if (p) byId.set(String(p.id), p as Row);
-      }
+    for (const p of productsRes.data ?? []) byId.set(String(p.id), p as Row);
+
+    // Wave 2 — optional follow-up product loads (batched .in, not N+1).
+    const followUps: Array<Promise<void>> = [];
+    if (taxonomyIds.length) {
+      followUps.push(
+        (async () => {
+          const { data, error } = await this.db
+            .from("products")
+            .select(productSelect)
+            .eq("organization_id", organizationId)
+            .eq("is_active", true)
+            .is("deleted_at", null)
+            .or(
+              [
+                `brand_id.in.(${taxonomyIds.join(",")})`,
+                `company_id.in.(${taxonomyIds.join(",")})`,
+                `category_id.in.(${taxonomyIds.join(",")})`,
+                `model_id.in.(${taxonomyIds.join(",")})`,
+              ].join(","),
+            )
+            .order("updated_at", { ascending: false })
+            .limit(limit);
+          if (error) throw error;
+          for (const p of data ?? []) byId.set(String(p.id), p as Row);
+        })(),
+      );
     }
 
+    const missingIds = new Set<string>();
+    for (const s of specsHitRes.data ?? []) {
+      const id = String(s.product_id);
+      if (!byId.has(id)) missingIds.add(id);
+    }
     const codeHits: Array<{ product_id: string; code: string }> = [
-      ...(barcodes ?? []).map((b) => ({ product_id: String(b.product_id), code: String(b.code) })),
-      ...(qrs ?? []).map((b) => ({
+      ...(barcodesRes.data ?? []).map((b) => ({
+        product_id: String(b.product_id),
+        code: String(b.code),
+      })),
+      ...(qrsRes.data ?? []).map((b) => ({
         product_id: String(b.product_id),
         code: String((b as { payload?: string }).payload ?? ""),
       })),
     ];
-    for (const b of codeHits) {
-      if (!byId.has(String(b.product_id))) {
-        const { data: p } = await this.db
-          .from("products")
-          .select(productSelect)
-          .eq("id", b.product_id)
-          .maybeSingle();
-        if (p) byId.set(String(p.id), { ...p, _barcode: b.code } as Row);
-      } else {
-        byId.set(String(b.product_id), { ...byId.get(String(b.product_id))!, _barcode: b.code });
-      }
+    for (const hit of codeHits) {
+      if (!byId.has(hit.product_id)) missingIds.add(hit.product_id);
+    }
+
+    if (missingIds.size) {
+      followUps.push(
+        (async () => {
+          const { data, error } = await this.db
+            .from("products")
+            .select(productSelect)
+            .eq("organization_id", organizationId)
+            .eq("is_active", true)
+            .is("deleted_at", null)
+            .in("id", [...missingIds]);
+          if (error) throw error;
+          for (const p of data ?? []) byId.set(String(p.id), p as Row);
+        })(),
+      );
+    }
+
+    if (followUps.length) await Promise.all(followUps);
+
+    for (const hit of codeHits) {
+      const existing = byId.get(hit.product_id);
+      if (existing) byId.set(hit.product_id, { ...existing, _barcode: hit.code });
+    }
+
+    const candidates = [...byId.values()].filter((row) => row.is_active !== false);
+    if (!candidates.length) return [];
+
+    const productIds = candidates.map((row) => String(row.id));
+    const brandIds = uniqueIds(candidates.map((row) => row.brand_id));
+    const companyIds = uniqueIds(candidates.map((row) => row.company_id));
+    const categoryIds = uniqueIds(candidates.map((row) => row.category_id));
+    const modelIds = uniqueIds(candidates.map((row) => row.model_id));
+    const unitIds = uniqueIds(candidates.map((row) => row.base_unit_id));
+
+    // Wave 3 — hydrate related rows in batch (constant request count vs N×7).
+    const [brandsRes, companiesRes, categoriesRes, modelsRes, unitsRes, specsRes, balancesRes] =
+      await Promise.all([
+        brandIds.length
+          ? this.db.from("brands").select("id,name").in("id", brandIds)
+          : Promise.resolve({ data: [] as Row[], error: null }),
+        companyIds.length
+          ? this.db.from("companies").select("id,name").in("id", companyIds)
+          : Promise.resolve({ data: [] as Row[], error: null }),
+        categoryIds.length
+          ? this.db.from("categories").select("id,name").in("id", categoryIds)
+          : Promise.resolve({ data: [] as Row[], error: null }),
+        modelIds.length
+          ? this.db.from("product_models").select("id,name").in("id", modelIds)
+          : Promise.resolve({ data: [] as Row[], error: null }),
+        unitIds.length
+          ? this.db.from("units").select("id,name,symbol_places").in("id", unitIds)
+          : Promise.resolve({ data: [] as Row[], error: null }),
+        this.db
+          .from("product_specifications")
+          .select("product_id,size,color,watt,voltage,ampere")
+          .in("product_id", productIds),
+        query.warehouseId
+          ? this.db
+              .from("stock_balances")
+              .select("product_id,qty_on_hand,qty_reserved,last_movement_at")
+              .eq("organization_id", organizationId)
+              .eq("warehouse_id", query.warehouseId)
+              .in("product_id", productIds)
+          : Promise.resolve({ data: [] as Row[], error: null }),
+      ]);
+
+    for (const res of [brandsRes, companiesRes, categoriesRes, modelsRes, unitsRes, specsRes, balancesRes]) {
+      if (res.error) throw res.error;
+    }
+
+    const brandName = nameMap(brandsRes.data);
+    const companyName = nameMap(companiesRes.data);
+    const categoryName = nameMap(categoriesRes.data);
+    const modelName = nameMap(modelsRes.data);
+    const unitById = new Map<string, { name: string | null; places: number }>();
+    for (const u of unitsRes.data ?? []) {
+      unitById.set(String((u as Row).id), {
+        name: ((u as Row).name as string | null) ?? null,
+        places: Number((u as Row).symbol_places ?? 0),
+      });
+    }
+    const specByProduct = new Map<string, Row>();
+    for (const s of specsRes.data ?? []) {
+      specByProduct.set(String((s as Row).product_id), s as Row);
+    }
+    const stockByProduct = new Map<string, { qtyAvailable: string; lastMovementAt: string | null }>();
+    for (const b of balancesRes.data ?? []) {
+      const row = b as Row;
+      const onHand = Number(row.qty_on_hand ?? 0);
+      const reserved = Number(row.qty_reserved ?? 0);
+      stockByProduct.set(String(row.product_id), {
+        qtyAvailable: String(onHand - reserved),
+        lastMovementAt: (row.last_movement_at as string | null) ?? null,
+      });
     }
 
     const results: ProductSearchResult[] = [];
-    for (const row of byId.values()) {
-      let stockAvailable: string | undefined;
-      if (query.warehouseId) {
-        const balances = await this.inventory.listBalances(organizationId, {
-          warehouseId: query.warehouseId,
-          productId: String(row.id),
-        });
-        stockAvailable = balances[0]?.qtyAvailable ?? "0";
-      }
-
-      const { data: brand } = row.brand_id
-        ? await this.db.from("brands").select("name").eq("id", row.brand_id).maybeSingle()
-        : { data: null };
-      const { data: company } = row.company_id
-        ? await this.db.from("companies").select("name").eq("id", row.company_id).maybeSingle()
-        : { data: null };
-      const { data: category } = row.category_id
-        ? await this.db.from("categories").select("name").eq("id", row.category_id).maybeSingle()
-        : { data: null };
-      const { data: model } = row.model_id
-        ? await this.db.from("product_models").select("name").eq("id", row.model_id).maybeSingle()
-        : { data: null };
-      const { data: spec } = await this.db
-        .from("product_specifications")
-        .select("size,color,watt,voltage,ampere")
-        .eq("product_id", row.id)
-        .maybeSingle();
-      const { data: unit } = await this.db
-        .from("units")
-        .select("name,symbol_places")
-        .eq("id", row.base_unit_id)
-        .maybeSingle();
+    for (const row of candidates) {
+      const productId = String(row.id);
+      const unit = unitById.get(String(row.base_unit_id));
+      const spec = specByProduct.get(productId);
+      const stockAvailable = query.warehouseId
+        ? resolvePosSearchStockAvailable(stockByProduct.get(productId))
+        : undefined;
 
       results.push({
-        productId: String(row.id),
+        productId,
         name: String(row.name),
         nameUr: (row.name_ur as string | null) ?? null,
         sku: String(row.sku),
         barcode: (row._barcode as string | null) ?? null,
-        brand: brand?.name ?? null,
-        company: company?.name ?? null,
-        category: category?.name ?? null,
-        model: model?.name ?? null,
+        brand: row.brand_id ? brandName.get(String(row.brand_id)) ?? null : null,
+        company: row.company_id ? companyName.get(String(row.company_id)) ?? null : null,
+        category: row.category_id ? categoryName.get(String(row.category_id)) ?? null : null,
+        model: row.model_id ? modelName.get(String(row.model_id)) ?? null : null,
         size: (spec?.size as string | null) ?? null,
         color: (spec?.color as string | null) ?? null,
         watt: spec?.watt != null ? String(spec.watt) : null,
@@ -212,7 +308,7 @@ export class PosRepository {
         ampere: spec?.ampere != null ? String(spec.ampere) : null,
         unitId: String(row.base_unit_id),
         unitName: unit?.name ?? null,
-        unitSymbolPlaces: Number(unit?.symbol_places ?? 0),
+        unitSymbolPlaces: unit?.places ?? 0,
         ...(stockAvailable != null ? { stockAvailable } : {}),
         retailPrice: Number(row.retail_price ?? 0),
         wholesalePrice: Number(row.wholesale_price ?? 0),
@@ -220,26 +316,27 @@ export class PosRepository {
         warrantyDays: Number(row.warranty_days ?? 0),
       });
     }
+
     if (query.customerId && results.length) {
       const ids = results.map((r) => r.productId);
-      const { data: customerPrices } = await this.db
+      const { data: customerPrices, error: priceError } = await this.db
         .from("product_prices")
         .select("product_id,unit_id,amount")
         .eq("organization_id", organizationId)
         .eq("customer_id", query.customerId)
         .in("product_id", ids)
         .is("deleted_at", null);
+      if (priceError) throw priceError;
       for (const result of results) {
         const rows = (customerPrices ?? []).filter((row) => String(row.product_id) === result.productId);
-        const match =
-          rows.find((row) => String(row.unit_id) === result.unitId) ?? rows[0];
+        const match = rows.find((row) => String(row.unit_id) === result.unitId) ?? rows[0];
         if (match) result.customerPrice = Number(match.amount);
       }
     }
-    // Prefer exact barcode/SKU matches first for enter-to-add / scanner UX
+
     const qLower = q.toLowerCase();
     results.sort((a, b) => {
-      const score = (r: (typeof results)[0]) => {
+      const score = (r: ProductSearchResult) => {
         if (r.barcode && r.barcode.toLowerCase() === qLower) return 0;
         if (r.sku.toLowerCase() === qLower) return 1;
         if (r.barcode && r.barcode.toLowerCase().includes(qLower)) return 2;
@@ -247,7 +344,7 @@ export class PosRepository {
       };
       return score(a) - score(b);
     });
-    return results.slice(0, query.limit ?? 20);
+    return results.slice(0, limit);
   }
 
   async postSale(input: CreateSaleInput, userId?: string | null) {
@@ -363,21 +460,23 @@ export class PosRepository {
     const { data, error } = await q;
     if (error) throw error;
     const due = data ?? [];
-    for (const row of due) {
-      await this.db
-        .from("held_sales")
-        .update({
-          status: statusAfterExpiry(),
-          updated_at: nowIso,
-        })
-        .eq("id", row.id)
-        .eq("status", "held");
-      await this.db
-        .from("sales")
-        .update({ status: "void", updated_at: nowIso, notes: "Hold expired" })
-        .eq("id", row.sale_id)
-        .eq("status", "held");
-    }
+    await Promise.all(
+      due.map(async (row) => {
+        await this.db
+          .from("held_sales")
+          .update({
+            status: statusAfterExpiry(),
+            updated_at: nowIso,
+          })
+          .eq("id", row.id)
+          .eq("status", "held");
+        await this.db
+          .from("sales")
+          .update({ status: "void", updated_at: nowIso, notes: "Hold expired" })
+          .eq("id", row.sale_id)
+          .eq("status", "held");
+      }),
+    );
     return due.length;
   }
 
@@ -1249,57 +1348,63 @@ export class PosRepository {
     const { data: sale, error } = await this.db.from("sales").select("*").eq("id", saleId).single();
     if (error) throw error;
     const mapped = mapSale(sale);
-    const { data: items } = await this.db
-      .from("sale_items")
-      .select("*")
-      .eq("sale_id", saleId)
-      .order("line_no");
-    let customer: Row | null = null;
-    if (sale.customer_id) {
-      const { data } = await this.db.from("customers").select("*").eq("id", sale.customer_id).maybeSingle();
-      customer = data;
-    }
-    let branchName: string | null = null;
-    {
-      const { data: branch } = await this.db
-        .from("branches")
-        .select("name")
-        .eq("id", sale.branch_id)
-        .maybeSingle();
-      branchName = branch ? String(branch.name) : null;
-    }
-    let cashierName: string | null = null;
-    if (sale.created_by) {
-      const { data: profile } = await this.db
-        .from("user_profiles")
-        .select("full_name,email")
-        .eq("id", sale.created_by)
-        .maybeSingle();
-      cashierName = profile
-        ? String(profile.full_name ?? profile.email ?? sale.created_by)
-        : String(sale.created_by);
-    }
-    let salesmanName: string | null = null;
-    if (sale.salesman_user_id) {
-      const { data: profile } = await this.db
-        .from("user_profiles")
-        .select("full_name,email")
-        .eq("id", sale.salesman_user_id)
-        .maybeSingle();
-      salesmanName = profile
-        ? String(profile.full_name ?? profile.email ?? sale.salesman_user_id)
-        : String(sale.salesman_user_id);
-    }
-    const { data: commission } = await this.db
-      .from("sale_commissions")
-      .select("commission_percent,commission_amount")
-      .eq("sale_id", saleId)
-      .maybeSingle();
-    const { data: paymentRows } = await this.db
-      .from("payments")
-      .select("id,reference,total_amount,payment_splits(amount,payment_methods(name,code))")
-      .eq("source_type", "sale")
-      .eq("source_id", saleId);
+
+    const [
+      itemsRes,
+      customerRes,
+      branchRes,
+      cashierRes,
+      salesmanRes,
+      commissionRes,
+      paymentRes,
+    ] = await Promise.all([
+      this.db.from("sale_items").select("*").eq("sale_id", saleId).order("line_no"),
+      sale.customer_id
+        ? this.db.from("customers").select("*").eq("id", sale.customer_id).maybeSingle()
+        : Promise.resolve({ data: null as Row | null, error: null }),
+      this.db.from("branches").select("name").eq("id", sale.branch_id).maybeSingle(),
+      sale.created_by
+        ? this.db
+            .from("user_profiles")
+            .select("full_name,email")
+            .eq("id", sale.created_by)
+            .maybeSingle()
+        : Promise.resolve({ data: null as Row | null, error: null }),
+      sale.salesman_user_id
+        ? this.db
+            .from("user_profiles")
+            .select("full_name,email")
+            .eq("id", sale.salesman_user_id)
+            .maybeSingle()
+        : Promise.resolve({ data: null as Row | null, error: null }),
+      this.db
+        .from("sale_commissions")
+        .select("commission_percent,commission_amount")
+        .eq("sale_id", saleId)
+        .maybeSingle(),
+      this.db
+        .from("payments")
+        .select("id,reference,total_amount,payment_splits(amount,payment_methods(name,code))")
+        .eq("source_type", "sale")
+        .eq("source_id", saleId),
+    ]);
+
+    if (itemsRes.error) throw itemsRes.error;
+    const items = itemsRes.data;
+    const customer = customerRes.data;
+    const branchName = branchRes.data ? String(branchRes.data.name) : null;
+    const cashierName = cashierRes.data
+      ? String(cashierRes.data.full_name ?? cashierRes.data.email ?? sale.created_by)
+      : sale.created_by
+        ? String(sale.created_by)
+        : null;
+    const salesmanName = salesmanRes.data
+      ? String(salesmanRes.data.full_name ?? salesmanRes.data.email ?? sale.salesman_user_id)
+      : sale.salesman_user_id
+        ? String(sale.salesman_user_id)
+        : null;
+    const commission = commissionRes.data;
+    const paymentRows = paymentRes.data;
     const payments: Array<{ method: string; amount: number; reference: string | null }> = [];
     for (const pay of paymentRows ?? []) {
       const splits = (pay.payment_splits as Array<Row> | null) ?? [];
@@ -1319,24 +1424,34 @@ export class PosRepository {
         });
       }
     }
-    const invoiceItems = await Promise.all(
-      (items ?? []).map(async (i) => {
+    const invoiceItems = await (async () => {
+      const rows = items ?? [];
+      const productIds = uniqueIds(rows.filter((i) => !i.is_manual && i.product_id).map((i) => i.product_id));
+      const unitIds = uniqueIds(rows.map((i) => i.unit_id));
+      const [productsRes, unitsRes] = await Promise.all([
+        productIds.length
+          ? this.db.from("products").select("id,name,sku").in("id", productIds)
+          : Promise.resolve({ data: [] as Row[], error: null }),
+        unitIds.length
+          ? this.db.from("units").select("id,name,code").in("id", unitIds)
+          : Promise.resolve({ data: [] as Row[], error: null }),
+      ]);
+      if (productsRes.error) throw productsRes.error;
+      if (unitsRes.error) throw unitsRes.error;
+      const productById = new Map<string, Row>();
+      for (const p of productsRes.data ?? []) productById.set(String((p as Row).id), p as Row);
+      const unitById = new Map<string, Row>();
+      for (const u of unitsRes.data ?? []) unitById.set(String((u as Row).id), u as Row);
+
+      return rows.map((i) => {
         let name = i.is_manual ? String(i.manual_name ?? "Manual item") : String(i.product_id);
         if (!i.is_manual && i.product_id) {
-          const { data: product } = await this.db
-            .from("products")
-            .select("name,sku")
-            .eq("id", i.product_id)
-            .maybeSingle();
+          const product = productById.get(String(i.product_id));
           if (product) name = `${product.name}${product.sku ? ` (${product.sku})` : ""}`;
         }
         let unit: string | null = null;
         if (i.unit_id) {
-          const { data: u } = await this.db
-            .from("units")
-            .select("name,code")
-            .eq("id", i.unit_id)
-            .maybeSingle();
+          const u = unitById.get(String(i.unit_id));
           unit = u ? String(u.code ?? u.name) : null;
         }
         return {
@@ -1352,8 +1467,8 @@ export class PosRepository {
           total: Number(i.line_total),
           warrantyDays: Number(i.warranty_days ?? 0),
         };
-      }),
-    );
+      });
+    })();
     return {
       sale: mapped,
       invoiceNumber: mapped.invoiceNumber,
@@ -1846,8 +1961,63 @@ export class PosRepository {
           userId,
         });
       },
+      async reverseCustomerSaleLedger(input: {
+        organizationId: string;
+        branchId: string;
+        customerId: string;
+        amount: string;
+        saleId: string;
+      }) {
+        await parties.postCustomerLedger({
+          organizationId: input.organizationId,
+          branchId: input.branchId,
+          customerId: input.customerId,
+          entryType: "return",
+          amount: input.amount,
+          sourceType: "sale",
+          sourceId: input.saleId,
+          description: `Compensate failed sale ${input.saleId}`,
+          userId,
+        });
+      },
       async postSplitPayment(input: Record<string, unknown>) {
         await parties.postSplitPayment(input as never, userId);
+      },
+      async reverseSalePayments(input: { organizationId: string; saleId: string }) {
+        const { data: rows, error } = await db
+          .from("payments")
+          .select("id, total_amount, customer_id, status")
+          .eq("organization_id", input.organizationId)
+          .eq("source_type", "sale")
+          .eq("source_id", input.saleId)
+          .neq("status", "void");
+        if (error) throw error;
+        for (const row of rows ?? []) {
+          const freedKey = crypto.randomUUID();
+          const { error: voidErr } = await db
+            .from("payments")
+            .update({
+              status: "void",
+              idempotency_key: freedKey,
+              operation_id: freedKey,
+              notes: "Compensate failed sale finalization",
+            })
+            .eq("id", row.id)
+            .neq("status", "void");
+          if (voidErr) throw voidErr;
+          if (row.customer_id && Number(row.total_amount ?? 0) > 0) {
+            await parties.postCustomerLedger({
+              organizationId: input.organizationId,
+              customerId: String(row.customer_id),
+              entryType: "adjustment",
+              amount: String(row.total_amount),
+              sourceType: "payment",
+              sourceId: String(row.id),
+              description: `Reverse incomplete sale payment ${row.id}`,
+              userId,
+            });
+          }
+        }
       },
       async updateSalePaymentState(
         saleId: string,
@@ -2206,6 +2376,27 @@ export class PosRepository {
     }
     throw error;
   }
+}
+
+function uniqueIds(values: unknown[]): string[] {
+  const out: string[] = [];
+  const seen = new Set<string>();
+  for (const value of values) {
+    if (value == null || value === "") continue;
+    const id = String(value);
+    if (seen.has(id)) continue;
+    seen.add(id);
+    out.push(id);
+  }
+  return out;
+}
+
+function nameMap(rows: Array<Row> | null | undefined): Map<string, string> {
+  const map = new Map<string, string>();
+  for (const row of rows ?? []) {
+    map.set(String(row.id), String(row.name ?? ""));
+  }
+  return map;
 }
 
 function mapSale(row: Row): Sale {

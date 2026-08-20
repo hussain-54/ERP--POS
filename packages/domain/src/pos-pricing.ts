@@ -184,15 +184,16 @@ export function preparePosSaleLine(input: PreparePosSaleLineInput): PreparePosSa
     discountPercent = applied.percent;
   }
   const net = roundMoney(Math.max(0, gross - discount));
-  const tax = computeLineTax({ amount: net, rate: input.taxRate ?? null }).tax;
+  const taxResult = computeLineTax({ amount: net, rate: input.taxRate ?? null });
   return {
     unitPrice: resolved.unitPrice,
     source: resolved.source,
     basePrice: resolved.basePrice,
     discount,
     discountPercent,
-    tax,
-    lineTotal: roundMoney(net + tax),
+    tax: taxResult.tax,
+    /** Exclusive: net + tax. Inclusive: net (price already contains tax). */
+    lineTotal: taxResult.gross,
     reason: resolved.reason,
   };
 }

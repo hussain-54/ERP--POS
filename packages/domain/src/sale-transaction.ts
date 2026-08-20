@@ -5,7 +5,7 @@ import { assertDiscountAllowed, effectiveDiscountPercent } from "./discount-poli
 import { ValidationDomainError } from "./errors.js";
 import { roundMoney } from "./money.js";
 import { applyDiscount } from "./pos-discount.js";
-import { assertPosPaymentPrepared, preparePosPayments } from "./pos-payment.js";
+import { assertPosPaymentPrepared, classifySaleSettlement, preparePosPayments } from "./pos-payment.js";
 import { preparePosSaleLine, type QuantityPriceBreak } from "./pos-pricing.js";
 import type { PosTaxRateInput } from "./pos-tax.js";
 import { buildSaleFinalizationAuditRow } from "./sale-finalization.js";
@@ -98,7 +98,17 @@ export interface SaleTransactionPorts {
     amount: string;
     saleId: string;
   }): Promise<void>;
+  /** Undo sale AR when finalization fails after the ledger write. */
+  reverseCustomerSaleLedger?(input: {
+    organizationId: string;
+    branchId: string;
+    customerId: string;
+    amount: string;
+    saleId: string;
+  }): Promise<void>;
   postSplitPayment(input: Record<string, unknown>): Promise<void>;
+  /** Void sale-sourced payments and free their idempotency key for retry. */
+  reverseSalePayments?(input: { organizationId: string; saleId: string }): Promise<void>;
   /** Set paid totals only after payment is accepted by business logic. */
   updateSalePaymentState?(
     saleId: string,
@@ -221,8 +231,7 @@ export class SaleTransactionService {
           totals,
           paidTotal: row.paidTotal,
           remainingTotal:
-            row.remainingTotal ||
-            Math.max(0, Math.round((row.grandTotal - row.paidTotal) * 100) / 100),
+            row.remainingTotal || roundMoney(Math.max(0, row.grandTotal - row.paidTotal)),
         };
       }
       if (row.status === "draft") {
@@ -360,6 +369,8 @@ export class SaleTransactionService {
     });
 
     const deducted: StockSaleLine[] = [];
+    let customerLedgerPosted = false;
+    let paymentsPosted = false;
     try {
       const lineRows = items.map((item, index) => {
         const qty = qtyNumber(item.qty);
@@ -424,6 +435,7 @@ export class SaleTransactionService {
           amount: String(totals.grandTotal),
           saleId: sale.id,
         });
+        customerLedgerPosted = true;
       }
 
       if (prep.splits.length) {
@@ -447,6 +459,7 @@ export class SaleTransactionService {
           deviceId: input.deviceId,
           offlineTransactionId: input.offlineTransactionId,
         });
+        paymentsPosted = true;
       }
 
       if (this.ports.updateSalePaymentState) {
@@ -465,28 +478,39 @@ export class SaleTransactionService {
         postedAt: new Date().toISOString(),
       });
     } catch (err) {
-      await this.compensateFailedFinalization(sale.id, deducted, err);
+      await this.compensateFailedFinalization(sale.id, deducted, err, {
+        organizationId: input.organizationId,
+        branchId: input.branchId,
+        customerId: input.customerId,
+        ledgerAmount: customerLedgerPosted ? String(totals.grandTotal) : null,
+        reversePayments: paymentsPosted,
+      });
       throw err;
     }
 
-    // Post-commit side effects (sale already posted). Failures here do not void the sale.
+    // Post-commit side effects (sale already posted). Failures here do not void the sale
+    // and must not fail the HTTP checkout response.
+    const settlement = classifySaleSettlement(prep.splits);
     const cogs = items.reduce((s, i) => s + qtyNumber(i.qty) * (i.costPrice ?? 0), 0);
-    await this.ports.postJournal({
-      organizationId: input.organizationId,
-      branchId: input.branchId,
-      sourceType: "sale",
-      sourceId: sale.id,
-      idempotencyKey: input.idempotencyKey,
-      memo: `Sale ${sale.invoiceNumber}`,
-      lines: buildSaleJournalLines({
-        subtotal: totals.subtotal,
-        discountTotal: totals.discountTotal,
-        taxTotal: totals.taxTotal,
-        grandTotal: totals.grandTotal,
-        cogs,
-        paidCash: paidTotal,
+    await this.runPostedSideEffect("journal", () =>
+      this.ports.postJournal({
+        organizationId: input.organizationId,
+        branchId: input.branchId,
+        sourceType: "sale",
+        sourceId: sale.id,
+        idempotencyKey: input.idempotencyKey,
+        memo: `Sale ${sale.invoiceNumber}`,
+        lines: buildSaleJournalLines({
+          subtotal: totals.subtotal,
+          discountTotal: totals.discountTotal,
+          taxTotal: totals.taxTotal,
+          grandTotal: totals.grandTotal,
+          cogs,
+          paidCash: settlement.paidCash,
+          paidBank: settlement.paidBank,
+        }),
       }),
-    });
+    );
 
     let commissionAmount: number | null = null;
     const accrual = buildCommissionAccrual({
@@ -498,18 +522,20 @@ export class SaleTransactionService {
     });
     if (accrual?.shouldAccrue) {
       commissionAmount = accrual.row.commissionAmount;
-      await this.ports.postCommission({
-        organization_id: input.organizationId,
-        sale_id: accrual.row.saleId,
-        salesman_user_id: accrual.row.salesmanUserId,
-        employee_id: accrual.row.employeeId,
-        base_amount: accrual.row.baseAmount,
-        commission_percent: accrual.row.commissionPercent,
-        commission_amount: accrual.row.commissionAmount,
-        original_amount: accrual.row.originalAmount,
-        status: accrual.row.status,
-        paid_amount: 0,
-      });
+      await this.runPostedSideEffect("commission", () =>
+        this.ports.postCommission({
+          organization_id: input.organizationId,
+          sale_id: accrual.row.saleId,
+          salesman_user_id: accrual.row.salesmanUserId,
+          employee_id: accrual.row.employeeId,
+          base_amount: accrual.row.baseAmount,
+          commission_percent: accrual.row.commissionPercent,
+          commission_amount: accrual.row.commissionAmount,
+          original_amount: accrual.row.originalAmount,
+          status: accrual.row.status,
+          paid_amount: 0,
+        }),
+      );
     }
 
     const warranties = items
@@ -528,42 +554,48 @@ export class SaleTransactionService {
           warranty_end: end.toISOString().slice(0, 10),
         };
       });
-    if (warranties.length) await this.ports.postWarranties(warranties);
-
-    if (input.createInstallment && input.customerId && this.ports.createInstallment) {
-      await this.ports.createInstallment({
-        organizationId: input.organizationId,
-        branchId: input.branchId,
-        customerId: input.customerId,
-        sourceType: "sale",
-        sourceId: sale.id,
-        totalAmount: String(totals.grandTotal),
-        downPayment: input.createInstallment.downPayment,
-        installmentCount: input.createInstallment.installmentCount,
-        startDate: input.createInstallment.startDate,
-        frequency: input.createInstallment.frequency ?? "monthly",
-        lateFeePercent: input.createInstallment.lateFeePercent ?? 0,
-        lateFeeFixed: input.createInstallment.lateFeeFixed ?? "0",
-      });
+    if (warranties.length) {
+      await this.runPostedSideEffect("warranties", () => this.ports.postWarranties(warranties));
     }
 
-    await this.ports.postAnalytics({
-      organization_id: input.organizationId,
-      branch_id: input.branchId,
-      sale_id: sale.id,
-      event_type: "sale_posted",
-      payload: {
-        grandTotal: totals.grandTotal,
-        paidTotal,
-        itemCount: items.length,
-        offline: Boolean(input.offlineTransactionId),
-        commissionAmount,
-      },
-    });
+    if (input.createInstallment && input.customerId && this.ports.createInstallment) {
+      await this.runPostedSideEffect("installment", () =>
+        this.ports.createInstallment!({
+          organizationId: input.organizationId,
+          branchId: input.branchId,
+          customerId: input.customerId,
+          sourceType: "sale",
+          sourceId: sale.id,
+          totalAmount: String(totals.grandTotal),
+          downPayment: input.createInstallment!.downPayment,
+          installmentCount: input.createInstallment!.installmentCount,
+          startDate: input.createInstallment!.startDate,
+          frequency: input.createInstallment!.frequency ?? "monthly",
+          lateFeePercent: input.createInstallment!.lateFeePercent ?? 0,
+          lateFeeFixed: input.createInstallment!.lateFeeFixed ?? "0",
+        }),
+      );
+    }
+
+    await this.runPostedSideEffect("analytics", () =>
+      this.ports.postAnalytics({
+        organization_id: input.organizationId,
+        branch_id: input.branchId,
+        sale_id: sale.id,
+        event_type: "sale_posted",
+        payload: {
+          grandTotal: totals.grandTotal,
+          paidTotal,
+          itemCount: items.length,
+          offline: Boolean(input.offlineTransactionId),
+          commissionAmount,
+        },
+      }),
+    );
 
     if (this.ports.postAudit) {
-      try {
-        await this.ports.postAudit(
+      await this.runPostedSideEffect("audit", () =>
+        this.ports.postAudit!(
           buildSaleFinalizationAuditRow({
             organizationId: input.organizationId,
             branchId: input.branchId,
@@ -575,10 +607,8 @@ export class SaleTransactionService {
             paidTotal,
             status: "posted",
           }),
-        );
-      } catch {
-        // Sale is already posted. Invalid audit_logs.device_id FK must not fail the API.
-      }
+        ),
+      );
     }
 
     return {
@@ -590,12 +620,48 @@ export class SaleTransactionService {
     };
   }
 
+  private async runPostedSideEffect(_label: string, fn: () => Promise<void>): Promise<void> {
+    try {
+      await fn();
+    } catch {
+      // Sale is already posted. Journal/commission/warranty/installment/analytics/audit
+      // must not fail checkout or void the invoice.
+    }
+  }
+
   private async compensateFailedFinalization(
     saleId: string,
     deducted: StockSaleLine[],
     err: unknown,
+    extras: {
+      organizationId: string;
+      branchId: string;
+      customerId?: string;
+      ledgerAmount: string | null;
+      reversePayments: boolean;
+    },
   ): Promise<void> {
     const reason = err instanceof Error ? err.message : String(err);
+    if (extras.reversePayments && this.ports.reverseSalePayments) {
+      try {
+        await this.ports.reverseSalePayments({ organizationId: extras.organizationId, saleId });
+      } catch {
+        // Best-effort; void still runs.
+      }
+    }
+    if (extras.ledgerAmount && extras.customerId && this.ports.reverseCustomerSaleLedger) {
+      try {
+        await this.ports.reverseCustomerSaleLedger({
+          organizationId: extras.organizationId,
+          branchId: extras.branchId,
+          customerId: extras.customerId,
+          amount: extras.ledgerAmount,
+          saleId,
+        });
+      } catch {
+        // Best-effort; void still runs.
+      }
+    }
     if (this.ports.reverseStockSale) {
       for (const line of [...deducted].reverse()) {
         try {
@@ -678,6 +744,7 @@ async function resolvePostedSaleItems(
       discount: prepared.discount,
       discountPercent: prepared.discountPercent,
       tax: prepared.tax,
+      taxPricingMode: catalog.taxRate?.pricingMode ?? item.taxPricingMode ?? "exclusive",
     });
   }
   return next;

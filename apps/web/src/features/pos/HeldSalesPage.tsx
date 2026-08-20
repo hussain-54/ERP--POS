@@ -7,6 +7,7 @@ import { partiesApi } from "@/features/customers/parties-api";
 import { inventoryApi } from "@/features/inventory/inventory-api";
 import { adminApi } from "@/features/users/admin-api";
 import { posApi } from "./pos-api";
+import { formatPosFailure, holdEmptyCopy } from "./pos-user-messages";
 import { canActOnOwnedOrForeignHold } from "./pos-security";
 import { usePosLayout } from "./usePosLayoutMode";
 import {
@@ -141,6 +142,19 @@ function HoldDetail({
         <div>
           <dt className="text-[11px] uppercase tracking-wide text-[var(--pos-muted)]">Cashier</dt>
           <dd className="font-medium">{cashierLabel}</dd>
+        </div>
+        <div>
+          <dt className="text-[11px] uppercase tracking-wide text-[var(--pos-muted)]">Hold time</dt>
+          <dd className="tabular-nums">{formatHoldTime(selected.heldAt)}</dd>
+        </div>
+        <div>
+          <dt className="text-[11px] uppercase tracking-wide text-[var(--pos-muted)]">Expires</dt>
+          <dd className="tabular-nums">
+            {selected.expiresAt ? formatHoldTime(selected.expiresAt) : "—"}
+            {selected.minutesUntilExpiry != null && selected.bucket !== "expired"
+              ? ` · ${selected.minutesUntilExpiry}m`
+              : ""}
+          </dd>
         </div>
         <div className="col-span-2">
           <dt className="text-[11px] uppercase tracking-wide text-[var(--pos-muted)]">Hold Reason</dt>
@@ -329,9 +343,9 @@ export function HeldSalesPage() {
       setRecords(res.items.map((row) => parseHeldSale(row)));
     } catch (err) {
       if (gen !== loadGen.current) return;
-      const message = err instanceof Error ? err.message : "Please try again";
-      setLoadError(message);
-      toast.push({ title: "Could not load held sales", description: message, tone: "danger" });
+      const failed = formatPosFailure(err, "hold");
+      setLoadError(failed.description);
+      // Prefer inline POSErrorState; avoid a second toast when the list is empty.
     } finally {
       if (gen === loadGen.current) setLoading(false);
     }
@@ -458,7 +472,7 @@ export function HeldSalesPage() {
   }
 
   async function resumeSelected(checkout: boolean) {
-    if (!selected) return;
+    if (!selected || busy) return;
     setBusy(true);
     try {
       const held = (await posApi.resumeHold(selected.id, checkout)) as Record<string, unknown>;
@@ -475,7 +489,7 @@ export function HeldSalesPage() {
     } catch (err) {
       toast.push({
         title: checkout ? "Resume & checkout failed" : "Resume failed",
-        description: err instanceof Error ? err.message : "Please try again",
+        description: formatPosFailure(err, "hold").description,
         tone: "danger",
       });
     } finally {
@@ -506,7 +520,7 @@ export function HeldSalesPage() {
     } catch (err) {
       toast.push({
         title: "Edit failed",
-        description: err instanceof Error ? err.message : "Please try again",
+        description: formatPosFailure(err, "hold").description,
         tone: "danger",
       });
     } finally {
@@ -542,7 +556,7 @@ export function HeldSalesPage() {
     } catch (err) {
       toast.push({
         title: "Duplicate failed",
-        description: err instanceof Error ? err.message : "Please try again",
+        description: formatPosFailure(err, "hold").description,
         tone: "danger",
       });
     } finally {
@@ -588,7 +602,7 @@ export function HeldSalesPage() {
     } catch (err) {
       toast.push({
         title: "Transfer failed",
-        description: err instanceof Error ? err.message : "Please try again",
+        description: formatPosFailure(err, "hold").description,
         tone: "danger",
       });
     } finally {
@@ -607,7 +621,7 @@ export function HeldSalesPage() {
     } catch (err) {
       toast.push({
         title: "Cancel failed",
-        description: err instanceof Error ? err.message : "Please try again",
+        description: formatPosFailure(err, "hold").description,
         tone: "danger",
       });
     } finally {
@@ -827,8 +841,8 @@ export function HeldSalesPage() {
               />
             ) : !loading && !loadError && rows.length === 0 ? (
               <POSEmptyState
-                title="No held sales"
-                description="Hold a cart from New Sale. Stats and this list use live hold records only."
+                title={holdEmptyCopy().title}
+                description={holdEmptyCopy().description}
                 actionLabel="Go to New Sale"
                 onAction={() => navigate("/pos")}
               />

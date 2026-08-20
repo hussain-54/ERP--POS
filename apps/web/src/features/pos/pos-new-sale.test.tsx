@@ -296,7 +296,7 @@ describe("industrial New Sale terminal", () => {
     expect(screen.getByText("Total")).toBeInTheDocument();
     expect(screen.getByText("LED-12 · Stock 15")).toBeInTheDocument();
     expect(screen.getByText("507.00")).toBeInTheDocument();
-    expect(screen.getByRole("heading", { name: "CART (1 ITEM)" })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "Cart · 1 item" })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Apply Discount" })).toBeDisabled();
     expect(screen.getByRole("button", { name: "Clear Cart" })).toBeEnabled();
     fireEvent.click(screen.getByLabelText("Increase quantity"));
@@ -338,7 +338,7 @@ describe("industrial New Sale terminal", () => {
         canInvoiceDiscount
       />,
     );
-    expect(screen.getByRole("heading", { name: "CART (1 ITEM)" })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "Cart · 1 item" })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Apply Discount" })).toBeEnabled();
     expect(screen.getByRole("button", { name: "Clear Cart" })).toBeEnabled();
     fireEvent.change(screen.getByLabelText("Invoice discount"), { target: { value: "15" } });
@@ -469,7 +469,7 @@ describe("industrial New Sale terminal", () => {
     );
     fireEvent.click(screen.getByRole("button", { name: /Ahmed Traders/ }));
     expect(onSelectCustomer).toHaveBeenCalledWith(customer.id);
-    fireEvent.click(screen.getByRole("button", { name: "Walk-in" }));
+    fireEvent.click(screen.getByRole("button", { name: "Walk-in Customer" }));
     expect(onWalkIn).toHaveBeenCalled();
   });
 
@@ -835,5 +835,63 @@ describe("industrial New Sale terminal", () => {
     expect(within(dialog).getByText("Change")).toBeInTheDocument();
     fireEvent.click(within(dialog).getByRole("button", { name: "PAY NOW" }));
     expect(onPay).toHaveBeenCalledTimes(1);
+  });
+
+  it("cancel on the confirmation modal does not post a sale", () => {
+    const onPay = vi.fn();
+    render(
+      <PosPaymentPanel
+        totals={{
+          items: 1,
+          qty: 1,
+          subtotal: 100,
+          itemDiscount: 0,
+          invoiceDiscount: 0,
+          discount: 0,
+          tax: 0,
+          grand: 100,
+          taxInvoice: { taxableAmount: 100, taxTotal: 0 },
+        }}
+        invoiceDiscount="0"
+        onInvoiceDiscount={() => undefined}
+        canInvoiceDiscount={false}
+        discountRef={createRef<HTMLInputElement>()}
+        methods={[{ id: "m-cash", name: "Cash", kind: "cash" }]}
+        payments={[{ id: "p1", paymentMethodId: "m-cash", amount: "100", methodKind: "cash" }]}
+        onPayments={() => undefined}
+        notes=""
+        onNotes={() => undefined}
+        busy={false}
+        canPay
+        allowCreditDue={false}
+        onHold={() => undefined}
+        onPay={onPay}
+        advanced={false}
+        useInstallment={false}
+        onUseInstallment={() => undefined}
+        installmentCount="3"
+        onInstallmentCount={() => undefined}
+        downPayment="0"
+        onDownPayment={() => undefined}
+        installmentFrequency="monthly"
+        onInstallmentFrequency={() => undefined}
+        lateFeePercent="0"
+        onLateFeePercent={() => undefined}
+        lateFeeFixed="0"
+        onLateFeeFixed={() => undefined}
+        isAdvance={false}
+        onIsAdvance={() => undefined}
+        cashReceived="100"
+        onCashReceived={() => undefined}
+        customer={null}
+        walkIn
+        invoiceReference={null}
+      />,
+    );
+    fireEvent.click(screen.getByRole("button", { name: "PAY NOW" }));
+    const dialog = screen.getByRole("dialog", { name: "Confirm payment" });
+    fireEvent.click(within(dialog).getByRole("button", { name: "Cancel" }));
+    expect(onPay).not.toHaveBeenCalled();
+    expect(screen.queryByRole("dialog", { name: "Confirm payment" })).not.toBeInTheDocument();
   });
 });

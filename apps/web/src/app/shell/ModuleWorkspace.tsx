@@ -34,6 +34,21 @@ export function ModuleWorkspace({ children }: { children: ReactNode }) {
 
   const content = posWorkspace ? <POSShell>{children}</POSShell> : children;
 
+  /* Commercial POS chrome: terminal uses POSShell only. ERP GlobalSidebar stays via Menu. */
+  if (posWorkspace) {
+    return (
+      <PageContainer fill>
+        <section
+          data-module-workspace={model.id}
+          data-erp-workspace-layout="pos-terminal"
+          className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden bg-[var(--erp-bg)]"
+        >
+          <div className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden">{content}</div>
+        </section>
+      </PageContainer>
+    );
+  }
+
   return (
     <PageContainer fill>
       <section
@@ -49,11 +64,9 @@ export function ModuleWorkspace({ children }: { children: ReactNode }) {
         <ModuleContextNav model={model} items={nav} pathname={pathname} />
         <div
           className={
-            posWorkspace
-              ? "flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden"
-              : dense
-                ? "min-h-0 min-w-0 flex-1 overflow-auto p-4 md:p-5"
-                : "min-w-0 flex-1 overflow-x-auto px-3 py-3 md:px-5 md:py-4"
+            dense
+              ? "min-h-0 min-w-0 flex-1 overflow-auto p-4 md:p-5"
+              : "min-w-0 flex-1 overflow-x-auto px-3 py-3 md:px-5 md:py-4"
           }
         >
           {content}

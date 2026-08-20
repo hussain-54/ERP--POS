@@ -67,6 +67,12 @@ describe("POS cart engine", () => {
     expect(r.cart[0].qty).toBe("4");
   });
 
+  it("allows add when stock is unknown (new product, no stock_balances yet)", () => {
+    const out = addOrIncrementProduct([], line({ stock: undefined }));
+    expect(out.ok).toBe(true);
+    expect(out.cart).toHaveLength(1);
+  });
+
   it("validates stock on add and increment", () => {
     const out = addOrIncrementProduct([], line({ stock: "0" }));
     expect(out.ok).toBe(false);
