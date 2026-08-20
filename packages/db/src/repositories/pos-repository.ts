@@ -12,13 +12,19 @@ import {
   assertHoldActionAllowed,
   assertHoldCartNonEmpty,
   adjustCommissionForReturn,
+  assertPosCashMovementInput,
+  buildDayCloseTotals,
   buildSaleReturnAuditRow,
   buildSaleReturnJournalLines,
   cartLinesForResume,
   computeHoldExpiresAt,
+  evaluatePosCoupon,
+  expectedShiftCash,
+  finalizeDayClose,
   filterHeldSales,
   holdMustNotReduceInventory,
   maxReturnableQty,
+  normalizeCouponCode,
   prepareSaleReturn,
   refundSettlementPlan,
   SaleTransactionService,
@@ -31,6 +37,7 @@ import {
   type CommissionRecord,
   type HeldSaleFilter,
   type HeldSaleRecord,
+  type PosCouponRecord,
   type ReturnableLine,
   type ReturnCondition,
   type ReturnReasonCode,
@@ -415,7 +422,15 @@ export class PosRepository {
       })
       .select("*")
       .single();
-    if (heldErr) throw heldErr;
+    if (heldErr) {
+      // Compensate orphan held sale shell so we never leave a half-written hold.
+      await this.db
+        .from("sales")
+        .update({ status: "void", updated_at: new Date().toISOString(), notes: "Hold insert failed" })
+        .eq("id", sale.id)
+        .eq("status", "held");
+      throw heldErr;
+    }
     return { sale: mapSale(sale), held: mapHeldSale(held) };
   }
 
@@ -2307,12 +2322,30 @@ export class PosRepository {
       .neq("status", "void");
     const salesTotal = (sales ?? []).reduce((s, r) => s + Number(r.grand_total ?? 0), 0);
     const cashSales = (sales ?? []).reduce((s, r) => s + Number(r.paid_total ?? 0), 0);
-    const expected = Number(shift.opening_float ?? 0) + cashSales - Number(shift.expense_total ?? 0);
+    const { data: movements } = await this.db
+      .from("pos_cash_movements")
+      .select("kind,amount")
+      .eq("shift_id", shiftId);
+    let cashIn = 0;
+    let cashOut = 0;
+    for (const row of movements ?? []) {
+      const amount = Number(row.amount ?? 0);
+      if (row.kind === "cash_in") cashIn += amount;
+      if (row.kind === "cash_out") cashOut += amount;
+    }
+    const expenseTotal = cashOut;
+    const expected = expectedShiftCash({
+      openingFloat: Number(shift.opening_float ?? 0),
+      cashSalesTotal: cashSales,
+      cashInTotal: cashIn,
+      cashOutTotal: cashOut,
+    });
     const { data, error } = await this.db
       .from("pos_cash_shifts")
       .update({
         sales_total: salesTotal,
         cash_sales_total: cashSales,
+        expense_total: expenseTotal,
         expected_cash: expected,
         updated_at: new Date().toISOString(),
       })
@@ -2362,6 +2395,282 @@ export class PosRepository {
     return data;
   }
 
+  async listCoupons(organizationId: string) {
+    const { data, error } = await this.db
+      .from("pos_coupons")
+      .select("*")
+      .eq("organization_id", organizationId)
+      .order("created_at", { ascending: false });
+    if (error) throw error;
+    return (data ?? []).map(mapCoupon);
+  }
+
+  async createCoupon(input: {
+    organizationId: string;
+    code: string;
+    name?: string;
+    discountMode: "percentage" | "fixed";
+    discountValue: number;
+    minPurchase?: number;
+    maxDiscount?: number | null;
+    usageLimit?: number | null;
+    perCustomerLimit?: number | null;
+    validFrom?: string | null;
+    validTo?: string | null;
+    notes?: string;
+  }) {
+    const code = normalizeCouponCode(input.code);
+    if (!code) throw new ValidationDomainError("Coupon code is required");
+    const { data, error } = await this.db
+      .from("pos_coupons")
+      .insert({
+        organization_id: input.organizationId,
+        code,
+        name: input.name ?? null,
+        discount_mode: input.discountMode,
+        discount_value: input.discountValue,
+        min_purchase: input.minPurchase ?? 0,
+        max_discount: input.maxDiscount ?? null,
+        usage_limit: input.usageLimit ?? null,
+        per_customer_limit: input.perCustomerLimit ?? null,
+        valid_from: input.validFrom ?? null,
+        valid_to: input.validTo ?? null,
+        notes: input.notes ?? null,
+        is_active: true,
+      })
+      .select("*")
+      .single();
+    if (error) throw error;
+    return mapCoupon(data);
+  }
+
+  async getCouponByCode(
+    organizationId: string,
+    code: string,
+    customerId?: string | null,
+  ): Promise<PosCouponRecord> {
+    const normalized = normalizeCouponCode(code);
+    const { data, error } = await this.db
+      .from("pos_coupons")
+      .select("*")
+      .eq("organization_id", organizationId)
+      .eq("code", normalized)
+      .maybeSingle();
+    if (error) throw error;
+    if (!data) throw new ValidationDomainError("Coupon not found");
+    let customerRedemptionCount = 0;
+    if (customerId) {
+      const { count, error: countErr } = await this.db
+        .from("pos_coupon_redemptions")
+        .select("id", { count: "exact", head: true })
+        .eq("coupon_id", data.id)
+        .eq("customer_id", customerId);
+      if (countErr) throw countErr;
+      customerRedemptionCount = count ?? 0;
+    }
+    return {
+      ...mapCouponRecord(data),
+      customerRedemptionCount,
+    };
+  }
+
+  async validateCoupon(input: {
+    organizationId: string;
+    code: string;
+    purchaseBase: number;
+    customerId?: string | null;
+  }) {
+    const coupon = await this.getCouponByCode(input.organizationId, input.code, input.customerId);
+    return evaluatePosCoupon({ coupon, purchaseBase: input.purchaseBase });
+  }
+
+  async redeemCoupon(input: {
+    organizationId: string;
+    couponId: string;
+    saleId: string;
+    customerId?: string | null;
+    discountAmount: number;
+  }) {
+    const { error } = await this.db.from("pos_coupon_redemptions").insert({
+      organization_id: input.organizationId,
+      coupon_id: input.couponId,
+      sale_id: input.saleId,
+      customer_id: input.customerId ?? null,
+      discount_amount: input.discountAmount,
+    });
+    if (error) throw error;
+    const { data: coupon } = await this.db
+      .from("pos_coupons")
+      .select("usage_count")
+      .eq("id", input.couponId)
+      .maybeSingle();
+    await this.db
+      .from("pos_coupons")
+      .update({
+        usage_count: Number(coupon?.usage_count ?? 0) + 1,
+        updated_at: new Date().toISOString(),
+      })
+      .eq("id", input.couponId);
+    await this.db.from("sales").update({ coupon_id: input.couponId }).eq("id", input.saleId);
+  }
+
+  async listCashMovements(shiftId: string) {
+    const { data, error } = await this.db
+      .from("pos_cash_movements")
+      .select("*")
+      .eq("shift_id", shiftId)
+      .order("created_at", { ascending: false });
+    if (error) throw error;
+    return data ?? [];
+  }
+
+  async postCashMovement(input: {
+    organizationId: string;
+    branchId: string;
+    kind: "cash_in" | "cash_out";
+    amount: number;
+    reason: string;
+    reference?: string;
+    userId?: string | null;
+  }) {
+    const parsed = assertPosCashMovementInput({
+      kind: input.kind,
+      amount: input.amount,
+      reason: input.reason,
+    });
+    const shift = await this.getOpenShift(input.organizationId, input.branchId);
+    if (!shift) throw new ValidationDomainError("Open a POS shift before cash in/out");
+    const { data, error } = await this.db
+      .from("pos_cash_movements")
+      .insert({
+        organization_id: input.organizationId,
+        branch_id: input.branchId,
+        shift_id: shift.id,
+        kind: parsed.kind,
+        amount: parsed.amount,
+        reason: parsed.reason,
+        reference: input.reference ?? null,
+        created_by: input.userId ?? null,
+      })
+      .select("*")
+      .single();
+    if (error) throw error;
+    await this.refreshShiftTotals(String(shift.id), input.organizationId, input.branchId);
+    return data;
+  }
+
+  async previewDayClose(organizationId: string, branchId: string, businessDate: string) {
+    const dayStart = `${businessDate}T00:00:00.000Z`;
+    const dayEnd = `${businessDate}T23:59:59.999Z`;
+    const { data: sales } = await this.db
+      .from("sales")
+      .select("grand_total,paid_total,remaining_total,payment_status,status")
+      .eq("organization_id", organizationId)
+      .eq("branch_id", branchId)
+      .gte("created_at", dayStart)
+      .lte("created_at", dayEnd)
+      .neq("status", "void");
+    const { data: shifts } = await this.db
+      .from("pos_cash_shifts")
+      .select("id,opening_float,opened_at")
+      .eq("organization_id", organizationId)
+      .eq("branch_id", branchId)
+      .gte("opened_at", dayStart)
+      .lte("opened_at", dayEnd)
+      .order("opened_at", { ascending: true });
+    const shiftIds = (shifts ?? []).map((s) => String(s.id));
+    let cashIn = 0;
+    let cashOut = 0;
+    if (shiftIds.length) {
+      const { data: movements } = await this.db
+        .from("pos_cash_movements")
+        .select("kind,amount")
+        .in("shift_id", shiftIds);
+      for (const row of movements ?? []) {
+        const amount = Number(row.amount ?? 0);
+        if (row.kind === "cash_in") cashIn += amount;
+        if (row.kind === "cash_out") cashOut += amount;
+      }
+    }
+    const { data: returns } = await this.db
+      .from("sale_returns")
+      .select("refund_amount")
+      .eq("organization_id", organizationId)
+      .eq("branch_id", branchId)
+      .gte("created_at", dayStart)
+      .lte("created_at", dayEnd);
+    const totalSales = (sales ?? []).reduce((s, r) => s + Number(r.grand_total ?? 0), 0);
+    const cashSales = (sales ?? []).reduce((s, r) => s + Number(r.paid_total ?? 0), 0);
+    const creditSales = (sales ?? []).reduce((s, r) => s + Number(r.remaining_total ?? 0), 0);
+    const refunds = (returns ?? []).reduce((s, r) => s + Number(r.refund_amount ?? 0), 0);
+    const openingCash = Number(shifts?.[0]?.opening_float ?? 0);
+    return buildDayCloseTotals({
+      businessDate,
+      totalSales,
+      cashSales,
+      cardSales: 0,
+      bankSales: 0,
+      walletSales: 0,
+      creditSales,
+      refunds,
+      cashIn,
+      cashOut,
+      openingCash,
+    });
+  }
+
+  async closeDay(input: {
+    organizationId: string;
+    branchId: string;
+    businessDate: string;
+    actualCash: number;
+    notes?: string;
+    userId?: string | null;
+  }) {
+    const open = await this.getOpenShift(input.organizationId, input.branchId);
+    if (open) throw new ValidationDomainError("Close the open POS shift before day closing");
+    const { data: existing } = await this.db
+      .from("pos_day_closings")
+      .select("id")
+      .eq("organization_id", input.organizationId)
+      .eq("branch_id", input.branchId)
+      .eq("business_date", input.businessDate)
+      .maybeSingle();
+    if (existing) throw new ValidationDomainError("Day already closed for this date");
+    const totals = await this.previewDayClose(
+      input.organizationId,
+      input.branchId,
+      input.businessDate,
+    );
+    const closed = finalizeDayClose({ totals, actualCash: input.actualCash });
+    const { data, error } = await this.db
+      .from("pos_day_closings")
+      .insert({
+        organization_id: input.organizationId,
+        branch_id: input.branchId,
+        business_date: closed.businessDate,
+        total_sales: closed.totalSales,
+        cash_sales: closed.cashSales,
+        card_sales: closed.cardSales,
+        bank_sales: closed.bankSales,
+        wallet_sales: closed.walletSales,
+        credit_sales: closed.creditSales,
+        refunds: closed.refunds,
+        cash_in: closed.cashIn,
+        cash_out: closed.cashOut,
+        opening_cash: closed.openingCash,
+        expected_cash: closed.expectedCash,
+        actual_cash: closed.actualCash,
+        variance: closed.variance,
+        notes: input.notes ?? null,
+        closed_by: input.userId ?? null,
+      })
+      .select("*")
+      .single();
+    if (error) throw error;
+    return data;
+  }
+
   /** audit_logs.device_id FKs to devices; unknown POS local UUIDs are omitted rather than failing the write. */
   private async insertAuditLog(row: Record<string, unknown>) {
     const { error } = await this.db.from("audit_logs").insert(row);
@@ -2376,6 +2685,44 @@ export class PosRepository {
     }
     throw error;
   }
+}
+
+function mapCoupon(row: Row) {
+  return {
+    id: String(row.id),
+    organizationId: String(row.organization_id),
+    code: String(row.code),
+    name: row.name != null ? String(row.name) : null,
+    discountMode: String(row.discount_mode) as "percentage" | "fixed",
+    discountValue: Number(row.discount_value ?? 0),
+    minPurchase: Number(row.min_purchase ?? 0),
+    maxDiscount: row.max_discount == null ? null : Number(row.max_discount),
+    usageLimit: row.usage_limit == null ? null : Number(row.usage_limit),
+    usageCount: Number(row.usage_count ?? 0),
+    perCustomerLimit: row.per_customer_limit == null ? null : Number(row.per_customer_limit),
+    validFrom: row.valid_from != null ? String(row.valid_from) : null,
+    validTo: row.valid_to != null ? String(row.valid_to) : null,
+    isActive: Boolean(row.is_active),
+    notes: row.notes != null ? String(row.notes) : null,
+  };
+}
+
+function mapCouponRecord(row: Row): PosCouponRecord {
+  return {
+    id: String(row.id),
+    code: String(row.code),
+    discountMode: String(row.discount_mode) as "percentage" | "fixed",
+    discountValue: Number(row.discount_value ?? 0),
+    minPurchase: Number(row.min_purchase ?? 0),
+    maxDiscount: row.max_discount == null ? null : Number(row.max_discount),
+    usageLimit: row.usage_limit == null ? null : Number(row.usage_limit),
+    usageCount: Number(row.usage_count ?? 0),
+    perCustomerLimit: row.per_customer_limit == null ? null : Number(row.per_customer_limit),
+    customerRedemptionCount: 0,
+    validFrom: row.valid_from != null ? String(row.valid_from) : null,
+    validTo: row.valid_to != null ? String(row.valid_to) : null,
+    isActive: Boolean(row.is_active),
+  };
 }
 
 function uniqueIds(values: unknown[]): string[] {

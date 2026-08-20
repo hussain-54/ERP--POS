@@ -183,6 +183,7 @@ const ProductCard = memo(function ProductCard({
             <div className="truncate text-[10px] text-[var(--pos-muted)]">{p.brand}</div>
           ) : null}
           <div className="text-[10px] text-[var(--pos-muted)]">SKU {p.sku || "—"}</div>
+          <div className="text-[10px] text-[var(--pos-muted)]">Unit {p.unitName?.trim() || "—"}</div>
           <div className="mt-auto flex items-end justify-between gap-1 pt-0.5">
             <div>
               <div className="text-[13px] font-bold tabular-nums text-[var(--pos-primary)]">
@@ -200,10 +201,10 @@ const ProductCard = memo(function ProductCard({
           type="button"
           className="pos-product-card-add"
           disabled={outOfStock}
-          title={outOfStock ? "Out of stock — this product cannot be sold right now" : "Add to cart"}
+          title={outOfStock ? "Out of stock — this product cannot be sold right now" : "Quick add to cart"}
           onClick={() => onAdd(p)}
         >
-          {outOfStock ? "Out of stock" : "Add"}
+          {outOfStock ? "Out of stock" : "Quick Add"}
         </button>
       </div>
     </div>

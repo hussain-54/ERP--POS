@@ -86,6 +86,11 @@ interface Props {
   customer?: PosCustomerProfile | null;
   walkIn?: boolean;
   invoiceReference?: string | null;
+  couponCode?: string;
+  onCouponCode?: (code: string) => void;
+  onApplyCoupon?: () => void;
+  couponBusy?: boolean;
+  couponHint?: string | null;
 }
 
 export const PosPaymentPanel = memo(function PosPaymentPanel({
@@ -134,6 +139,11 @@ export const PosPaymentPanel = memo(function PosPaymentPanel({
   customer = null,
   walkIn = true,
   invoiceReference = null,
+  couponCode = "",
+  onCouponCode,
+  onApplyCoupon,
+  couponBusy = false,
+  couponHint = null,
 }: Props) {
   void _invoiceDiscount;
   void _onInvoiceDiscount;
@@ -339,6 +349,32 @@ export const PosPaymentPanel = memo(function PosPaymentPanel({
         <p role="alert" className="mt-1 text-xs text-[var(--pos-danger)]">
           {confirmationError}
         </p>
+      ) : null}
+
+      {onCouponCode && onApplyCoupon ? (
+        <div className="mt-3 flex flex-wrap items-end gap-2">
+          <div className="min-w-0 flex-1">
+            <POSInput
+              label="Coupon code"
+              value={couponCode}
+              onChange={(e) => onCouponCode(e.target.value)}
+              placeholder="Optional — validated on apply"
+            />
+          </div>
+          <POSButton
+            size="sm"
+            variant="secondary"
+            onClick={onApplyCoupon}
+            disabled={busy || couponBusy || !couponCode.trim()}
+            loading={couponBusy}
+            loadingLabel="Checking…"
+          >
+            Apply coupon
+          </POSButton>
+          {couponHint ? (
+            <p className="w-full text-[11px] text-[var(--pos-muted)]">{couponHint}</p>
+          ) : null}
+        </div>
       ) : null}
 
       <div className="mt-3">

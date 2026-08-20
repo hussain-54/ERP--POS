@@ -17,6 +17,11 @@ import { PricingPage } from "@/features/product-management/PricingPage";
 import { BarcodesPage } from "@/features/barcode-qr/BarcodesPage";
 import { AiCameraPage } from "@/features/ai-camera/AiCameraPage";
 import { PosPage } from "@/features/pos/PosPage";
+import { PosTerminalFocusPage } from "@/features/pos/PosTerminalFocusPage";
+import { CouponsPage } from "@/features/pos/CouponsPage";
+import { CashInOutPage } from "@/features/pos/CashInOutPage";
+import { DayClosingPage } from "@/features/pos/DayClosingPage";
+import { PosStagedCapabilityPage } from "@/features/pos/PosStagedCapabilityPage";
 import { ReturnsPage } from "@/features/pos/ReturnsPage";
 import { ExchangePage } from "@/features/pos/ExchangePage";
 import { InvoicesPage } from "@/features/pos/InvoicesPage";
@@ -103,24 +108,38 @@ const implemented: Record<string, ReactNode> = {
   "/ai": <AiCameraPage />,
   "/ai-camera": <AiCameraPage />,
 
-  // 02 POS / SALES — canonical /pos
-  // Workspace children: New Sale, Hold / Resume, Invoices, Register, Returns, Exchange,
-  // Payments, Discounts, References, Salesmen, Installments, Settings.
-  // /held-sales is the Hold / Resume workspace. Alias /pos/new stays PosPage.
-  // /invoices is the invoice register (canonical sales-management search).
-  // /sales-management is Register (cash shift), not a second sales list.
+  // 02 POS / SALES — canonical /pos (26 children; see pos-ownership.ts)
   "/pos": <PosPage />,
   "/pos/new": <PosPage />,
+  "/pos/quick-sale": <PosTerminalFocusPage />,
+  "/pos/product-search": <PosTerminalFocusPage />,
+  "/pos/customer-selection": <PosTerminalFocusPage />,
+  "/pos/barcode-scanner": <PosTerminalFocusPage />,
+  "/pos/split-payment": <PosTerminalFocusPage />,
+  "/pos/hold-sale": <HeldSalesPage />,
+  "/pos/resume-sale": <HeldSalesPage />,
   "/held-sales": <HeldSalesPage />,
   "/invoices": <InvoicesPage />,
-  "/sales-management": <SalesManagementPage />,
+  "/payments": <PaymentsPage />,
+  "/pos/credit": <CreditInstallmentsPage />,
+  "/pos/salesman-reference": <SalesmenPage />,
+  "/pos/salesmen": <SalesmenPage />,
+  "/pos/references": <ReferencesPage />,
+  "/pos/quotations": <QuotationsPage />,
+  "/pos/sales-orders": <QuotationsPage />,
+  "/pos/installments": <InstallmentsPage />,
+  "/discounts": <DiscountsPage />,
+  "/pos/coupons": <CouponsPage />,
   "/returns": <ReturnsPage />,
   "/exchange": <ExchangePage />,
-  "/payments": <PaymentsPage />,
-  "/discounts": <DiscountsPage />,
-  "/pos/references": <ReferencesPage />,
-  "/pos/salesmen": <SalesmenPage />,
-  "/pos/installments": <InstallmentsPage />,
+  "/pos/refund": <ReturnsPage />,
+  "/pos/delivery-order": <DeliveriesPage />,
+  "/pos/cash-drawer": <DevicesPage />,
+  "/pos/shift": <SalesManagementPage />,
+  "/sales-management": <SalesManagementPage />,
+  "/pos/cash-in-out": <CashInOutPage />,
+  "/pos/day-closing": <DayClosingPage />,
+  "/pos/offline": <PosStagedCapabilityPage />,
   "/pos/settings": <SettingsPage />,
   "/pos/customers": <PosCustomersPage />,
   "/pos/products": <PosProductsPage />,

@@ -200,4 +200,67 @@ export const posApi = {
       body: JSON.stringify(body),
     });
   },
+  listCoupons() {
+    return apiFetch<{ items: Array<Record<string, unknown>> }>("/api/v1/pos/coupons", {
+      token: token(),
+    });
+  },
+  createCoupon(body: Record<string, unknown>) {
+    return apiFetch("/api/v1/pos/coupons", {
+      method: "POST",
+      token: token(),
+      body: JSON.stringify(body),
+    });
+  },
+  validateCoupon(body: { code: string; purchaseBase: number; customerId?: string | null }) {
+    return apiFetch<{
+      couponId: string;
+      code: string;
+      amount: number;
+      percent: number;
+      mode: string;
+      capped: boolean;
+    }>("/api/v1/pos/coupons/validate", {
+      method: "POST",
+      token: token(),
+      body: JSON.stringify(body),
+    });
+  },
+  listCashMovements(shiftId: string) {
+    return apiFetch<{ items: Array<Record<string, unknown>> }>(
+      `/api/v1/pos/cash-movements?shiftId=${shiftId}`,
+      { token: token() },
+    );
+  },
+  postCashMovement(body: {
+    branchId: string;
+    kind: "cash_in" | "cash_out";
+    amount: number;
+    reason: string;
+    reference?: string;
+  }) {
+    return apiFetch("/api/v1/pos/cash-movements", {
+      method: "POST",
+      token: token(),
+      body: JSON.stringify(body),
+    });
+  },
+  previewDayClose(params: { branchId: string; businessDate: string }) {
+    const qs = new URLSearchParams(params);
+    return apiFetch<{ totals: Record<string, unknown> }>(`/api/v1/pos/day-close/preview?${qs}`, {
+      token: token(),
+    });
+  },
+  closeDay(body: {
+    branchId: string;
+    businessDate: string;
+    actualCash: number;
+    notes?: string;
+  }) {
+    return apiFetch("/api/v1/pos/day-close", {
+      method: "POST",
+      token: token(),
+      body: JSON.stringify(body),
+    });
+  },
 };

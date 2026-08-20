@@ -459,6 +459,18 @@ describe("supabase foundation migration", () => {
     expect(sql).toContain("stock_balances");
     expect(sql).toContain("security invoker");
   });
+
+  it("POS coupons / cash movements / day closing migration exists", () => {
+    const migration = path.join(
+      root,
+      "supabase/migrations/20260821000001_pos_coupons_cash_day_close.sql",
+    );
+    expect(existsSync(migration)).toBe(true);
+    const sql = readFileSync(migration, "utf8");
+    expect(sql).toContain("pos_coupons");
+    expect(sql).toContain("pos_cash_movements");
+    expect(sql).toContain("pos_day_closings");
+  });
 });
 
 describe("Phase 17 security — web must not ship service role", () => {

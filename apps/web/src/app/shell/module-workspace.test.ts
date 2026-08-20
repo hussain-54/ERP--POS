@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { ERP_NAV_SECTIONS, ERP_STABLE_PARENT_PATHS } from "@/app/modules";
+import { POS_IA_TITLES } from "@/features/pos/pos-ownership";
 import {
   filterWorkspaceNav,
   isWorkspaceNavItemActive,
@@ -25,22 +26,11 @@ describe("module workspace model", () => {
     expect(model?.name).toBe("POS / SALES");
     expect(model?.searchPlaceholder).toBe("Search sales...");
     expect(model?.description).toContain("Point of sale");
-    expect(model?.nav.map((item) => item.title)).toEqual([
-      "Overview",
-      "Hold / Resume",
-      "Invoices",
-      "Register",
-      "Returns",
-      "Exchange",
-      "Payments",
-      "Discounts",
-      "References",
-      "Salesmen",
-      "Installments",
-      "Settings",
-    ]);
+    expect(model?.nav.map((item) => item.title)).toEqual(["Overview", ...POS_IA_TITLES.slice(1)]);
     expect(isWorkspaceNavItemActive(model!.nav[0]!, "/pos", model!)).toBe(true);
-    expect(isWorkspaceNavItemActive(model!.nav[2]!, "/invoices", model!)).toBe(true);
+    expect(isWorkspaceNavItemActive(model!.nav.find((n) => n.path === "/invoices")!, "/invoices", model!)).toBe(
+      true,
+    );
     expect(isWorkspaceNavItemActive(model!.nav[0]!, "/invoices", model!)).toBe(false);
     expect(filterWorkspaceNav("invoice", model!.nav).map((item) => item.title)).toEqual(["Invoices"]);
   });

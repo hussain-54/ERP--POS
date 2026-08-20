@@ -1,4 +1,5 @@
 import { useEffect, useState, type FormEvent } from "react";
+import { useLocation } from "react-router-dom";
 import { Badge, Button, Card, Form, FormActions, Input, useToast } from "@electronic-erp/ui";
 import { useAuth } from "@/features/auth/AuthContext";
 import { afterSalesApi } from "./after-sales-api";
@@ -9,6 +10,8 @@ function uuid() {
 
 export function QuotationsPage() {
   const toast = useToast();
+  const { pathname } = useLocation();
+  const focusOrders = pathname.includes("sales-orders") || pathname === "/orders";
   const { branchId } = useAuth();
   const [items, setItems] = useState<Array<Record<string, unknown>>>([]);
   const [orders, setOrders] = useState<Array<Record<string, unknown>>>([]);
@@ -123,9 +126,10 @@ export function QuotationsPage() {
   return (
     <div className="space-y-4">
       <div>
-        <h1 className="text-2xl font-semibold">Quotations & orders</h1>
+        <h1 className="text-2xl font-semibold">{focusOrders ? "Sales Orders" : "Quotations"}</h1>
         <p className="text-sm text-[var(--erp-muted)]">
-          Lifecycle: Quotation → Sales Order → Invoice (via central sale transaction)
+          Lifecycle: Quotation → Sales Order → Invoice (via central sale transaction). Same engine —
+          no second cart.
         </p>
       </div>
 

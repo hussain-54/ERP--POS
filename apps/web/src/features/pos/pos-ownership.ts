@@ -1,37 +1,52 @@
 /**
  * POS information architecture — module 02 POS / SALES ownership.
  *
- * Names and order are locked. Do not rename or reorder.
- * Canonical POS entry is `/pos`. Aliases stay registered; do not delete them.
+ * Names and order are locked to the product-owner canonical list (26 children).
+ * Do not rename or reorder POS_IA_TITLES.
+ * Canonical POS terminal entry is `/pos`. Legacy aliases stay registered.
  *
- * This file is a map only. It does not move pages, change APIs, or alter sale math.
- * Master modules stay in salesman/ and installments/. POS children are dedicated pages.
+ * Financial math source of truth: packages/domain (pos-canonical.ts / sale-totals /
+ * sale-transaction). UI must not invent grand totals, tax, paid, or stock decisions.
  */
 
 export const POS_IA_TITLES = [
-  "New Sale",
-  "Hold / Resume",
+  "POS Terminal",
+  "Quick Sale",
+  "Product Search",
+  "Customer Selection",
   "Invoices",
-  "Register",
+  "Payments",
+  "Credit / Udhaar",
+  "Barcode Scanner",
+  "Salesman / Reference",
+  "Hold Sale",
+  "Resume Sale",
+  "Quotations",
+  "Sales Orders",
+  "Split Payment",
+  "Installments",
+  "Discounts",
+  "Coupons",
   "Returns",
   "Exchange",
-  "Payments",
-  "Discounts",
-  "References",
-  "Salesmen",
-  "Installments",
-  "Settings",
+  "Refund",
+  "Delivery Order",
+  "Cash Drawer",
+  "POS Shift",
+  "Cash In / Cash Out",
+  "Day Closing",
+  "Offline POS",
 ] as const;
 
 export type PosIaTitle = (typeof POS_IA_TITLES)[number];
 
-export type PosOwnershipStatus = "live" | "placeholder" | "shared-live";
+export type PosOwnershipStatus = "live" | "partial" | "placeholder" | "shared-live";
 
 export interface PosOwnershipItem {
   title: PosIaTitle;
   /** Canonical URL for this POS child. */
   canonical: string;
-  /** Working aliases — keep registered, do not delete. */
+  /** Working aliases — keep registered; do not delete. */
   aliases: readonly string[];
   /** Web page that currently owns the screen. */
   page: string;
@@ -39,33 +54,52 @@ export interface PosOwnershipItem {
   /** APIs / domain the screen must keep using. */
   backend: string;
   note: string;
+  /** When placeholder/partial: where related live work already exists. */
+  availableOn?: string;
 }
 
 export const POS_CANONICAL_ENTRY = "/pos";
 
-/**
- * POS feature navigation lives on ModuleWorkspace (registry children) and the
- * in-terminal POSTerminalNav for quick POS operations.
- */
-
 export const POS_OWNERSHIP: readonly PosOwnershipItem[] = [
   {
-    title: "New Sale",
+    title: "POS Terminal",
     canonical: "/pos",
     aliases: ["/pos/new"],
     page: "features/pos/PosPage.tsx",
     status: "live",
-    backend: "POST /api/v1/pos/sales · PosRepository.postSale · sale-transaction / pos-cart / pos-payment / pos-pricing / pos-tax / discount-policy",
-    note: "Dense terminal. /pos is the only canonical POS entry.",
+    backend:
+      "POST /api/v1/pos/sales · SaleTransactionService · pos-cart / sale-totals / pos-payment / pos-validation",
+    note: "Primary retail terminal. Same canonical posting path as Quick Sale.",
   },
   {
-    title: "Hold / Resume",
-    canonical: "/held-sales",
+    title: "Quick Sale",
+    canonical: "/pos/quick-sale",
     aliases: [],
-    page: "features/pos/HeldSalesPage.tsx",
-    status: "live",
-    backend: "/api/v1/pos/holds* · PosRepository hold/resume/edit · pos-hold.ts",
-    note: "Dedicated Hold / Resume workspace in the POS shell. Nav title stays Hold / Resume.",
+    page: "features/pos/PosTerminalFocusPage.tsx → PosPage mode=easy",
+    status: "partial",
+    backend: "Same SaleTransactionService as POS Terminal — no second cart engine",
+    note: "Easy-mode terminal focus. Does not duplicate calculations.",
+    availableOn: "/pos",
+  },
+  {
+    title: "Product Search",
+    canonical: "/pos/product-search",
+    aliases: ["/pos/products"],
+    page: "features/pos/PosTerminalFocusPage.tsx → PosPage focus=search",
+    status: "partial",
+    backend: "searchPosProducts · pos-product-search · PosRepository.searchProducts",
+    note: "Opens terminal product discovery. Catalog master remains /products.",
+    availableOn: "/pos",
+  },
+  {
+    title: "Customer Selection",
+    canonical: "/pos/customer-selection",
+    aliases: ["/pos/customers"],
+    page: "features/pos/PosTerminalFocusPage.tsx → PosPage focus=customer",
+    status: "partial",
+    backend: "pos-customer-repository · parties customers · pos-customer.ts",
+    note: "Opens terminal customer panel (exits walk-in for search). ERP Customers module unchanged.",
+    availableOn: "/pos",
   },
   {
     title: "Invoices",
@@ -73,35 +107,8 @@ export const POS_OWNERSHIP: readonly PosOwnershipItem[] = [
     aliases: [],
     page: "features/pos/InvoicesPage.tsx",
     status: "live",
-    backend: "GET /api/v1/pos/sales/management · export CSV · GET /api/v1/pos/sales/:id/invoice · PosRepository.searchSalesManagement / getInvoice",
-    note: "Invoice register. Reuses the canonical sales-management search — do not add a second sales list.",
-  },
-  {
-    title: "Register",
-    canonical: "/sales-management",
-    aliases: [],
-    page: "features/pos/RegisterPage.tsx",
-    status: "live",
-    backend: "GET /api/v1/pos/shifts/current · POST /api/v1/pos/shifts/open · POST /api/v1/pos/shifts/:id/close · PosRepository cash shifts",
-    note: "Cashier/register control. Do not invent cash-in/out postings. Sales list lives on Invoices.",
-  },
-  {
-    title: "Returns",
-    canonical: "/returns",
-    aliases: [],
-    page: "features/pos/ReturnsPage.tsx",
-    status: "live",
-    backend: "/api/v1/pos/returns* · PosRepository.postReturn · pos-return.ts",
-    note: "Canonical returns screen. Qty capped at sold minus previously returned.",
-  },
-  {
-    title: "Exchange",
-    canonical: "/exchange",
-    aliases: [],
-    page: "features/pos/ExchangePage.tsx",
-    status: "live",
-    backend: "POST /api/v1/pos/returns then POST /api/v1/pos/sales · PosRepository.postReturn / postSale · pos-return.ts + pos-exchange.ts + sale-transaction.ts",
-    note: "Real exchange: return posting plus replacement sale. Difference is the net of those two legs. Keep /exchange.",
+    backend: "GET /api/v1/pos/sales/management · getInvoice",
+    note: "Invoice register. Do not add a second sales list.",
   },
   {
     title: "Payments",
@@ -109,36 +116,82 @@ export const POS_OWNERSHIP: readonly PosOwnershipItem[] = [
     aliases: [],
     page: "features/pos/PaymentsPage.tsx",
     status: "live",
-    backend: "GET/POST /api/v1/parties/payments · GET /api/v1/parties/payment-methods · PartiesRepository.searchPayments / postSplitPayment (not a second POS sale writer)",
-    note: "Payment center. Checkout posting stays on New Sale. No gateway. No void/reverse API.",
+    backend: "parties payments APIs — not a second POS sale writer",
+    note: "Payment center. Checkout posting stays on the terminal.",
   },
   {
-    title: "Discounts",
-    canonical: "/discounts",
-    aliases: [],
-    page: "features/pos/DiscountsPage.tsx",
-    status: "live",
-    backend:
-      "discount-policy.ts + pos-discount.ts · POST/GET /api/v1/admin/approvals · sale post still overwrites approverRole via discountRoleFromAuthz",
-    note: "Policy and real discount approval inbox. Caps are never bypassed in the UI. Price override stays permission-gated on New Sale.",
+    title: "Credit / Udhaar",
+    canonical: "/pos/credit",
+    aliases: ["/credit"],
+    page: "features/installments/CreditInstallmentsPage.tsx",
+    status: "shared-live",
+    backend: "credit.ts · parties ledgers / installments · POS tender uses evaluatePosCustomerCredit",
+    note: "POS-owned nav entry to the credit workspace. Sale credit rules enforced at checkout.",
   },
   {
-    title: "References",
-    canonical: "/pos/references",
+    title: "Barcode Scanner",
+    canonical: "/pos/barcode-scanner",
     aliases: [],
-    page: "features/pos/ReferencesPage.tsx",
-    status: "live",
-    backend: "GET/POST /api/v1/references · GET /api/v1/pos/sales/management · EnterpriseRepository.createSaleReference",
-    note: "POS reference register of real sale_references plus sales that used them. Module 20 stays /salesman.",
+    page: "features/pos/PosTerminalFocusPage.tsx → PosPage focus=scan",
+    status: "partial",
+    backend: "hardware scanner subscribe · pickExactProductMatch · searchPosProducts",
+    note: "Exact barcode/SKU match only — never fuzzy first-hit add.",
+    availableOn: "/pos",
   },
   {
-    title: "Salesmen",
-    canonical: "/pos/salesmen",
-    aliases: [],
+    title: "Salesman / Reference",
+    canonical: "/pos/salesman-reference",
+    aliases: ["/pos/salesmen", "/pos/references"],
     page: "features/pos/SalesmenPage.tsx",
     status: "live",
-    backend: "enterpriseApi employees/commissions · mapSalesmanEmployees · pos-commission.ts",
-    note: "POS salesman roster. New Sale selection uses the same employee map. Module 20 stays /salesman.",
+    backend: "enterprise employees/commissions · sale_references · pos-commission.ts",
+    note: "Salesman roster (references register remains aliased). Module 20 /salesman stays HR master.",
+  },
+  {
+    title: "Hold Sale",
+    canonical: "/pos/hold-sale",
+    aliases: [],
+    page: "features/pos/HeldSalesPage.tsx",
+    status: "live",
+    backend: "POST /api/v1/pos/holds · pos-hold.ts — no stock movement",
+    note: "Hold list + park workflow. Terminal Hold button still parks from POS Terminal.",
+  },
+  {
+    title: "Resume Sale",
+    canonical: "/pos/resume-sale",
+    aliases: ["/held-sales"],
+    page: "features/pos/HeldSalesPage.tsx",
+    status: "live",
+    backend: "POST /api/v1/pos/holds/:id/resume · CAS held→resumed",
+    note: "Same holds workspace; legacy /held-sales alias preserved.",
+  },
+  {
+    title: "Quotations",
+    canonical: "/pos/quotations",
+    aliases: ["/quotations"],
+    page: "features/quotations/QuotationsPage.tsx",
+    status: "shared-live",
+    backend: "quotation-lifecycle → calculateSaleTotals · after-sales quotations API",
+    note: "POS nav entry to quotations. Create-from-cart remains on the terminal.",
+  },
+  {
+    title: "Sales Orders",
+    canonical: "/pos/sales-orders",
+    aliases: ["/orders"],
+    page: "features/quotations/QuotationsPage.tsx",
+    status: "shared-live",
+    backend: "sales_orders tables · quotation-lifecycle (SO conversion not a second cart)",
+    note: "POS nav entry to orders workspace (same live page as /orders today).",
+  },
+  {
+    title: "Split Payment",
+    canonical: "/pos/split-payment",
+    aliases: [],
+    page: "features/pos/PosTerminalFocusPage.tsx → PosPage focus=payment",
+    status: "partial",
+    backend: "preparePosPayments · PaySplit lines — same checkout path",
+    note: "Opens terminal payment panel for multi-tender. No separate posting engine.",
+    availableOn: "/pos",
   },
   {
     title: "Installments",
@@ -146,18 +199,110 @@ export const POS_OWNERSHIP: readonly PosOwnershipItem[] = [
     aliases: [],
     page: "features/pos/InstallmentsPage.tsx",
     status: "live",
-    backend: "GET/POST /api/v1/parties/installments · PartiesRepository.searchInstallmentPlans / createInstallmentPlan · installments.ts",
-    note: "POS installment register. Canonical master remains /installments. /credit stays CreditInstallmentsPage.",
+    backend: "parties installments · installments.ts · post-commit create on sale",
+    note: "POS installment register. Plan create after post is a known integrity follow-up.",
   },
   {
-    title: "Settings",
-    canonical: "/pos/settings",
+    title: "Discounts",
+    canonical: "/discounts",
     aliases: [],
-    page: "features/pos/SettingsPage.tsx",
+    page: "features/pos/DiscountsPage.tsx",
     status: "live",
-    backend:
-      "Read-only: hardware statuses · payment-methods · tax rates · discount-policy.ts · pos-hold TTL · pos-return catalogs · POS_SHORTCUTS · defaultMediaForDocument. No POS settings writer. /settings/pos stays System Administration Coming Soon.",
-    note: "POS-owned Settings. Does not duplicate Security, Users, Branches, Integrations, Backup, or company settings.",
+    backend: "discount-policy.ts + pos-discount.ts · approvals",
+    note: "Policy + approvals. Line/invoice discounts on terminal use the same domain.",
+  },
+  {
+    title: "Coupons",
+    canonical: "/pos/coupons",
+    aliases: [],
+    page: "features/pos/CouponsPage.tsx",
+    status: "live",
+    backend: "pos_coupons · pos-coupon.ts → invoice discount via SaleTransactionService",
+    note: "Server re-validates coupon codes on sale post. Do not invent a second totals engine.",
+  },
+  {
+    title: "Returns",
+    canonical: "/returns",
+    aliases: [],
+    page: "features/pos/ReturnsPage.tsx",
+    status: "live",
+    backend: "pos-return.ts · PosRepository.postReturn",
+    note: "Canonical returns screen.",
+  },
+  {
+    title: "Exchange",
+    canonical: "/exchange",
+    aliases: [],
+    page: "features/pos/ExchangePage.tsx",
+    status: "live",
+    backend: "pos-exchange.ts · postReturn + postSale",
+    note: "Return leg + replacement sale — not delete+fake sale.",
+  },
+  {
+    title: "Refund",
+    canonical: "/pos/refund",
+    aliases: [],
+    page: "features/pos/ReturnsPage.tsx",
+    status: "partial",
+    backend: "refundSettlementPlan in pos-return.ts",
+    note: "Refund disposition lives on Returns until a dedicated refund desk is built.",
+    availableOn: "/returns",
+  },
+  {
+    title: "Delivery Order",
+    canonical: "/pos/delivery-order",
+    aliases: ["/deliveries", "/delivery"],
+    page: "features/delivery/DeliveriesPage.tsx",
+    status: "shared-live",
+    backend: "delivery-lifecycle · purchasesApi.createDelivery from terminal (best-effort)",
+    note: "POS nav entry to deliveries. Terminal may flag delivery on sale.",
+  },
+  {
+    title: "Cash Drawer",
+    canonical: "/pos/cash-drawer",
+    aliases: ["/devices/drawer"],
+    page: "features/devices/DevicesPage.tsx",
+    status: "partial",
+    backend: "cash_drawer.open · hardware routes — not a shift ledger",
+    note: "Hardware drawer kick / device screen. Full drawer ledger is later phase.",
+    availableOn: "/sales-management",
+  },
+  {
+    title: "POS Shift",
+    canonical: "/pos/shift",
+    aliases: ["/sales-management"],
+    page: "features/pos/SalesManagementPage.tsx",
+    status: "live",
+    backend: "pos_cash_shifts · open/close shift APIs",
+    note: "Shift open/close. Legacy /sales-management alias preserved.",
+  },
+  {
+    title: "Cash In / Cash Out",
+    canonical: "/pos/cash-in-out",
+    aliases: [],
+    page: "features/pos/CashInOutPage.tsx",
+    status: "live",
+    backend: "pos_cash_movements · pos-cash-movement.ts · open shift required",
+    note: "Posts cash_in/cash_out against the open shift and refreshes expected cash.",
+  },
+  {
+    title: "Day Closing",
+    canonical: "/pos/day-closing",
+    aliases: [],
+    page: "features/pos/DayClosingPage.tsx",
+    status: "live",
+    backend: "pos_day_closings · pos-day-close.ts",
+    note: "Requires open shift closed first. Produces an auditable day record.",
+  },
+  {
+    title: "Offline POS",
+    canonical: "/pos/offline",
+    aliases: [],
+    page: "features/pos/PosStagedCapabilityPage.tsx",
+    status: "placeholder",
+    backend: "Online-only — offline sale queue removed; no localStorage posting",
+    note: "Staged. Do not implement fake offline sales.",
+    availableOn: "/pos",
   },
 ] as const;
 
@@ -165,25 +310,43 @@ export const POS_TERMINAL_CANONICAL = POS_CANONICAL_ENTRY;
 
 /**
  * URLs that use POS workspace chrome inside the ERP AppShell.
- * Do not include master-module owners (/salesman, /installments) or /credit / /settings/pos.
  */
 export const POS_ENVIRONMENT_PATHS = [
   "/pos",
   "/pos/new",
+  "/pos/quick-sale",
+  "/pos/product-search",
+  "/pos/customer-selection",
   "/pos/customers",
   "/pos/products",
-  "/pos/reports",
+  "/pos/barcode-scanner",
+  "/pos/salesman-reference",
+  "/pos/salesmen",
+  "/pos/references",
+  "/pos/hold-sale",
+  "/pos/resume-sale",
   "/held-sales",
+  "/pos/quotations",
+  "/pos/sales-orders",
+  "/pos/split-payment",
+  "/pos/installments",
+  "/pos/coupons",
+  "/pos/refund",
+  "/pos/delivery-order",
+  "/pos/cash-drawer",
+  "/pos/shift",
+  "/pos/cash-in-out",
+  "/pos/day-closing",
+  "/pos/offline",
+  "/pos/credit",
+  "/pos/reports",
+  "/pos/settings",
   "/invoices",
   "/sales-management",
   "/returns",
   "/exchange",
   "/payments",
   "/discounts",
-  "/pos/references",
-  "/pos/salesmen",
-  "/pos/installments",
-  "/pos/settings",
 ] as const;
 
 export type PosEnvironmentPath = (typeof POS_ENVIRONMENT_PATHS)[number];
@@ -194,7 +357,9 @@ export function isPosEnvironmentPath(pathname: string): boolean {
 
 export function posNavItemForPath(pathname: string): PosOwnershipItem | undefined {
   if (pathname === "/pos/new") return POS_OWNERSHIP[0];
-  return POS_OWNERSHIP.find((item) => item.canonical === pathname);
+  const byCanonical = POS_OWNERSHIP.find((item) => item.canonical === pathname);
+  if (byCanonical) return byCanonical;
+  return POS_OWNERSHIP.find((item) => item.aliases.includes(pathname));
 }
 
 export type PosTerminalNavItem = {
@@ -204,18 +369,16 @@ export type PosTerminalNavItem = {
 };
 
 /**
- * Retail terminal sidebar IA (reference screenshot).
- * Module 02 ERP workspace nav stays on POS_OWNERSHIP (12 children).
- * Hub aliases remain routed for bookmarks / F-keys.
+ * Dense terminal strip — operational shortcuts (not the full 26 ERP children).
  */
 export const POS_TERMINAL_NAV: readonly PosTerminalNavItem[] = [
   { label: "POS", path: "/pos" },
-  { label: "Hold / Resume", path: "/held-sales", badge: "hold" },
-  { label: "Customers", path: "/pos/customers" },
-  { label: "Products", path: "/pos/products" },
+  { label: "Resume Sale", path: "/pos/resume-sale", badge: "hold" },
+  { label: "Customers", path: "/pos/customer-selection" },
+  { label: "Products", path: "/pos/product-search" },
   { label: "Price & Discount", path: "/discounts" },
-  { label: "Reports", path: "/pos/reports" },
-  { label: "Settings", path: "/pos/settings" },
+  { label: "Invoices", path: "/invoices" },
+  { label: "Shift", path: "/pos/shift" },
 ] as const;
 
 export const POS_COMPONENT_OWNERS = {
@@ -227,81 +390,39 @@ export const POS_COMPONENT_OWNERS = {
     "features/pos/design-system/POSShortcutBar.tsx",
     "features/pos/design-system/POSActionBar.tsx",
   ],
-  newSale: [
+  terminal: [
     "features/pos/PosPage.tsx",
-    "features/pos/components/PosSaleLayout.tsx",
-    "features/pos/components/PosSaleMeta.tsx",
-    "features/pos/components/PosProductPanel.tsx",
-    "features/pos/components/PosDiscoveryTools.tsx",
-    "features/pos/components/PosCart.tsx",
-    "features/pos/components/PosCartRow.tsx",
-    "features/pos/components/PosTotals.tsx",
-    "features/pos/components/PosCustomerPanel.tsx",
-    "features/pos/components/PosPaymentPanel.tsx",
-    "features/pos/components/PaymentMethodGrid.tsx",
-    "features/pos/components/PaymentSummary.tsx",
-    "features/pos/components/PayNowButton.tsx",
-    "features/pos/components/HoldSaleButton.tsx",
-    "features/pos/components/QuotationButton.tsx",
-    "features/pos/components/PaymentConfirmModal.tsx",
-    "features/pos/components/PosHoldsPanel.tsx",
-    "features/pos/components/PosApprovalDialog.tsx",
-    "features/pos/components/ReceiptPreview.tsx",
+    "features/pos/PosTerminalFocusPage.tsx",
     "features/pos/session/usePosSession.ts",
-    "features/pos/session/pos-customer-runtime.ts",
-    "features/pos/session/pos-customer-repository.ts",
     "features/pos/pos-api.ts",
-    "features/pos/pos-product-search.ts",
-    "features/pos/pos-quotation.ts",
-    "features/pos/pos-catalog-load.ts",
-    "features/pos/pos-transaction.ts",
-    "features/pos/pos-payment-ux.ts",
-    "features/pos/pos-ux.ts",
-    "features/pos/pos-security.ts",
-    "features/pos/hardware.ts",
   ],
-  invoices: [
-    "features/pos/InvoicesPage.tsx",
-    "features/pos/SalesWorkspace.tsx",
-    "features/pos/sales-workspace.ts",
-  ],
+  staged: ["features/pos/PosStagedCapabilityPage.tsx"],
+  invoices: ["features/pos/InvoicesPage.tsx", "features/pos/SalesWorkspace.tsx"],
   holds: ["features/pos/HeldSalesPage.tsx", "features/pos/held-sales.ts"],
-  register: ["features/pos/RegisterPage.tsx", "features/pos/register-shift.ts", "features/pos/SalesManagementPage.tsx"],
-  returns: [
-    "features/pos/ReturnsPage.tsx",
-    "features/pos/returns-workspace.ts",
-    "features/pos/components/PosSaleReview.tsx",
-  ],
-  exchange: [
-    "features/pos/ExchangePage.tsx",
-    "features/pos/returns-workspace.ts",
-    "features/pos/components/PosSaleReview.tsx",
-  ],
+  shift: ["features/pos/RegisterPage.tsx", "features/pos/register-shift.ts"],
+  returns: ["features/pos/ReturnsPage.tsx", "features/pos/returns-workspace.ts"],
+  exchange: ["features/pos/ExchangePage.tsx"],
   payments: ["features/pos/PaymentsPage.tsx", "features/pos/payment-center.ts"],
   discounts: ["features/pos/DiscountsPage.tsx", "features/pos/discounts-workspace.ts"],
   salesmen: ["features/pos/SalesmenPage.tsx", "features/pos/salesman-workspace.ts"],
-  references: ["features/pos/ReferencesPage.tsx", "features/pos/references-workspace.ts"],
   installments: ["features/pos/InstallmentsPage.tsx", "features/pos/installments-workspace.ts"],
   settings: ["features/pos/SettingsPage.tsx", "features/pos/pos-settings.ts"],
   sharedOutsidePosFolder: [
-    "features/salesman/SalesmanPage.tsx",
+    "features/quotations/QuotationsPage.tsx",
     "features/installments/CreditInstallmentsPage.tsx",
+    "features/delivery/DeliveriesPage.tsx",
+    "features/devices/DevicesPage.tsx",
   ],
 } as const;
 
 export const POS_API_DOMAIN_OWNERS = {
   router: "apps/api/src/routes/pos.ts",
   repository: "packages/db/src/repositories/pos-repository.ts",
+  canonical: "packages/domain/src/pos-canonical.ts",
   sale: "packages/domain/src/sale-transaction.ts",
+  totals: "packages/domain/src/sale-totals.ts",
   cart: "packages/domain/src/pos-cart.ts",
   hold: "packages/domain/src/pos-hold.ts",
   payment: "packages/domain/src/pos-payment.ts",
-  pricing: "packages/domain/src/pos-pricing.ts",
-  discount: "packages/domain/src/pos-discount.ts + discount-policy.ts",
-  tax: "packages/domain/src/pos-tax.ts",
-  returns: "packages/domain/src/pos-return.ts + pos-exchange.ts",
-  customer: "packages/domain/src/pos-customer.ts",
-  commission: "packages/domain/src/pos-commission.ts",
-  productCreate: "packages/db/src/repositories/catalog-repository.ts createProduct · POST /api/v1/catalog/products",
-  rbac: "packages/domain/src/pos-security.ts + rbac-catalog.ts (pos.sell, pos.hold, pos.resume_any, pos.return, pos.view_invoices, pos.discount_*, pos.configure, pos.shift, payments.receive, credit.approve, installments.manage)",
+  rbac: "packages/domain/src/pos-security.ts + rbac-catalog.ts",
 } as const;

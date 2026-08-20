@@ -45,8 +45,6 @@ export const POS_PRICE_OVERRIDE_PERMISSIONS = [
 /** Capabilities with no live mutation — do not invent keys or endpoints for these. */
 export const POS_UNAVAILABLE_SENSITIVE_ACTIONS = [
   "void_posted_sale",
-  "cash_in",
-  "cash_out",
   "payment_reversal",
 ] as const;
 

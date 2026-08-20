@@ -14,19 +14,21 @@ afterEach(() => {
 });
 
 const ROUTE_TITLES: Array<[string, string]> = [
-  ["/pos", "New Sale"],
-  ["/pos/new", "New Sale"],
-  ["/held-sales", "Hold / Resume"],
+  ["/pos", "POS Terminal"],
+  ["/pos/new", "POS Terminal"],
+  ["/held-sales", "Resume Sale"],
+  ["/pos/resume-sale", "Resume Sale"],
+  ["/pos/hold-sale", "Hold Sale"],
   ["/invoices", "Invoices"],
-  ["/sales-management", "Register"],
+  ["/pos/shift", "POS Shift"],
+  ["/sales-management", "POS Shift"],
   ["/returns", "Returns"],
   ["/exchange", "Exchange"],
   ["/payments", "Payments"],
   ["/discounts", "Discounts"],
-  ["/pos/references", "References"],
-  ["/pos/salesmen", "Salesmen"],
+  ["/pos/salesman-reference", "Salesman / Reference"],
+  ["/pos/salesmen", "Salesman / Reference"],
   ["/pos/installments", "Installments"],
-  ["/pos/settings", "Settings"],
 ];
 
 function renderPos(path: string) {
@@ -58,39 +60,39 @@ describe("POS workspace chrome", () => {
     expect(screen.getByRole("button", { name: /F1/ })).toHaveAttribute("title", "F1 New Sale");
     expect(screen.getByRole("button", { name: /F2/ })).toHaveAttribute("title", "F2 Hold / Resume");
     expect(screen.getByRole("button", { name: /F8/ })).toHaveAttribute("title", "F8 Cancel Sale");
-    expect(POS_IA_TITLES).toHaveLength(12);
+    expect(POS_IA_TITLES).toHaveLength(26);
     expect(POS_TERMINAL_NAV.map((item) => item.label)).toEqual([
       "POS",
-      "Hold / Resume",
+      "Resume Sale",
       "Customers",
       "Products",
       "Price & Discount",
-      "Reports",
-      "Settings",
+      "Invoices",
+      "Shift",
     ]);
     expect(POS_TERMINAL_NAV.map((item) => item.path)).toEqual([
       "/pos",
-      "/held-sales",
-      "/pos/customers",
-      "/pos/products",
+      "/pos/resume-sale",
+      "/pos/customer-selection",
+      "/pos/product-search",
       "/discounts",
-      "/pos/reports",
-      "/pos/settings",
+      "/invoices",
+      "/pos/shift",
     ]);
     expect(screen.getByRole("button", { name: "Menu" })).toBeInTheDocument();
   });
 
   it("maps canonical POS routes and aliases onto ownership helpers", () => {
     for (const [path, title] of ROUTE_TITLES) {
-      expect(posNavItemForPath(path)?.title).toBe(title);
+      expect(posNavItemForPath(path)?.title, path).toBe(title);
     }
-    expect(posNavItemForPath("/pos")?.title).toBe("New Sale");
-    expect(posNavItemForPath("/pos/new")?.title).toBe("New Sale");
-    expect(posNavItemForPath("/held-sales")?.title).toBe("Hold / Resume");
+    expect(posNavItemForPath("/pos")?.title).toBe("POS Terminal");
+    expect(posNavItemForPath("/pos/new")?.title).toBe("POS Terminal");
+    expect(posNavItemForPath("/held-sales")?.title).toBe("Resume Sale");
     expect(posNavItemForPath("/discounts")?.title).toBe("Discounts");
     expect(posNavItemForPath("/invoices")?.title).toBe("Invoices");
-    expect(posNavItemForPath("/pos/salesmen")?.title).toBe("Salesmen");
-    expect(posNavItemForPath("/pos/settings")?.title).toBe("Settings");
+    expect(posNavItemForPath("/pos/salesmen")?.title).toBe("Salesman / Reference");
+    expect(posNavItemForPath("/pos/settings")).toBeUndefined();
   });
 
   it("keeps a compact POS status strip with branch, terminal, cashier, and shift", () => {
@@ -100,7 +102,7 @@ describe("POS workspace chrome", () => {
     expect(screen.getByLabelText("Cashier")).toBeInTheDocument();
     expect(screen.getByLabelText("Shift Status")).toBeInTheDocument();
     expect(screen.getByLabelText("Date / Time")).toBeInTheDocument();
-    expect(screen.getByRole("link", { name: "Held Sales" })).toHaveAttribute("href", "/held-sales");
+    expect(screen.getByRole("link", { name: "Held Sales" })).toHaveAttribute("href", "/pos/resume-sale");
     expect(screen.getByRole("link", { name: "POS Notifications" })).toHaveAttribute("href", "/notifications");
     expect(screen.getByLabelText("POS User")).toBeInTheDocument();
   });

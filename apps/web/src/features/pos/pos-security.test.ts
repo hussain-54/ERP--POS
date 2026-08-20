@@ -31,7 +31,7 @@ describe("POS UI permission flags", () => {
 
   it("does not invent UI for unavailable POS mutations", () => {
     expect(POS_UNAVAILABLE_SENSITIVE_ACTIONS).toContain("void_posted_sale");
-    expect(POS_UNAVAILABLE_SENSITIVE_ACTIONS).toContain("cash_in");
     expect(POS_UNAVAILABLE_SENSITIVE_ACTIONS).toContain("payment_reversal");
+    expect(POS_UNAVAILABLE_SENSITIVE_ACTIONS).not.toContain("cash_in");
   });
 });

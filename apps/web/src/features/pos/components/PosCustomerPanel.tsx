@@ -294,10 +294,16 @@ export const PosCustomerPanel = memo(function PosCustomerPanel({
             <POSInput
               ref={customerRef as React.RefObject<HTMLInputElement>}
               label="Customer search"
-              placeholder={canRead ? "Name, mobile, or code…" : "No customers.read permission"}
+              placeholder={
+                canRead
+                  ? walkIn
+                    ? "Search to replace walk-in — name, mobile, or code…"
+                    : "Name, mobile, or code…"
+                  : "No customers.read permission"
+              }
               value={queryDraft}
               onChange={(e) => setQueryDraft(e.target.value)}
-              disabled={walkIn || !canRead}
+              disabled={!canRead}
               onKeyDown={(e) => {
                 if (e.key !== "Enter") return;
                 e.preventDefault();
@@ -309,13 +315,13 @@ export const PosCustomerPanel = memo(function PosCustomerPanel({
           </div>
         </div>
 
-        {!walkIn && searchError ? (
+        {searchError ? (
           <p role="alert" className="mt-1.5 text-xs text-[var(--pos-danger)]">
             {searchError}
           </p>
         ) : null}
 
-        {!walkIn && customers.length > 0 ? (
+        {customers.length > 0 ? (
           <ul className="mt-2 max-h-28 overflow-auto rounded-[var(--pos-radius-sm)] border border-[var(--pos-border)] text-sm">
             {customers.slice(0, 8).map((c) => (
               <li key={c.id}>
@@ -397,54 +403,59 @@ export const PosCustomerPanel = memo(function PosCustomerPanel({
           />
         </div>
 
-        <div className="mt-3 grid gap-2 sm:grid-cols-2">
-          <POSSelect
-            label="Price level"
-            value={priceLevel}
-            onChange={(e) => onPriceLevel(e.target.value as PriceLevel)}
-            options={[
-              { value: "retail", label: "Retail" },
-              { value: "wholesale", label: "Wholesale" },
-              { value: "dealer", label: "Dealer" },
-            ]}
-          />
-          <POSSelect
-            label="Salesman"
-            value={salesmanId}
-            onChange={(e) => onSalesman(e.target.value)}
-            options={[
-              { value: "", label: "None" },
-              ...salesmen.map((s) => ({ value: s.id, label: s.name })),
-            ]}
-          />
-          <POSSelect
-            label="Reference"
-            value={referenceId}
-            onChange={(e) => onReference(e.target.value)}
-            options={[
-              { value: "", label: "None" },
-              ...references.map((r) => ({ value: r.id, label: r.name })),
-            ]}
-          />
-        </div>
-
-        <label className="mt-2 flex items-center gap-2 text-sm text-[var(--pos-ink)]">
-          <input
-            type="checkbox"
-            className="rounded border-[var(--pos-border)]"
-            checked={delivery}
-            onChange={(e) => onDelivery(e.target.checked)}
-          />
-          Delivery required
-        </label>
-        <p className="mt-1 text-[11px] text-[var(--pos-muted)]">
-          Flags the sale for a delivery note. POS does not add a delivery fee.
-        </p>
         {advanced ? (
-          <p className="mt-1 text-[11px] text-[var(--pos-muted)]">
-            Advanced: credit / installments available after customer select
+          <>
+            <div className="mt-3 grid gap-2 sm:grid-cols-2">
+              <POSSelect
+                label="Price level"
+                value={priceLevel}
+                onChange={(e) => onPriceLevel(e.target.value as PriceLevel)}
+                options={[
+                  { value: "retail", label: "Retail" },
+                  { value: "wholesale", label: "Wholesale" },
+                  { value: "dealer", label: "Dealer" },
+                ]}
+              />
+              <POSSelect
+                label="Salesman"
+                value={salesmanId}
+                onChange={(e) => onSalesman(e.target.value)}
+                options={[
+                  { value: "", label: "None" },
+                  ...salesmen.map((s) => ({ value: s.id, label: s.name })),
+                ]}
+              />
+              <POSSelect
+                label="Reference"
+                value={referenceId}
+                onChange={(e) => onReference(e.target.value)}
+                options={[
+                  { value: "", label: "None" },
+                  ...references.map((r) => ({ value: r.id, label: r.name })),
+                ]}
+              />
+            </div>
+
+            <label className="mt-2 flex items-center gap-2 text-sm text-[var(--pos-ink)]">
+              <input
+                type="checkbox"
+                className="rounded border-[var(--pos-border)]"
+                checked={delivery}
+                onChange={(e) => onDelivery(e.target.checked)}
+              />
+              Delivery required
+            </label>
+            <p className="mt-1 text-[11px] text-[var(--pos-muted)]">
+              Flags the sale for a delivery note. POS does not add a delivery fee. Credit /
+              installments follow after customer select.
+            </p>
+          </>
+        ) : (
+          <p className="mt-2 text-[11px] text-[var(--pos-muted)]">
+            Quick Sale: walk-in by default. Switch to Advanced for salesman, reference, and
+            delivery.
           </p>
-        ) : null}
+        )}
       </section>
 
       <POSModal

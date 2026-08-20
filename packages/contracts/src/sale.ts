@@ -26,6 +26,7 @@ export const DiscountKindSchema = z.enum([
   "promotion",
   "special",
   "bulk",
+  "coupon",
 ]);
 export const DiscountScopeSchema = z.enum(["item", "invoice"]);
 /** Discount approval ladder used by POS policy. */
@@ -126,6 +127,8 @@ export const CreateSaleBaseSchema = z.object({
   offlineTransactionId: UuidSchema.optional(),
   operationId: UuidSchema.optional(),
   commissionPercent: z.number().min(0).max(100).default(0),
+  /** Optional coupon code — server re-validates and applies via invoice discount. */
+  couponCode: z.string().trim().max(64).optional(),
 });
 
 export const CreateSaleSchema = CreateSaleBaseSchema.superRefine((value, ctx) => {

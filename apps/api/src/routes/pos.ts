@@ -81,6 +81,37 @@ posRouter.post("/sales", async (req: AuthedRequest, res, next) => {
 
     assertPosInstallmentSaleAllowed(z.can("installments.manage"), Boolean(input.createInstallment));
 
+    let couponEval: Awaited<ReturnType<PosRepository["validateCoupon"]>> | null = null;
+    if (input.couponCode?.trim()) {
+      const purchaseBase = input.items.reduce((sum, item) => {
+        const qty = Number(item.qty);
+        const gross = qty * Number(item.unitPrice);
+        return sum + Math.max(0, gross - Number(item.discount ?? 0));
+      }, 0);
+      couponEval = await repo(req).validateCoupon({
+        organizationId: orgId(req),
+        code: input.couponCode,
+        purchaseBase,
+        customerId: input.customerId ?? null,
+      });
+      input = {
+        ...input,
+        discountTotal: couponEval.amount,
+        invoiceDiscountKind: "fixed",
+        discounts: [
+          ...(input.discounts ?? []).filter((d) => d.scope !== "invoice"),
+          {
+            scope: "invoice",
+            kind: "coupon",
+            amount: couponEval.amount,
+            percent: couponEval.percent,
+            approverRole: "cashier",
+            reason: `Coupon ${couponEval.code}`,
+          },
+        ],
+      };
+    }
+
     const remaining = estimatePostedSaleRemaining(input);
     if (remaining > 0.009 && input.customerId) {
       const customer = await parties(req).getCustomer(input.customerId);
@@ -103,21 +134,27 @@ posRouter.post("/sales", async (req: AuthedRequest, res, next) => {
 
     if (saleHasDiscount(input)) {
       const role = discountRoleFromAuthz(z);
-      if (!role) {
+      const hasLineDiscount = input.items.some((i) => (i.discount ?? 0) > 0 || (i.discountPercent ?? 0) > 0);
+      const couponOnly = Boolean(couponEval) && !hasLineDiscount;
+      if (!role && !couponOnly) {
         throw new ForbiddenDomainError(
           "Missing discount permission (pos.discount_cashier|supervisor|manager|owner|special)",
         );
       }
+      const effectiveRole = role ?? "cashier";
       const discounts =
         (input.discounts ?? []).length > 0
-          ? (input.discounts ?? []).map((d) => ({ ...d, approverRole: role }))
+          ? (input.discounts ?? []).map((d) => ({
+              ...d,
+              approverRole: d.kind === "coupon" ? ("cashier" as const) : effectiveRole,
+            }))
           : (input.discountTotal ?? 0) > 0
             ? [
                 {
                   scope: "invoice" as const,
                   kind: "fixed" as const,
                   amount: input.discountTotal ?? 0,
-                  approverRole: role,
+                  approverRole: effectiveRole,
                   reason: "POS invoice discount",
                 },
               ]
@@ -126,14 +163,32 @@ posRouter.post("/sales", async (req: AuthedRequest, res, next) => {
                   scope: "item" as const,
                   kind: "fixed" as const,
                   amount: input.items.reduce((s, i) => s + (i.discount ?? 0), 0),
-                  approverRole: role,
+                  approverRole: effectiveRole,
                   reason: "POS line discounts",
                 },
               ];
       input = { ...input, discounts };
     }
 
-    res.status(201).json(await repo(req).postSale(input, userId(req)));
+    const posted = await repo(req).postSale(input, userId(req));
+    if (couponEval) {
+      const saleId =
+        typeof posted === "object" && posted && "sale" in posted
+          ? String((posted as { sale: { id: string } }).sale.id)
+          : typeof posted === "object" && posted && "id" in posted
+            ? String((posted as { id: string }).id)
+            : "";
+      if (saleId) {
+        await repo(req).redeemCoupon({
+          organizationId: orgId(req),
+          couponId: couponEval.couponId,
+          saleId,
+          customerId: input.customerId ?? null,
+          discountAmount: couponEval.amount,
+        });
+      }
+    }
+    res.status(201).json(posted);
   } catch (err) {
     next(err);
   }
@@ -478,6 +533,125 @@ posRouter.post("/shifts/:id/close", async (req: AuthedRequest, res, next) => {
       await repo(req).closeShift({
         shiftId: req.params.id!,
         closingCounted: Number(req.body.closingCounted ?? 0),
+        notes: typeof req.body.notes === "string" ? req.body.notes : undefined,
+        userId: userId(req),
+      }),
+    );
+  } catch (err) {
+    next(err);
+  }
+});
+
+posRouter.get("/coupons", async (req: AuthedRequest, res, next) => {
+  try {
+    if (!authz(req).can("pos.configure") && !authz(req).can("pos.sell")) {
+      authz(req).assert("pos.configure");
+    }
+    res.json({ items: await repo(req).listCoupons(orgId(req)) });
+  } catch (err) {
+    next(err);
+  }
+});
+
+posRouter.post("/coupons", async (req: AuthedRequest, res, next) => {
+  try {
+    authz(req).assert("pos.configure");
+    res.status(201).json(
+      await repo(req).createCoupon({
+        organizationId: orgId(req),
+        code: String(req.body.code ?? ""),
+        name: typeof req.body.name === "string" ? req.body.name : undefined,
+        discountMode: req.body.discountMode === "fixed" ? "fixed" : "percentage",
+        discountValue: Number(req.body.discountValue ?? 0),
+        minPurchase: req.body.minPurchase != null ? Number(req.body.minPurchase) : undefined,
+        maxDiscount: req.body.maxDiscount != null ? Number(req.body.maxDiscount) : null,
+        usageLimit: req.body.usageLimit != null ? Number(req.body.usageLimit) : null,
+        perCustomerLimit: req.body.perCustomerLimit != null ? Number(req.body.perCustomerLimit) : null,
+        validFrom: typeof req.body.validFrom === "string" ? req.body.validFrom : null,
+        validTo: typeof req.body.validTo === "string" ? req.body.validTo : null,
+        notes: typeof req.body.notes === "string" ? req.body.notes : undefined,
+      }),
+    );
+  } catch (err) {
+    next(err);
+  }
+});
+
+posRouter.post("/coupons/validate", async (req: AuthedRequest, res, next) => {
+  try {
+    authz(req).assert("pos.sell");
+    res.json(
+      await repo(req).validateCoupon({
+        organizationId: orgId(req),
+        code: String(req.body.code ?? ""),
+        purchaseBase: Number(req.body.purchaseBase ?? 0),
+        customerId: typeof req.body.customerId === "string" ? req.body.customerId : null,
+      }),
+    );
+  } catch (err) {
+    next(err);
+  }
+});
+
+posRouter.get("/cash-movements", async (req: AuthedRequest, res, next) => {
+  try {
+    authz(req).assert("pos.shift");
+    const shiftId = String(req.query.shiftId ?? "");
+    if (!shiftId) throw new Error("shiftId required");
+    res.json({ items: await repo(req).listCashMovements(shiftId) });
+  } catch (err) {
+    next(err);
+  }
+});
+
+posRouter.post("/cash-movements", async (req: AuthedRequest, res, next) => {
+  try {
+    authz(req).assert("pos.shift");
+    const branchId = String(req.body.branchId ?? req.authz?.branchId ?? "");
+    if (!branchId) throw new Error("branchId required");
+    authz(req).assertBranch(branchId);
+    res.status(201).json(
+      await repo(req).postCashMovement({
+        organizationId: orgId(req),
+        branchId,
+        kind: req.body.kind === "cash_out" ? "cash_out" : "cash_in",
+        amount: Number(req.body.amount ?? 0),
+        reason: String(req.body.reason ?? ""),
+        reference: typeof req.body.reference === "string" ? req.body.reference : undefined,
+        userId: userId(req),
+      }),
+    );
+  } catch (err) {
+    next(err);
+  }
+});
+
+posRouter.get("/day-close/preview", async (req: AuthedRequest, res, next) => {
+  try {
+    authz(req).assert("pos.shift");
+    const branchId = String(req.query.branchId ?? req.authz?.branchId ?? "");
+    const businessDate = String(req.query.businessDate ?? new Date().toISOString().slice(0, 10));
+    if (!branchId) throw new Error("branchId required");
+    res.json({
+      totals: await repo(req).previewDayClose(orgId(req), branchId, businessDate),
+    });
+  } catch (err) {
+    next(err);
+  }
+});
+
+posRouter.post("/day-close", async (req: AuthedRequest, res, next) => {
+  try {
+    authz(req).assert("pos.shift");
+    const branchId = String(req.body.branchId ?? req.authz?.branchId ?? "");
+    if (!branchId) throw new Error("branchId required");
+    authz(req).assertBranch(branchId);
+    res.status(201).json(
+      await repo(req).closeDay({
+        organizationId: orgId(req),
+        branchId,
+        businessDate: String(req.body.businessDate ?? new Date().toISOString().slice(0, 10)),
+        actualCash: Number(req.body.actualCash ?? 0),
         notes: typeof req.body.notes === "string" ? req.body.notes : undefined,
         userId: userId(req),
       }),
