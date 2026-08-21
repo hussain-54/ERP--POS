@@ -213,32 +213,79 @@ export const ERP_NAV_SECTIONS: ErpNavSection[] = [
     description: "Point of sale, billing, payments and sales operations.",
     permission: "pos.sell",
     folder: "pos",
+    /** Legacy /held-sales stays registered; canonical hold URLs are /pos/hold-sale and /pos/resume-sale. */
+    aliases: ["/held-sales"],
     children: [
-      live("/pos", "New Sale", "POS terminal.", { permission: "pos.sell" }),
-      live("/held-sales", "Hold / Resume", "Parked POS carts: resume, edit, transfer, or cancel holds.", {
-        permission: "pos.hold",
+      live("/pos", "POS Terminal", "Primary retail terminal.", { permission: "pos.sell" }),
+      live("/pos/quick-sale", "Quick Sale", "Faster easy-mode terminal using the same sale engine.", {
+        permission: "pos.sell",
+      }),
+      live("/pos/product-search", "Product Search", "Terminal product discovery (same search engine).", {
+        permission: "pos.sell",
+      }),
+      live("/pos/customer-selection", "Customer Selection", "Terminal customer lookup and walk-in.", {
+        permission: "pos.sell",
       }),
       live("/invoices", "Invoices", "Invoice register and reprints.", { permission: "pos.view_invoices" }),
-      live("/sales-management", "Register", "Cashier shift, drawer totals, and close-out.", {
-        permission: "pos.view_invoices",
+      live("/payments", "Payments", "Receipt register and on-account collects.", {
+        permission: "payments.receive",
       }),
-      live("/returns", "Returns", "Find invoice, return qty, refund, and restock.", { permission: "pos.return" }),
-      live("/exchange", "Exchange", "Return items and post a replacement sale.", { permission: "pos.return" }),
-      live("/payments", "Payments", "Receipt register and on-account collects.", { permission: "payments.receive" }),
+      live("/pos/credit", "Credit / Udhaar", "Credit workspace linked from POS.", {
+        permission: "installments.manage",
+      }),
+      live("/pos/barcode-scanner", "Barcode Scanner", "Exact barcode/SKU add on the terminal.", {
+        permission: "pos.sell",
+      }),
+      live("/pos/salesman-reference", "Salesman / Reference", "Salesman roster for POS assignment.", {
+        permission: "hr.view",
+      }),
+      live("/pos/hold-sale", "Hold Sale", "Parked carts and hold operations.", { permission: "pos.hold" }),
+      live("/pos/resume-sale", "Resume Sale", "Resume parked carts into the terminal.", {
+        permission: "pos.hold",
+      }),
+      live("/pos/quotations", "Quotations", "Quotations workspace linked from POS.", {
+        permission: "quotations.write",
+      }),
+      live("/pos/sales-orders", "Sales Orders", "Sales orders workspace linked from POS.", {
+        permission: "quotations.write",
+      }),
+      live("/pos/split-payment", "Split Payment", "Multi-tender checkout on the terminal.", {
+        permission: "pos.sell",
+      }),
+      live("/pos/installments", "Installments", "Installment plan register.", {
+        permission: "installments.manage",
+      }),
       live("/discounts", "Discounts", "Discount policy, caps, and approval workflow.", {
         permission: "pos.sell",
       }),
-      live("/pos/references", "References", "Sale references register from real records.", {
-        permission: "hr.view",
+      live("/pos/coupons", "Coupons", "Coupon codes validated into invoice discounts.", {
+        permission: "pos.sell",
       }),
-      live("/pos/salesmen", "Salesmen", "Salesman roster and New Sale assignment.", {
-        permission: "hr.view",
+      live("/returns", "Returns", "Find invoice, return qty, refund, and restock.", {
+        permission: "pos.return",
       }),
-      live("/pos/installments", "Installments", "Installment plan register and schedule details.", {
-        permission: "installments.manage",
+      live("/exchange", "Exchange", "Return items and post a replacement sale.", {
+        permission: "pos.return",
       }),
-      live("/pos/settings", "Settings", "POS terminal, receipt, tax, and related live configuration.", {
-        permission: "pos.configure",
+      live("/pos/refund", "Refund", "Refund disposition via returns workflow.", {
+        permission: "pos.return",
+      }),
+      live("/pos/delivery-order", "Delivery Order", "Delivery workspace linked from POS.", {
+        permission: "deliveries.view",
+      }),
+      live("/pos/cash-drawer", "Cash Drawer", "Hardware drawer / devices (not a fake ledger).", {
+        permission: "cash_drawer.open",
+      }),
+      live("/pos/shift", "POS Shift", "Open and close cashier shifts.", { permission: "pos.shift" }),
+      live("/pos/cash-in-out", "Cash In / Cash Out", "Cash movements against the open shift.", {
+        permission: "pos.shift",
+      }),
+      live("/pos/day-closing", "Day Closing", "Auditable end-of-day close record.", {
+        permission: "pos.shift",
+      }),
+      soon("/pos/offline", "Offline POS", "Online-only runtime — offline queue not implemented.", {
+        permission: "pos.sell",
+        availableOn: "/pos",
       }),
     ],
   }),
@@ -1020,12 +1067,27 @@ export const DUPLICATE_ROUTE_PAIRS: Array<{
   sameComponent?: boolean;
 }> = [
   {
+    canonical: "/pos/resume-sale",
+    duplicate: "/held-sales",
+    note: "Same HeldSalesPage; legacy /held-sales alias of Resume Sale. Do not redirect.",
+  },
+  {
     canonical: "/pos",
     duplicate: "/held-sales",
-    note: "Related POS screens: New Sale vs Hold / Resume. Both stay registered; do not redirect.",
+    note: "Related POS screens: POS Terminal vs Resume Sale. Both stay registered; do not redirect.",
     sameComponent: false,
   },
   { canonical: "/pos", duplicate: "/pos/new", note: "Same PosPage; naming alias only" },
+  {
+    canonical: "/pos/shift",
+    duplicate: "/sales-management",
+    note: "Same SalesManagementPage; legacy Register/shift alias.",
+  },
+  {
+    canonical: "/pos/salesman-reference",
+    duplicate: "/pos/salesmen",
+    note: "Same SalesmenPage; legacy Salesmen path.",
+  },
   { canonical: "/command-center", duplicate: "/", note: "Command Center landing; / stays registered" },
   { canonical: "/product-catalog", duplicate: "/products", note: "Product catalog landing; /products stays registered" },
   { canonical: "/purchasing", duplicate: "/purchases", note: "Purchasing landing; /purchases stays registered" },
@@ -1107,7 +1169,18 @@ export function isPosEnvironmentPath(pathname: string): boolean {
 }
 
 /** Dense New Sale / Hold terminal inside the POS shell. */
-export const POS_TERMINAL_PATHS = new Set(["/pos", "/held-sales", "/pos/new"]);
+export const POS_TERMINAL_PATHS = new Set([
+  "/pos",
+  "/pos/new",
+  "/pos/quick-sale",
+  "/pos/product-search",
+  "/pos/customer-selection",
+  "/pos/barcode-scanner",
+  "/pos/split-payment",
+  "/held-sales",
+  "/pos/hold-sale",
+  "/pos/resume-sale",
+]);
 
 export function isPosTerminalPath(pathname: string): boolean {
   return POS_TERMINAL_PATHS.has(pathname);
@@ -1118,7 +1191,72 @@ export function isSystemAdminPath(pathname: string): boolean {
   return pathname === "/settings" || pathname.startsWith("/settings/");
 }
 
-const LEGACY_ROUTES: ErpModuleRoute[] = [];
+/** Compat URLs kept registered outside the locked 26 POS children. */
+const LEGACY_ROUTES: ErpModuleRoute[] = [
+  {
+    path: "/sales-management",
+    title: "POS Shift",
+    group: "POS / SALES",
+    description: "Legacy shift/register alias.",
+    permission: "pos.shift",
+    status: "implemented",
+    sidebar: false,
+  },
+  {
+    path: "/pos/salesmen",
+    title: "Salesman / Reference",
+    group: "POS / SALES",
+    description: "Legacy salesman roster alias.",
+    permission: "hr.view",
+    status: "implemented",
+    sidebar: false,
+  },
+  {
+    path: "/pos/references",
+    title: "Salesman / Reference",
+    group: "POS / SALES",
+    description: "Legacy references register alias.",
+    permission: "hr.view",
+    status: "implemented",
+    sidebar: false,
+  },
+  {
+    path: "/pos/settings",
+    title: "POS settings",
+    group: "POS / SALES",
+    description: "POS settings workspace (not a locked IA child).",
+    permission: "pos.sell",
+    status: "implemented",
+    sidebar: false,
+  },
+  {
+    path: "/pos/customers",
+    title: "Customer Selection",
+    group: "POS / SALES",
+    description: "Legacy customer hub alias into the terminal.",
+    permission: "pos.sell",
+    status: "implemented",
+    sidebar: false,
+  },
+  {
+    path: "/pos/products",
+    title: "Product Search",
+    group: "POS / SALES",
+    description: "Legacy product hub alias into the terminal.",
+    permission: "pos.sell",
+    status: "implemented",
+    sidebar: false,
+  },
+  {
+    path: "/pos/reports",
+    title: "POS reports",
+    group: "POS / SALES",
+    description: "POS reports hub (not a locked IA child).",
+    permission: "pos.sell",
+    status: "implemented",
+    sidebar: false,
+  },
+];
 
 function flattenSections(): ErpModuleRoute[] {
   const rows: ErpModuleRoute[] = [];
@@ -1212,7 +1350,18 @@ export const ERP_SIDEBAR_SECTIONS: ErpNavSection[] = ERP_NAV_SECTIONS.map((secti
   children: [],
 }));
 
-export const EXTRA_APP_PATHS = ["/products/new", "/pos/new", "/pos/customers", "/pos/products", "/pos/reports"] as const;
+export const EXTRA_APP_PATHS = [
+  "/products/new",
+  "/pos/new",
+  "/pos/customers",
+  "/pos/products",
+  "/pos/reports",
+  "/pos/settings",
+  "/held-sales",
+  "/pos/references",
+  "/pos/salesmen",
+  "/sales-management",
+] as const;
 
 /**
  * Feature-folder ownership derived from the 39-module registry.
@@ -1253,6 +1402,9 @@ export function masterTitleById(id: string): string | undefined {
 export function isNavChildActive(child: Pick<ErpNavChild, "path">, pathname: string): boolean {
   if (child.path === pathname) return true;
   if (child.path === "/pos" && (pathname === "/pos" || pathname === "/pos/new")) return true;
+  if (child.path === "/pos/resume-sale" && pathname === "/held-sales") return true;
+  if (child.path === "/pos/shift" && pathname === "/sales-management") return true;
+  if (child.path === "/pos/credit" && pathname === "/credit") return true;
   if (child.path === "/settings/datetime" && pathname === "/settings/numbering") return true;
   return false;
 }
@@ -1267,11 +1419,11 @@ export function resolveShellHeader(pathname: string): { moduleTitle: string; pag
   }
   const section = findSectionForPath(pathname);
   if (!section) return { moduleTitle: "Electronic ERP", pageTitle: null };
-  if (pathname === "/held-sales") {
-    return { moduleTitle: section.name, pageTitle: "Hold / Resume" };
+  if (pathname === "/held-sales" || pathname === "/pos/hold-sale" || pathname === "/pos/resume-sale") {
+    return { moduleTitle: section.name, pageTitle: "Resume Sale" };
   }
   if (isPosTerminalPath(pathname)) {
-    return { moduleTitle: section.name, pageTitle: "New Sale" };
+    return { moduleTitle: section.name, pageTitle: "POS Terminal" };
   }
   if (pathname === "/settings") {
     return { moduleTitle: section.name, pageTitle: "Overview" };

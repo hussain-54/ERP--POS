@@ -44,8 +44,6 @@ describe("POS RBAC sensitive actions", () => {
   it("does not invent keys for unavailable POS mutations", () => {
     expect(POS_UNAVAILABLE_SENSITIVE_ACTIONS).toEqual([
       "void_posted_sale",
-      "cash_in",
-      "cash_out",
       "payment_reversal",
     ]);
   });

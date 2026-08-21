@@ -11,7 +11,7 @@ export const POS_PRODUCT_SEARCH_LIMIT = 24;
 export const POS_PRODUCT_SEARCH_LIMIT_MAX = 50;
 
 export const POS_PRODUCT_SEARCH_PLACEHOLDER =
-  "Search Product by name, barcode, sku, brand, model, category...";
+  "Search by name, Urdu name, SKU, barcode, brand, model, category, specification…";
 
 export function nextProductSearchLimit(current: number): number {
   if (current >= POS_PRODUCT_SEARCH_LIMIT_MAX) return POS_PRODUCT_SEARCH_LIMIT_MAX;

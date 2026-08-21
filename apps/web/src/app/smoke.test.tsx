@@ -75,20 +75,7 @@ describe("web foundation", () => {
     const sales = ERP_NAV_SECTIONS.find((s) => s.id === "02");
     expect(sales?.name).toBe("POS / SALES");
     expect(sales?.title).toBe("POS / SALES");
-    expect(sales?.children.map((c) => c.title)).toEqual([
-      "New Sale",
-      "Hold / Resume",
-      "Invoices",
-      "Register",
-      "Returns",
-      "Exchange",
-      "Payments",
-      "Discounts",
-      "References",
-      "Salesmen",
-      "Installments",
-      "Settings",
-    ]);
+    expect(sales?.children.map((c) => c.title)).toEqual([...POS_IA_TITLES]);
     expect(ERP_MODULES.some((m) => m.path === "/held-sales")).toBe(true);
     expect(ERP_MODULES.some((m) => m.path === "/pos/salesmen")).toBe(true);
     expect(ERP_MODULES.some((m) => m.path === "/pos/installments")).toBe(true);
@@ -98,6 +85,7 @@ describe("web foundation", () => {
     expect(isPosTerminalPath("/pos")).toBe(true);
     expect(isPosTerminalPath("/held-sales")).toBe(true);
     expect(isPosTerminalPath("/pos/new")).toBe(true);
+    expect(isPosTerminalPath("/pos/resume-sale")).toBe(true);
     expect(isPosTerminalPath("/pos/salesmen")).toBe(false);
     expect(isPosTerminalPath("/pos/installments")).toBe(false);
     expect(isPosTerminalPath("/invoices")).toBe(false);
@@ -197,7 +185,9 @@ describe("39-module navigation lock", () => {
     expect(hr?.path).toBe("/hr");
     expect(hr?.children.some((c) => c.title === "Salesmen" && c.path === "/salesman")).toBe(true);
     expect(customers?.children.some((c) => c.title === "Installments" && c.path === "/installments")).toBe(true);
-    expect(sales?.children.some((c) => c.title === "Salesmen" && c.path === "/pos/salesmen")).toBe(true);
+    expect(sales?.children.some((c) => c.title === "Salesman / Reference" && c.path === "/pos/salesman-reference")).toBe(
+      true,
+    );
     expect(sales?.children.some((c) => c.title === "Installments" && c.path === "/pos/installments")).toBe(
       true,
     );
@@ -207,20 +197,7 @@ describe("39-module navigation lock", () => {
     const titles = (id: string) =>
       ERP_NAV_SECTIONS.find((s) => s.id === id)?.children.map((c) => c.title);
     expect(titles("01")).toEqual(["Modules"]);
-    expect(titles("02")).toEqual([
-      "New Sale",
-      "Hold / Resume",
-      "Invoices",
-      "Register",
-      "Returns",
-      "Exchange",
-      "Payments",
-      "Discounts",
-      "References",
-      "Salesmen",
-      "Installments",
-      "Settings",
-    ]);
+    expect(titles("02")).toEqual([...POS_IA_TITLES]);
     expect(titles("03")).toEqual([
       "Products",
       "New Product",
@@ -430,15 +407,17 @@ describe("nav structure", () => {
     const child = (id: string, title: string) =>
       ERP_NAV_SECTIONS.find((s) => s.id === id)?.children.find((c) => c.title === title);
 
-    expect(child("02", "Salesmen")?.path).toBe("/pos/salesmen");
+    expect(child("02", "Salesman / Reference")?.path).toBe("/pos/salesman-reference");
     expect(child("02", "Installments")?.path).toBe("/pos/installments");
-    expect(child("02", "References")?.path).toBe("/pos/references");
+    expect(child("02", "POS Shift")?.path).toBe("/pos/shift");
     expect(child("16", "B2B")?.path).toBe("/b2b");
     expect(child("11", "P&L")?.path).toBe("/accounts/profit-loss");
     expect(child("04", "Price Lists")?.path).toBe("/suppliers/price-lists");
 
     expect(child("02", "Discounts")?.status).toBe("implemented");
     expect(child("02", "Discounts")?.path).toBe("/discounts");
+    expect(child("02", "Coupons")?.status).toBe("implemented");
+    expect(child("02", "Offline POS")?.status).toBe("placeholder");
 
     for (const [id, title] of [
       ["04", "Automation"],
@@ -637,15 +616,19 @@ describe("nav structure", () => {
   it("resolves the ERP header from the official module tree", () => {
     expect(resolveShellHeader("/pos")).toEqual({
       moduleTitle: "POS / SALES",
-      pageTitle: "New Sale",
+      pageTitle: "POS Terminal",
     });
     expect(resolveShellHeader("/pos/new")).toEqual({
       moduleTitle: "POS / SALES",
-      pageTitle: "New Sale",
+      pageTitle: "POS Terminal",
     });
     expect(resolveShellHeader("/held-sales")).toEqual({
       moduleTitle: "POS / SALES",
-      pageTitle: "Hold / Resume",
+      pageTitle: "Resume Sale",
+    });
+    expect(resolveShellHeader("/pos/resume-sale")).toEqual({
+      moduleTitle: "POS / SALES",
+      pageTitle: "Resume Sale",
     });
     expect(resolveShellHeader("/invoices")).toEqual({
       moduleTitle: "POS / SALES",
@@ -938,17 +921,23 @@ describe("responsive ERP shell", () => {
     expect(screen.getByLabelText("Date / Time")).toBeInTheDocument();
     expect(screen.getByLabelText("POS Branch")).toBeInTheDocument();
     expect(screen.getByLabelText("POS navigation")).toBeInTheDocument();
-    expect(screen.getByRole("link", { name: "Held Sales" })).toHaveAttribute("href", "/held-sales");
+    expect(screen.getByRole("link", { name: "Held Sales" })).toHaveAttribute("href", "/pos/resume-sale");
     expect(screen.getByRole("link", { name: "POS Notifications" })).toHaveAttribute("href", "/notifications");
     expect(screen.getByLabelText("POS User")).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Menu" })).toBeInTheDocument();
     const terminalNav = screen.getByLabelText("POS navigation");
     expect(within(terminalNav).getByRole("link", { name: "POS" })).toHaveAttribute("href", "/pos");
     expect(within(terminalNav).getByRole("link", { name: "POS" })).toHaveAttribute("aria-current", "page");
-    expect(within(terminalNav).getByRole("link", { name: "Hold / Resume" })).toHaveAttribute("href", "/held-sales");
-    expect(within(terminalNav).getByRole("link", { name: "Customers" })).toHaveAttribute("href", "/pos/customers");
+    expect(within(terminalNav).getByRole("link", { name: "Resume Sale" })).toHaveAttribute(
+      "href",
+      "/pos/resume-sale",
+    );
+    expect(within(terminalNav).getByRole("link", { name: "Customers" })).toHaveAttribute(
+      "href",
+      "/pos/customer-selection",
+    );
     expect(within(terminalNav).getByRole("link", { name: "Price & Discount" })).toHaveAttribute("href", "/discounts");
-    expect(POS_IA_TITLES).toHaveLength(12);
+    expect(POS_IA_TITLES).toHaveLength(26);
     unmount();
 
     renderShell("/invoices");

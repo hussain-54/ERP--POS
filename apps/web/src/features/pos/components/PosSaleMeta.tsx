@@ -42,6 +42,7 @@ export const PosSaleMeta = memo(function PosSaleMeta({
       </div>
       {!warehouseId ? <POSBadge tone="warning">No warehouse</POSBadge> : null}
       {lastInvoice ? <POSBadge tone="success">Last {lastInvoice}</POSBadge> : null}
+      {mode === "easy" ? <POSBadge tone="primary">Quick Sale</POSBadge> : null}
       <div className="w-[5.5rem]">
         <POSSelect
           compact

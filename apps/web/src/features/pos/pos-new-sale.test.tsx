@@ -98,7 +98,7 @@ describe("industrial New Sale terminal", () => {
     expect(screen.getByRole("tab", { name: "Favorites" })).toBeInTheDocument();
     expect(screen.getByRole("tab", { name: "Categories" })).toBeInTheDocument();
     expect(screen.queryByRole("tab", { name: "Search" })).not.toBeInTheDocument();
-    expect(screen.getByText("No recent products")).toBeInTheDocument();
+    expect(screen.getByText("No recent products yet")).toBeInTheDocument();
     expect(screen.queryByText(/sample product/i)).not.toBeInTheDocument();
     expect(screen.queryByText(/demo product/i)).not.toBeInTheDocument();
   });
@@ -364,7 +364,7 @@ describe("industrial New Sale terminal", () => {
         canPriceOverride={false}
       />,
     );
-    expect(screen.getByText("Last available units")).toBeInTheDocument();
+    expect(screen.getByText("Last 2 units available")).toBeInTheDocument();
     fireEvent.change(screen.getByDisplayValue("2"), {
       target: { value: "-1" },
     });
@@ -658,7 +658,7 @@ describe("industrial New Sale terminal", () => {
       />,
     );
     expect(screen.getByText("Invoice discount requires a POS discount permission")).toBeInTheDocument();
-    const pay = screen.getByRole("button", { name: "Loading…" });
+    const pay = screen.getByRole("button", { name: "Processing payment…" });
     expect(pay).toBeDisabled();
     expect(pay).toHaveAttribute("aria-busy", "true");
     fireEvent.click(pay);

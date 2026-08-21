@@ -114,8 +114,8 @@ describe("POS cashier UX helpers", () => {
     expect(matchPosFunctionShortcut(event("F5", { ctrlKey: true }))).toBeNull();
     expect(isReservedBrowserChord(event("r", { ctrlKey: true }))).toBe(true);
     expect(posShortcutFallbackPath("new-sale")).toBe("/pos");
-    expect(posShortcutFallbackPath("hold-resume")).toBe("/held-sales");
-    expect(posShortcutFallbackPath("customers")).toBe("/pos/customers");
+    expect(posShortcutFallbackPath("hold-resume")).toBe("/pos/resume-sale");
+    expect(posShortcutFallbackPath("customers")).toBe("/pos/customer-selection");
     expect(posShortcutFallbackPath("discount")).toBe("/discounts");
     expect(posShortcutFallbackPath("clear-cart")).toBeNull();
     const input = document.createElement("input");

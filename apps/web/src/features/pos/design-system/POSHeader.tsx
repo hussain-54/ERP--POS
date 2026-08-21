@@ -123,7 +123,7 @@ export function POSHeader({
 
       <div className="pos-header-right">
         <Link
-          to="/held-sales"
+          to="/pos/resume-sale"
           aria-label="Held Sales"
           className={posCn(
             "inline-flex h-8 items-center gap-1.5 rounded-[var(--pos-radius-sm)] border border-[var(--pos-border)] px-2.5 text-xs font-semibold text-[var(--pos-ink)]",
@@ -141,7 +141,7 @@ export function POSHeader({
           className="inline-flex h-8 w-8 items-center justify-center rounded-[var(--pos-radius-sm)] border border-[var(--pos-border)] text-xs font-semibold text-[var(--pos-ink)] hover:bg-[var(--pos-muted-bg)]"
           title="Notifications"
         >
-          <span aria-hidden>🔔</span>
+          Alerts
         </Link>
         <span
           aria-label="POS User"

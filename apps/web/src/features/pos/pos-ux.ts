@@ -143,9 +143,9 @@ export function posShortcutFallbackPath(action: PosShortcutAction): string | nul
     case "new-sale":
       return "/pos";
     case "hold-resume":
-      return "/held-sales";
+      return "/pos/resume-sale";
     case "customers":
-      return "/pos/customers";
+      return "/pos/customer-selection";
     case "discount":
       return "/discounts";
     default:

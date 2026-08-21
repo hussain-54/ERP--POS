@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { useLocation, useNavigate } from "react-router-dom";
+import { useLocation, useNavigate, useSearchParams } from "react-router-dom";
 import type { ProductSearchResult } from "@electronic-erp/contracts";
-  import {
+import {
   approverRoleFromPermissions,
   buildHoldSnapshot,
   evaluateDiscountApproval,
@@ -153,7 +153,12 @@ export function PosPage({ entry = "sale" }: { entry?: "sale" | "holds" }) {
   const toast = useToast();
   const { pathname, state: locationState } = useLocation();
   const navigate = useNavigate();
-  const holdEntry = entry === "holds" || pathname === "/held-sales";
+  const [searchParams, setSearchParams] = useSearchParams();
+  const holdEntry =
+    entry === "holds" ||
+    pathname === "/held-sales" ||
+    pathname === "/pos/hold-sale" ||
+    pathname === "/pos/resume-sale";
   const { branchId, hasPermission, organizationId } = useAuth();
   const session = usePosSession();
   const {
@@ -243,6 +248,10 @@ export function PosPage({ entry = "sale" }: { entry?: "sale" | "holds" }) {
     useState<PosPaymentConfirmationStatus | null>(null);
   const [paymentConfirmationError, setPaymentConfirmationError] = useState<string | null>(null);
   const [notes, setNotes] = useState("");
+  const [couponCode, setCouponCode] = useState("");
+  const [couponHint, setCouponHint] = useState<string | null>(null);
+  const [couponBusy, setCouponBusy] = useState(false);
+  const [appliedCouponCode, setAppliedCouponCode] = useState<string | null>(null);
   const [methods, setMethods] = useState<Array<{ id: string; name: string; code?: string; kind?: string }>>([]);
   const [holds, setHolds] = useState<HeldSaleListItem[]>([]);
   const [holdsFilter, setHoldsFilter] = useState<HeldSaleFilter>("all_pending");
@@ -306,6 +315,32 @@ export function PosPage({ entry = "sale" }: { entry?: "sale" | "holds" }) {
   customerIdRef.current = customerId;
   walkInRef.current = walkIn;
   const customerRef = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    const focus = searchParams.get("focus");
+    const modeParam = searchParams.get("mode");
+    if (!focus && !modeParam) return;
+    if (modeParam === "easy" || focus === "quick") setMode("easy");
+    if (modeParam === "advanced") setMode("advanced");
+    if (focus === "customer") {
+      setWalkIn(false);
+      queueMicrotask(() => customerRef.current?.focus());
+      if (layoutMode === "mobile") setMobileSheet("customer");
+    }
+    if (focus === "payment") {
+      setMode("advanced");
+      if (layoutMode === "mobile") setMobileSheet("pay");
+    }
+    if (focus === "search" || focus === "scan" || focus === "quick") {
+      queueMicrotask(() => searchRef.current?.focus());
+    }
+    // Consume focus params so remounts / refreshes do not keep re-applying.
+    const next = new URLSearchParams(searchParams);
+    next.delete("focus");
+    next.delete("mode");
+    setSearchParams(next, { replace: true });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
   const discountRef = useRef<HTMLInputElement>(null);
   const paymentGateRef = useRef(new PaymentAttemptGate());
 
@@ -658,6 +693,39 @@ export function PosPage({ entry = "sale" }: { entry?: "sale" | "holds" }) {
   const onQuotation = useCallback(() => {
     pageOpsRef.current.quotation();
   }, []);
+  const onApplyCoupon = useCallback(async () => {
+    const code = couponCode.trim();
+    if (!code) return;
+    setCouponBusy(true);
+    setCouponHint(null);
+    try {
+      const purchaseBase = Math.max(0, (totals.subtotal ?? 0) - (totals.itemDiscount ?? 0));
+      const evaluated = await posApi.validateCoupon({
+        code,
+        purchaseBase,
+        customerId: walkIn ? null : customerId || null,
+      });
+      setInvoiceDiscount(String(evaluated.amount));
+      setInvoiceDiscountKind("fixed");
+      setInvoiceDiscountPercent(0);
+      setAppliedCouponCode(evaluated.code);
+      setCouponHint(`Coupon ${evaluated.code} applied (−${evaluated.amount.toFixed(2)})`);
+    } catch (err) {
+      setAppliedCouponCode(null);
+      setCouponHint(toPosUserDescription(err, "Coupon could not be applied"));
+    } finally {
+      setCouponBusy(false);
+    }
+  }, [
+    couponCode,
+    totals.subtotal,
+    totals.itemDiscount,
+    walkIn,
+    customerId,
+    setInvoiceDiscount,
+    setInvoiceDiscountKind,
+    setInvoiceDiscountPercent,
+  ]);
   const onRetryPayment = useCallback(() => {
     pageOpsRef.current.retryPay();
   }, []);
@@ -1258,17 +1326,20 @@ export function PosPage({ entry = "sale" }: { entry?: "sale" | "holds" }) {
         priceLevel,
         discountTotal: Number(invoiceDiscount || 0),
         invoiceDiscountKind,
+        couponCode: appliedCouponCode || undefined,
         discounts:
           Number(invoiceDiscount || 0) > 0
             ? [
                 {
                   scope: "invoice",
-                  kind: invoiceDiscountKind,
+                  kind: appliedCouponCode ? ("coupon" as const) : invoiceDiscountKind,
                   percent:
                     invoiceDiscountKind === "percentage" ? invoiceDiscountPercent : undefined,
                   amount: Number(invoiceDiscount),
                   approverRole: actingDiscountRole,
-                  reason: approvalReason || "POS invoice discount",
+                  reason: appliedCouponCode
+                    ? `Coupon ${appliedCouponCode}`
+                    : approvalReason || "POS invoice discount",
                 },
               ]
             : [],
@@ -1556,56 +1627,54 @@ export function PosPage({ entry = "sale" }: { entry?: "sale" | "holds" }) {
   async function editHold(id: string) {
     const hold = holds.find((h) => h.id === id);
     if (!hold) return;
+    const snap =
+      (hold.cartSnapshot as Record<string, unknown> | undefined) ??
+      (hold as { cart_snapshot?: Record<string, unknown> }).cart_snapshot;
+    if (!snap) {
+      toast.push({
+        title: "Hold has no cart",
+        description: "This hold cannot be edited because its snapshot is missing.",
+        tone: "danger",
+      });
+      return;
+    }
     try {
-      // Load snapshot into cart for editing, keep hold open until re-saved or cancelled.
-      if (hold.cartSnapshot) applyHoldSnapshot(hold.cartSnapshot);
-      else {
-        const snap = (hold as { cart_snapshot?: Record<string, unknown> }).cart_snapshot;
-        if (snap) applyHoldSnapshot(snap);
-      }
+      // Rebuild snapshot from the hold's stored cart — never from live React cart state
+      // (applyHoldSnapshot is async setState and would overwrite with stale lines).
+      const restored = restoreHoldTransaction(snap);
       const reason = window.prompt("Hold reason", hold.holdReason ?? "") ?? hold.holdReason ?? "";
       const note = window.prompt("Hold notes", hold.notes ?? "") ?? hold.notes ?? "";
       await posApi.editHold(id, {
         holdReason: reason || undefined,
         notes: note || undefined,
         cartSnapshot: buildHoldSnapshot({
-          cart,
-          customerId: walkIn ? "" : customerId,
-          customerName: walkIn ? null : customer?.name ?? null,
-          walkIn,
-          invoiceDiscount,
-          invoiceDiscountKind,
-          invoiceDiscountPercent,
-          notes: note || notes,
-          payments,
-          cashReceived,
-          delivery,
-          priceLevel,
-          salesmanUserId,
-          commissionPercent,
-          referenceId,
-          locale,
-          mode,
-          useInstallment,
-          installmentCount,
-          downPayment,
-          installmentFrequency,
-          lateFeePercent,
-          lateFeeFixed,
-          isAdvance,
-          totals: {
-            items: totals.items,
-            qty: totals.qty,
-            subtotal: totals.subtotal,
-            itemDiscount: totals.itemDiscount ?? 0,
-            invoiceDiscount: totals.invoiceDiscount ?? 0,
-            discount: totals.discount,
-            tax: totals.tax,
-            grand: totals.grand,
-            taxableAmount: totals.taxInvoice?.taxableAmount ?? totals.subtotal,
-          },
+          cart: restored.cart as CartLine[],
+          customerId: restored.walkIn ? "" : restored.customerId,
+          customerName: restored.walkIn ? null : restored.customerName,
+          walkIn: restored.walkIn,
+          invoiceDiscount: restored.invoiceDiscount,
+          invoiceDiscountKind: restored.invoiceDiscountKind,
+          invoiceDiscountPercent: restored.invoiceDiscountPercent,
+          notes: note || restored.notes,
+          payments: restored.payments as PaySplit[],
+          cashReceived: restored.cashReceived,
+          delivery: restored.delivery,
+          priceLevel: restored.priceLevel,
+          salesmanUserId: restored.salesmanUserId,
+          commissionPercent: restored.commissionPercent,
+          referenceId: restored.referenceId,
+          locale: restored.locale,
+          mode: restored.mode,
+          useInstallment: restored.useInstallment,
+          installmentCount: restored.installmentCount,
+          downPayment: restored.downPayment,
+          installmentFrequency: restored.installmentFrequency,
+          lateFeePercent: restored.lateFeePercent,
+          lateFeeFixed: restored.lateFeeFixed,
+          isAdvance: restored.isAdvance,
+          totals: restored.totals,
         }),
-        customerId: walkIn ? null : customerId || null,
+        customerId: restored.walkIn ? null : restored.customerId || null,
       });
       toast.push({ title: "Hold updated", tone: "success" });
       await refreshHolds();
@@ -1900,7 +1969,9 @@ export function PosPage({ entry = "sale" }: { entry?: "sale" | "holds" }) {
         .then((items) => {
           if (!isLatestRequest(productSearchSeq.current, started)) return;
           setResults(items);
-          const match = pickExactProductMatch(items, needle) ?? items[0];
+          const match =
+            pickExactProductMatch(items, needle) ??
+            (items.length === 1 ? items[0] : null);
           if (match) {
             addProductRef.current(match, cmd.kind === "search" ? cmd.qty ?? undefined : undefined);
             setCatalogFeedback(null);
@@ -2239,6 +2310,15 @@ export function PosPage({ entry = "sale" }: { entry?: "sale" | "holds" }) {
                 customer={customer}
                 walkIn={walkIn}
                 invoiceReference={lastInvoice}
+                couponCode={couponCode}
+                onCouponCode={(code) => {
+                  setCouponCode(code);
+                  setAppliedCouponCode(null);
+                  setCouponHint(null);
+                }}
+                onApplyCoupon={() => void onApplyCoupon()}
+                couponBusy={couponBusy}
+                couponHint={couponHint}
               />
             }
           />
