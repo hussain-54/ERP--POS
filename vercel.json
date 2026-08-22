@@ -1,13 +1,12 @@
 {
   "$schema": "https://openapi.vercel.sh/vercel.json",
-  "installCommand": "npm ci --no-fund --no-audit",
+  "installCommand": "npm ci",
   "buildCommand": "npm run build:vercel",
   "outputDirectory": "apps/web/dist",
   "framework": null,
   "functions": {
     "api/index.js": {
-      "maxDuration": 30,
-      "includeFiles": "api/handler.cjs"
+      "maxDuration": 30
     }
   },
   "rewrites": [

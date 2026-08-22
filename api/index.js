@@ -1,19 +1,7 @@
 /**
  * Vercel Node serverless entry (CJS).
- * The Express app is pre-bundled into handler.cjs during `npm run build:vercel`.
+ * Local: loads api/handler.cjs from `npm run build:vercel` / bundle script.
+ * On Vercel: this file is replaced by the full esbuild bundle (VERCEL=1).
  */
-try {
-  module.exports = require("./handler.cjs");
-} catch (err) {
-  module.exports = (req, res) => {
-    const message = err instanceof Error ? err.message : String(err);
-    res.statusCode = 500;
-    res.setHeader("content-type", "application/json");
-    res.end(
-      JSON.stringify({
-        error: "API handler failed to load",
-        detail: message,
-      }),
-    );
-  };
-}
+const loaded = require("./handler.cjs");
+module.exports = typeof loaded === "function" ? loaded : loaded.default;
