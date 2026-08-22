@@ -1,12 +1,11 @@
 import { useMemo, useState, type ReactNode } from "react";
 import { useLocation } from "react-router-dom";
-import { canShowNavItem, isPosEnvironmentPath, isSystemAdminPath } from "@/app/modules";
+import { canShowNavItem, isSystemAdminPath } from "@/app/modules";
 import { ModuleContextNav } from "@/app/shell/ModuleContextNav";
 import { ModuleHeader } from "@/app/shell/ModuleHeader";
 import { filterWorkspaceNav, resolveModuleWorkspace } from "@/app/shell/module-workspace";
 import { PageContainer } from "@/app/shell/PageContainer";
 import { useAuth } from "@/features/auth/AuthContext";
-import { POSShell } from "@/features/pos/design-system/POSShell";
 
 /**
  * Shared module frame inside the ERP AppShell.
@@ -18,8 +17,7 @@ export function ModuleWorkspace({ children }: { children: ReactNode }) {
   const [query, setQuery] = useState("");
   const grantedCount = permissions.length;
   const model = resolveModuleWorkspace(pathname);
-  const posWorkspace = isPosEnvironmentPath(pathname);
-  const dense = posWorkspace || isSystemAdminPath(pathname);
+  const dense = isSystemAdminPath(pathname);
 
   const nav = useMemo(() => {
     if (!model) return [];
@@ -30,23 +28,6 @@ export function ModuleWorkspace({ children }: { children: ReactNode }) {
 
   if (!model) {
     return <PageContainer fill={dense}>{children}</PageContainer>;
-  }
-
-  const content = posWorkspace ? <POSShell>{children}</POSShell> : children;
-
-  /* Commercial POS chrome: terminal uses POSShell only. ERP GlobalSidebar stays via Menu. */
-  if (posWorkspace) {
-    return (
-      <PageContainer fill>
-        <section
-          data-module-workspace={model.id}
-          data-erp-workspace-layout="pos-terminal"
-          className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden bg-[var(--erp-bg)]"
-        >
-          <div className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden">{content}</div>
-        </section>
-      </PageContainer>
-    );
   }
 
   return (
@@ -69,7 +50,7 @@ export function ModuleWorkspace({ children }: { children: ReactNode }) {
               : "min-w-0 flex-1 overflow-x-auto px-3 py-3 md:px-5 md:py-4"
           }
         >
-          {content}
+          {children}
         </div>
       </section>
     </PageContainer>

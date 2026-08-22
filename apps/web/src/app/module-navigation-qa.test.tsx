@@ -238,23 +238,12 @@ describe("39-module navigation QA", () => {
   }, 120_000);
 
   it("opens every child page in the owning module workspace without a second shell", () => {
-    const focusAliases = new Set([
-      "/pos/quick-sale",
-      "/pos/product-search",
-      "/pos/customer-selection",
-      "/pos/barcode-scanner",
-      "/pos/split-payment",
-    ]);
     for (const section of ERP_NAV_SECTIONS) {
       for (const child of section.children) {
         if (child.path === section.path) continue;
         const { unmount } = renderErp(child.path);
         const location = screen.getByTestId("erp-location").textContent ?? "";
-        if (focusAliases.has(child.path)) {
-          expect(location.startsWith("/pos"), child.path).toBe(true);
-        } else {
-          expect(location, child.path).toBe(child.path);
-        }
+        expect(location, child.path).toBe(child.path);
         expect(screen.getByLabelText("ERP modules"), child.path).toBeInTheDocument();
         expect(screen.getAllByLabelText("ERP modules"), child.path).toHaveLength(1);
         expect(screen.queryByRole("heading", { name: "Page not found" }), child.path).not.toBeInTheDocument();
@@ -299,8 +288,9 @@ describe("39-module navigation QA", () => {
     expect(posCard).toBeTruthy();
     fireEvent.click(posCard!);
     expect(screen.getByTestId("erp-location")).toHaveTextContent("/pos");
-    expect(screen.queryByRole("heading", { level: 1, name: "POS / SALES" })).not.toBeInTheDocument();
-    expect(screen.getByLabelText("POS navigation")).toBeInTheDocument();
+    expect(screen.getByRole("heading", { level: 1, name: "POS / SALES" })).toBeInTheDocument();
+    expect(screen.queryByLabelText("POS navigation")).not.toBeInTheDocument();
+    expect(screen.getAllByText(/Coming Soon/i).length).toBeGreaterThan(0);
     expect(parentLink("POS / SALES", "/pos")).toHaveAttribute("aria-current", "page");
     fireEvent.click(screen.getByRole("button", { name: "History back" }));
     expect(screen.getByTestId("erp-location")).toHaveTextContent("/command-center");

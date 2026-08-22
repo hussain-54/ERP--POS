@@ -24,16 +24,11 @@ const usbScanner = new UsbKeyboardWedgeScanner({
 
 const cameraScanner = new CameraScannerAdapter("camera_scanner", {
   capture: async () => {
-    // Web placeholder — Electron/mobile inject real MediaDevices capture
     throw new Error("Camera capture not configured in this host");
   },
 });
 
-/**
- * POS talks only to HardwareService.
- * Web uses memory printers (preview) + USB wedge; Electron replaces adapters.
- */
-export const posHardware = new HardwareService(
+export const deviceHardware = new HardwareService(
   usbScanner,
   new MemoryThermalPrinter(),
   new MemoryA4Printer(),
@@ -43,10 +38,7 @@ export const posHardware = new HardwareService(
   new MemoryLabelPrinter(),
   new MemoryBarcodePrinter(),
   {
-    canOpenDrawer: () => {
-      // Host should wire RBAC; default allow when session token present
-      return Boolean(localStorage.getItem("erp.accessToken"));
-    },
+    canOpenDrawer: () => Boolean(localStorage.getItem("erp.accessToken")),
     auditDrawer: (entry) => {
       const key = "erp_hardware_audit";
       const prev = JSON.parse(localStorage.getItem(key) ?? "[]") as unknown[];

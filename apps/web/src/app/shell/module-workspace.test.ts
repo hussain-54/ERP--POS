@@ -1,6 +1,5 @@
 import { describe, expect, it } from "vitest";
 import { ERP_NAV_SECTIONS, ERP_STABLE_PARENT_PATHS } from "@/app/modules";
-import { POS_IA_TITLES } from "@/features/pos/pos-ownership";
 import {
   filterWorkspaceNav,
   isWorkspaceNavItemActive,
@@ -21,18 +20,14 @@ describe("module workspace model", () => {
     }
   });
 
-  it("lists POS features as workspace children instead of a second app shell", () => {
+  it("lists POS / SALES as a placeholder workspace", () => {
     const model = resolveModuleWorkspace("/pos");
     expect(model?.name).toBe("POS / SALES");
     expect(model?.searchPlaceholder).toBe("Search sales...");
     expect(model?.description).toContain("Point of sale");
-    expect(model?.nav.map((item) => item.title)).toEqual(["Overview", ...POS_IA_TITLES.slice(1)]);
+    expect(model?.nav.map((item) => item.title)).toEqual(["Overview"]);
     expect(isWorkspaceNavItemActive(model!.nav[0]!, "/pos", model!)).toBe(true);
-    expect(isWorkspaceNavItemActive(model!.nav.find((n) => n.path === "/invoices")!, "/invoices", model!)).toBe(
-      true,
-    );
-    expect(isWorkspaceNavItemActive(model!.nav[0]!, "/invoices", model!)).toBe(false);
-    expect(filterWorkspaceNav("invoice", model!.nav).map((item) => item.title)).toEqual(["Invoices"]);
+    expect(filterWorkspaceNav("overview", model!.nav).map((item) => item.title)).toEqual(["Overview"]);
   });
 
   it("keeps System Administration overview plus settings children", () => {

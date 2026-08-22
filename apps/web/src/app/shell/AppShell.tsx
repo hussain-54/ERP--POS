@@ -6,7 +6,6 @@ import {
   canShowNavItem,
   ERP_NAV_SECTIONS,
   isCommandPaletteChild,
-  isPosEnvironmentPath,
   isSystemAdminPath,
   requiredPermissionForPath,
   resolveShellHeader,
@@ -30,7 +29,7 @@ export function AppShell() {
 
   const overlayNav = mode === "mobile";
   const compact = collapsed && !mobileOpen;
-  const fillWorkspace = isPosEnvironmentPath(location.pathname) || isSystemAdminPath(location.pathname);
+  const fillWorkspace = isSystemAdminPath(location.pathname);
   const required = requiredPermissionForPath(location.pathname);
   const forbidden =
     Boolean(required) && grantedCount > 0 && !canShowNavItem(required, grantedCount, hasPermission);
@@ -76,11 +75,6 @@ export function AppShell() {
   }, [location.pathname]);
 
   useEffect(() => {
-    /* POS terminal: collapse ERP modules rail so the register matches the reference viewport. Menu expands it. */
-    if (isPosEnvironmentPath(location.pathname)) {
-      setCollapsed(true);
-      return;
-    }
     setCollapsed(mode === "tablet");
   }, [location.pathname, mode]);
 
@@ -102,21 +96,11 @@ export function AppShell() {
     };
   }, [mobileOpen]);
 
-  useEffect(() => {
-    function onPosToggleErpNav() {
-      if (overlayNav) setMobileOpen(true);
-      else setCollapsed((value) => !value);
-    }
-    window.addEventListener("pos:toggle-erp-nav", onPosToggleErpNav);
-    return () => window.removeEventListener("pos:toggle-erp-nav", onPosToggleErpNav);
-  }, [overlayNav]);
-
   function closeDrawer() {
     setMobileOpen(false);
   }
 
   const navMode = overlayNav ? (mobileOpen ? "drawer-open" : "drawer") : compact ? "collapsed" : "expanded";
-  const posChrome = isPosEnvironmentPath(location.pathname);
 
   return (
     <div
@@ -140,24 +124,22 @@ export function AppShell() {
       />
 
       <div className={`flex min-w-0 max-w-full flex-col ${fillWorkspace ? "h-full min-h-0 overflow-hidden" : ""}`}>
-        {posChrome ? null : (
-          <GlobalHeader
-            compact={mode === "mobile"}
-            moduleTitle={header.moduleTitle}
-            pageTitle={header.pageTitle}
-            mobileOpen={mobileOpen}
-            onOpenMobileNav={() => setMobileOpen(true)}
-            onOpenSearch={() => setCommandOpen(true)}
-            branchId={branchId}
-            branches={branches}
-            onBranchChange={setBranchId}
-            userName={user?.fullName ?? "User"}
-            showAudit={hasPermission("audit.view")}
-            onLogout={() => {
-              void logout();
-            }}
-          />
-        )}
+        <GlobalHeader
+          compact={mode === "mobile"}
+          moduleTitle={header.moduleTitle}
+          pageTitle={header.pageTitle}
+          mobileOpen={mobileOpen}
+          onOpenMobileNav={() => setMobileOpen(true)}
+          onOpenSearch={() => setCommandOpen(true)}
+          branchId={branchId}
+          branches={branches}
+          onBranchChange={setBranchId}
+          userName={user?.fullName ?? "User"}
+          showAudit={hasPermission("audit.view")}
+          onLogout={() => {
+            void logout();
+          }}
+        />
 
         <main
           className={

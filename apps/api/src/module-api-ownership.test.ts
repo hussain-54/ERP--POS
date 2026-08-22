@@ -70,7 +70,6 @@ describe("module API ownership", () => {
       "catalog",
       "inventory",
       "parties",
-      "pos",
       "purchases",
       "after-sales",
       "accounting",

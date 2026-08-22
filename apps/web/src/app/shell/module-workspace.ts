@@ -84,7 +84,7 @@ export function isWorkspaceNavItemActive(
   if (item.title === "Overview") {
     const featureHit = features.some((row) => isNavChildActive({ path: row.path }, pathname) || row.path === pathname);
     if (featureHit) return false;
-    return pathname === model.path || pathname === item.path || pathname === "/pos/new";
+    return pathname === model.path || pathname === item.path;
   }
   if (isNavChildActive(child, pathname) || item.path === pathname) return true;
   return item.path !== "/" && pathname.startsWith(`${item.path}/`);

@@ -1,23 +1,23 @@
 import { useEffect, useState } from "react";
 import { Badge, Button, Card, Input, useToast } from "@electronic-erp/ui";
-import { posHardware, usbScanner, cameraScanner } from "@/features/pos/hardware";
+import { deviceHardware, usbScanner, cameraScanner } from "@/features/devices/hardware-service";
 import { hardwareApi } from "@/features/printing/hardware-api";
 
 export function DevicesPage() {
   const toast = useToast();
-  const [statuses, setStatuses] = useState(posHardware.listStatuses());
+  const [statuses, setStatuses] = useState(deviceHardware.listStatuses());
   const [events, setEvents] = useState<Array<Record<string, unknown>>>([]);
   const [caps, setCaps] = useState<Record<string, unknown> | null>(null);
   const [reason, setReason] = useState("Manual open");
   const [lastScan, setLastScan] = useState("");
 
   function refresh() {
-    setStatuses(posHardware.listStatuses());
+    setStatuses(deviceHardware.listStatuses());
   }
 
   useEffect(() => {
     refresh();
-    const unsub = posHardware.subscribeScanner((e) => {
+    const unsub = deviceHardware.subscribeScanner((e) => {
       setLastScan(`${e.format}:${e.code} (${e.source})`);
       refresh();
     });
@@ -44,7 +44,7 @@ export function DevicesPage() {
   }, []);
 
   async function openDrawer() {
-    const local = await posHardware.openDrawer({ reason });
+    const local = await deviceHardware.openDrawer({ reason });
     try {
       if (local.ok) await hardwareApi.openDrawer({ reason });
     } catch {

@@ -6,7 +6,7 @@ import {
   buildSalesInvoice,
 } from "@electronic-erp/hardware";
 import { Badge, Button, Card, Form, FormActions, Input, Select, useToast } from "@electronic-erp/ui";
-import { posHardware } from "@/features/pos/hardware";
+import { deviceHardware } from "@/features/devices/hardware-service";
 import { hardwareApi } from "./hardware-api";
 
 const DOC_TYPES = [
@@ -35,7 +35,7 @@ export function PrintingPage() {
     productName: "Sample Product",
   });
 
-  const barcodeHw = new BarcodeHardwareService(posHardware);
+  const barcodeHw = new BarcodeHardwareService(deviceHardware);
 
   async function load() {
     try {
@@ -45,7 +45,7 @@ export function PrintingPage() {
       setJobs([]);
     }
     setLocalStatus(
-      posHardware
+      deviceHardware
         .listStatuses()
         .map((s) => `${s.capability}:${s.status}`)
         .join(" · "),
@@ -90,7 +90,7 @@ export function PrintingPage() {
               lines: [{ name: form.line, qty: 1, amount: 100 }],
               grandTotal: 100,
             });
-    const result = await posHardware.printDocument(doc);
+    const result = await deviceHardware.printDocument(doc);
     setPreview(`${doc.title}\n${result.ok ? "OK" : result.error ?? result.status}`);
     toast.push({
       title: result.ok ? "Printed locally" : "Print failed",
