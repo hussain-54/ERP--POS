@@ -378,8 +378,8 @@ export const POS_TERMINAL_NAV: readonly PosTerminalNavItem[] = [
   { label: "Customers", path: "/pos/customer-selection" },
   { label: "Products", path: "/pos/product-search" },
   { label: "Price & Discount", path: "/discounts" },
-  { label: "Invoices", path: "/invoices" },
-  { label: "Shift", path: "/pos/shift" },
+  { label: "Reports", path: "/pos/reports" },
+  { label: "Settings", path: "/pos/settings" },
 ] as const;
 
 export const POS_COMPONENT_OWNERS = {

@@ -1,28 +1,7 @@
 import type { ReactNode } from "react";
 import { useNavigate } from "react-router-dom";
-import { POSBreadcrumb, POSButton, POSCard, POSPageHeader } from "./design-system";
-import { POS_OWNERSHIP } from "./pos-ownership";
-
-const POS_HUB_DESCRIPTIONS: Record<string, string> = {
-  "/pos": "Ring a sale on this terminal.",
-  "/held-sales": "Parked tickets and resume.",
-  "/invoices": "Posted sales register and reprints.",
-  "/sales-management": "Shift, drawer totals, and close-out.",
-  "/returns": "Find an invoice and post a return.",
-  "/exchange": "Return items and post a replacement sale.",
-  "/payments": "Receipt register and on-account collects.",
-  "/discounts": "POS discount policy and approvals.",
-  "/pos/references": "Sale references from posted tickets.",
-  "/pos/salesmen": "POS salesman roster.",
-  "/pos/installments": "Installment plans from live records.",
-  "/pos/settings": "POS terminal, hardware, and tenders.",
-};
-
-export const POS_REPORT_LINKS = POS_OWNERSHIP.map((item) => ({
-  path: item.canonical,
-  title: item.title,
-  description: POS_HUB_DESCRIPTIONS[item.canonical] ?? item.note,
-}));
+import { POSBadge, POSBreadcrumb, POSButton, POSCard, POSPageHeader } from "./design-system";
+import { POS_REFERENCE_IA } from "./pos-reference-ia";
 
 function HubShell({
   title,
@@ -40,6 +19,13 @@ function HubShell({
       {children}
     </div>
   );
+}
+
+function statusTone(status: string): "primary" | "success" | "warning" | "neutral" {
+  if (status === "live") return "success";
+  if (status === "terminal") return "primary";
+  if (status === "shared") return "neutral";
+  return "warning";
 }
 
 export function PosCustomersPage() {
@@ -87,19 +73,40 @@ export function PosProductsPage() {
   );
 }
 
+/** Reference Reports hub — 15-section POS map → live routes only. */
 export function PosReportsPage() {
   const navigate = useNavigate();
   return (
     <HubShell
       title="Reports"
-      subtitle="Operational POS registers. Each link opens an existing live screen — not a second ERP reports module."
+      subtitle="POS reference map (15 sections). Links open existing screens — no invented report engines."
     >
-      <div className="grid gap-2 md:grid-cols-2 lg:grid-cols-3">
-        {POS_REPORT_LINKS.map((item) => (
-          <POSCard key={item.path} padding="sm" title={item.title} description={item.description}>
-            <POSButton variant="secondary" size="sm" onClick={() => navigate(item.path)}>
-              Open
-            </POSButton>
+      <div className="space-y-4">
+        {POS_REFERENCE_IA.map((section) => (
+          <POSCard
+            key={section.id}
+            padding="sm"
+            title={`${section.id}. ${section.title}`}
+            description={`${section.links.length} destinations`}
+          >
+            <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
+              {section.links.map((link) => (
+                <button
+                  key={`${section.id}-${link.label}-${link.path}`}
+                  type="button"
+                  className="flex flex-col items-start gap-1 rounded-[var(--pos-radius)] border border-[var(--pos-border)] bg-[var(--pos-bg)] px-3 py-2 text-left hover:border-[var(--pos-primary)]"
+                  onClick={() => navigate(link.path)}
+                  title={link.note}
+                >
+                  <span className="text-xs font-semibold text-[var(--pos-ink)]">{link.label}</span>
+                  <span className="flex items-center gap-2">
+                    <POSBadge tone={statusTone(link.status)}>{link.status}</POSBadge>
+                    <span className="truncate font-mono text-[10px] text-[var(--pos-muted)]">{link.path}</span>
+                  </span>
+                  {link.note ? <span className="text-[10px] text-[var(--pos-muted)]">{link.note}</span> : null}
+                </button>
+              ))}
+            </div>
           </POSCard>
         ))}
       </div>

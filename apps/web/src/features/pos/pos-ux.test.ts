@@ -96,7 +96,7 @@ describe("POS cashier UX helpers", () => {
       "F3 Customers",
       "F4 Price Override",
       "F5 Discount",
-      "F6 Payment",
+      "F6 Recalculate",
       "F7 Clear Cart",
       "F8 Cancel Sale",
     ]);
@@ -107,7 +107,7 @@ describe("POS cashier UX helpers", () => {
     expect(matchPosFunctionShortcut(event("F3"))).toBe("customers");
     expect(matchPosFunctionShortcut(event("F4"))).toBe("price-override");
     expect(matchPosFunctionShortcut(event("F5"))).toBe("discount");
-    expect(matchPosFunctionShortcut(event("F6"))).toBe("payment");
+    expect(matchPosFunctionShortcut(event("F6"))).toBe("recalculate");
     expect(matchPosFunctionShortcut(event("F7"))).toBe("clear-cart");
     expect(matchPosFunctionShortcut(event("F8"))).toBe("cancel-sale");
     expect(matchPosFunctionShortcut(event("F1", { altKey: true }))).toBeNull();
@@ -117,8 +117,8 @@ describe("POS cashier UX helpers", () => {
     expect(posShortcutFallbackPath("hold-resume")).toBe("/pos/resume-sale");
     expect(posShortcutFallbackPath("customers")).toBe("/pos/customer-selection");
     expect(posShortcutFallbackPath("discount")).toBe("/pos?focus=discount");
-    expect(posShortcutFallbackPath("payment")).toBe("/pos?focus=payment");
     expect(posShortcutFallbackPath("clear-cart")).toBeNull();
+    expect(posShortcutFallbackPath("recalculate")).toBeNull();
     const input = document.createElement("input");
     document.body.appendChild(input);
     const typingEvent = { key: "F2", target: input, ctrlKey: false, metaKey: false, altKey: false, shiftKey: false } as unknown as KeyboardEvent;

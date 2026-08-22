@@ -24,7 +24,7 @@ export const POS_SHORTCUTS = [
   { key: "F3", label: "Customers", action: "customers" },
   { key: "F4", label: "Price Override", action: "price-override" },
   { key: "F5", label: "Discount", action: "discount" },
-  { key: "F6", label: "Payment", action: "payment" },
+  { key: "F6", label: "Recalculate", action: "recalculate" },
   { key: "F7", label: "Clear Cart", action: "clear-cart" },
   { key: "F8", label: "Cancel Sale", action: "cancel-sale" },
 ] as const;

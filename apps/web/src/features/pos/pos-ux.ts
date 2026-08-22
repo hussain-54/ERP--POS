@@ -149,8 +149,6 @@ export function posShortcutFallbackPath(action: PosShortcutAction): string | nul
       return "/pos/customer-selection";
     case "discount":
       return "/pos?focus=discount";
-    case "payment":
-      return "/pos?focus=payment";
     default:
       return null;
   }

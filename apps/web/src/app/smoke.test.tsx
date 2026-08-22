@@ -937,6 +937,8 @@ describe("responsive ERP shell", () => {
       "/pos/customer-selection",
     );
     expect(within(terminalNav).getByRole("link", { name: "Price & Discount" })).toHaveAttribute("href", "/discounts");
+    expect(within(terminalNav).getByRole("link", { name: "Reports" })).toHaveAttribute("href", "/pos/reports");
+    expect(within(terminalNav).getByRole("link", { name: "Settings" })).toHaveAttribute("href", "/pos/settings");
     expect(POS_IA_TITLES).toHaveLength(26);
     unmount();
 

@@ -39,8 +39,8 @@ describe("POS ownership map", () => {
       "/pos/customer-selection",
       "/pos/product-search",
       "/discounts",
-      "/invoices",
-      "/pos/shift",
+      "/pos/reports",
+      "/pos/settings",
     ]);
   });
 
@@ -64,8 +64,8 @@ describe("POS ownership map", () => {
       "Customers",
       "Products",
       "Price & Discount",
-      "Invoices",
-      "Shift",
+      "Reports",
+      "Settings",
     ]);
     expect(posNavItemForPath("/held-sales")?.title).toBe("Resume Sale");
     expect(posNavItemForPath("/pos/new")?.title).toBe("POS Terminal");

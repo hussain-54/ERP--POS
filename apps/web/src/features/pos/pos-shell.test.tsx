@@ -59,7 +59,7 @@ describe("POS workspace chrome", () => {
     expect(screen.getByLabelText("Keyboard shortcuts")).toBeInTheDocument();
     expect(screen.getByRole("button", { name: /F1/ })).toHaveAttribute("title", "F1 New Sale");
     expect(screen.getByRole("button", { name: /F2/ })).toHaveAttribute("title", "F2 Hold / Resume");
-    expect(screen.getByRole("button", { name: /F6/ })).toHaveAttribute("title", "F6 Payment");
+    expect(screen.getByRole("button", { name: /F6/ })).toHaveAttribute("title", "F6 Recalculate");
     expect(screen.getByRole("button", { name: /F8/ })).toHaveAttribute("title", "F8 Cancel Sale");
     expect(POS_IA_TITLES).toHaveLength(26);
     expect(POS_TERMINAL_NAV.map((item) => item.label)).toEqual([
@@ -68,8 +68,8 @@ describe("POS workspace chrome", () => {
       "Customers",
       "Products",
       "Price & Discount",
-      "Invoices",
-      "Shift",
+      "Reports",
+      "Settings",
     ]);
     expect(POS_TERMINAL_NAV.map((item) => item.path)).toEqual([
       "/pos",
@@ -77,8 +77,8 @@ describe("POS workspace chrome", () => {
       "/pos/customer-selection",
       "/pos/product-search",
       "/discounts",
-      "/invoices",
-      "/pos/shift",
+      "/pos/reports",
+      "/pos/settings",
     ]);
     expect(screen.getByRole("button", { name: "Menu" })).toBeInTheDocument();
   });
@@ -93,7 +93,7 @@ describe("POS workspace chrome", () => {
     expect(posNavItemForPath("/discounts")?.title).toBe("Discounts");
     expect(posNavItemForPath("/invoices")?.title).toBe("Invoices");
     expect(posNavItemForPath("/pos/salesmen")?.title).toBe("Salesman / Reference");
-    expect(posNavItemForPath("/pos/settings")).toBeUndefined();
+    expect(posNavItemForPath("/pos/settings")?.title).toBeUndefined();
   });
 
   it("keeps a compact POS status strip with branch, terminal, cashier, and shift", () => {

@@ -633,12 +633,12 @@ describe("industrial New Sale terminal", () => {
     expect(screen.getByRole("button", { name: "JazzCash" })).toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "SadaPay" })).not.toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "Easypaisa" })).not.toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "COMPLETE SALE" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "PAY NOW →" })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "HOLD SALE" })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "QUOTATION" })).toBeInTheDocument();
   });
 
-  it("blocks COMPLETE SALE while pending and hides invoice discount without permission", () => {
+  it("blocks PAY NOW while pending and hides invoice discount without permission", () => {
     const onPay = vi.fn();
     render(
       <PosPaymentPanel
@@ -803,7 +803,7 @@ describe("industrial New Sale terminal", () => {
     expect(onPay).not.toHaveBeenCalled();
   });
 
-  it("opens a confirmation modal from COMPLETE SALE and posts only after confirm", () => {
+  it("opens a confirmation modal from PAY NOW and posts only after confirm", () => {
     const onPay = vi.fn();
     render(
       <PosPaymentPanel
@@ -854,7 +854,7 @@ describe("industrial New Sale terminal", () => {
         invoiceReference={null}
       />,
     );
-    fireEvent.click(screen.getByRole("button", { name: "COMPLETE SALE" }));
+    fireEvent.click(screen.getByRole("button", { name: "PAY NOW →" }));
     expect(onPay).not.toHaveBeenCalled();
     const dialog = screen.getByRole("dialog", { name: "Complete sale" });
     expect(within(dialog).getByText("Customer")).toBeInTheDocument();
@@ -917,7 +917,7 @@ describe("industrial New Sale terminal", () => {
         invoiceReference={null}
       />,
     );
-    fireEvent.click(screen.getByRole("button", { name: "COMPLETE SALE" }));
+    fireEvent.click(screen.getByRole("button", { name: "PAY NOW →" }));
     const dialog = screen.getByRole("dialog", { name: "Complete sale" });
     fireEvent.click(within(dialog).getByRole("button", { name: "Cancel" }));
     expect(onPay).not.toHaveBeenCalled();

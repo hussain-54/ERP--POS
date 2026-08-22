@@ -194,6 +194,7 @@ export function PosPage({ entry = "sale" }: { entry?: "sale" | "holds" }) {
     setWalkIn,
     lastCartError,
     setAllowManualOverride,
+    recalculate,
   } = session;
 
   const [online, setOnline] = useState(
@@ -1945,15 +1946,11 @@ export function PosPage({ entry = "sale" }: { entry?: "sale" | "holds" }) {
           return discountRef.current;
         });
         return;
-      case "payment":
-        if (layoutMode === "mobile") {
-          setMobileSheet("pay");
-          return;
-        }
-        document.querySelector(".pos-sale-ops-pay")?.scrollIntoView({ block: "nearest", behavior: "smooth" });
-        schedulePosFocus(() =>
-          document.querySelector<HTMLButtonElement>(".pos-sale-ops-pay [data-pos-complete-sale]"),
-        );
+      case "recalculate":
+        recalculate();
+        requestInvoiceDiscount(invoiceDiscount);
+        setPayments((prev) => [...prev]);
+        toast.push({ title: "Totals recalculated", tone: "info" });
         return;
       case "clear-cart":
         requestClearCart();

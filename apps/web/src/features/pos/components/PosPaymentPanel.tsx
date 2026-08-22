@@ -689,13 +689,13 @@ export const PosPaymentPanel = memo(function PosPaymentPanel({
           disabled={payBlocked || !prep.ok || !methods.length}
           loading={busy || confirmation === "pending"}
           loadingLabel="Processing payment…"
-          title={payTitle.includes("F6") ? payTitle : `${payTitle} · F6`}
+          title={payTitle.includes("F6") ? payTitle : `${payTitle}`}
         >
           {confirmation === "pending"
             ? "Processing payment…"
             : prep.remaining > 0.009 && allowCreditDue
-              ? "COMPLETE SALE (udhaar remaining)"
-              : "COMPLETE SALE"}
+              ? "PAY NOW (udhaar remaining)"
+              : "PAY NOW →"}
         </PayNowButton>
         <div className="grid grid-cols-2 gap-2">
           <HoldSaleButton
