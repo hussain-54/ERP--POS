@@ -66,7 +66,7 @@ async function main() {
     path.join(funcDir, ".vc-config.json"),
     JSON.stringify(
       {
-        runtime: "nodejs24.x",
+        runtime: "nodejs20.x",
         handler: "index.js",
         launcherType: "Nodejs",
         shouldAddHelpers: true,
@@ -99,6 +99,7 @@ async function main() {
   fs.writeFileSync(path.join(outRoot, "config.json"), JSON.stringify(config, null, 2), "utf8");
 
   console.log("[emit-vercel-output] wrote", outRoot);
+  process.exit(0);
 }
 
 main().catch((err) => {

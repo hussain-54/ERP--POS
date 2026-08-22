@@ -1,11 +1,28 @@
-import { defineConfig } from "vite";
+import { defineConfig, type Plugin } from "vite";
 import react from "@vitejs/plugin-react";
 import path from "node:path";
 
 const packages = path.resolve(__dirname, "../../packages");
 
+/**
+ * Vercel waits for the build process to exit. Vite can leave open handles
+ * (watchers / native deps) so the deploy stays "Building" until the 45m limit.
+ * @see https://vercel.com/kb/guide/fixing-deployments-that-hang-after-the-build-step-succeeds
+ */
+function forceExitOnVercel(): Plugin {
+  return {
+    name: "force-exit-on-vercel",
+    apply: "build",
+    closeBundle() {
+      if (process.env.VERCEL !== "1" && process.env.CI !== "1") return;
+      // Defer so Vite can flush logs, then terminate the Node process.
+      setTimeout(() => process.exit(0), 0);
+    },
+  };
+}
+
 export default defineConfig({
-  plugins: [react()],
+  plugins: [react(), forceExitOnVercel()],
   envDir: path.resolve(__dirname, "../.."),
   resolve: {
     alias: {
@@ -22,7 +39,6 @@ export default defineConfig({
     port: 5173,
   },
   build: {
-    // ERP + POS share one entry; ~1–1.5 MB is expected until routes are code-split.
     chunkSizeWarningLimit: 2000,
   },
   test: {
