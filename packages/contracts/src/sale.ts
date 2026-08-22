@@ -304,6 +304,8 @@ export const ProductSearchResultSchema = z.object({
     )
     .optional(),
   warrantyDays: z.number().int(),
+  /** Signed HTTPS URL for the primary product image, when available. */
+  imageUrl: z.string().url().nullable().optional(),
 });
 export type ProductSearchResult = z.infer<typeof ProductSearchResultSchema>;
 

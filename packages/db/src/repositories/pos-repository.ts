@@ -228,7 +228,7 @@ export class PosRepository {
     const unitIds = uniqueIds(candidates.map((row) => row.base_unit_id));
 
     // Wave 3 — hydrate related rows in batch (constant request count vs N×7).
-    const [brandsRes, companiesRes, categoriesRes, modelsRes, unitsRes, specsRes, balancesRes] =
+    const [brandsRes, companiesRes, categoriesRes, modelsRes, unitsRes, specsRes, balancesRes, mediaRes] =
       await Promise.all([
         brandIds.length
           ? this.db.from("brands").select("id,name").in("id", brandIds)
@@ -257,11 +257,23 @@ export class PosRepository {
               .eq("warehouse_id", query.warehouseId)
               .in("product_id", productIds)
           : Promise.resolve({ data: [] as Row[], error: null }),
+        this.db
+          .from("product_media")
+          .select("product_id,storage_path,is_primary,sort_order")
+          .eq("organization_id", organizationId)
+          .eq("media_type", "image")
+          .in("product_id", productIds)
+          .is("deleted_at", null),
       ]);
 
-    for (const res of [brandsRes, companiesRes, categoriesRes, modelsRes, unitsRes, specsRes, balancesRes]) {
+    for (const res of [brandsRes, companiesRes, categoriesRes, modelsRes, unitsRes, specsRes, balancesRes, mediaRes]) {
       if (res.error) throw res.error;
     }
+
+    const imageUrlByProduct = await resolvePrimaryProductImageUrls(
+      this.db,
+      (mediaRes.data ?? []) as Row[],
+    );
 
     const brandName = nameMap(brandsRes.data);
     const companyName = nameMap(companiesRes.data);
@@ -321,6 +333,7 @@ export class PosRepository {
         wholesalePrice: Number(row.wholesale_price ?? 0),
         dealerPrice: Number(row.dealer_price ?? 0),
         warrantyDays: Number(row.warranty_days ?? 0),
+        imageUrl: imageUrlByProduct.get(productId) ?? null,
       });
     }
 
@@ -2723,6 +2736,57 @@ function mapCouponRecord(row: Row): PosCouponRecord {
     validTo: row.valid_to != null ? String(row.valid_to) : null,
     isActive: Boolean(row.is_active),
   };
+}
+
+const PRODUCT_MEDIA_BUCKET = "product-media";
+const PRODUCT_IMAGE_SIGNED_URL_TTL_SEC = 3600;
+
+function pickPrimaryImagePathByProduct(mediaRows: Row[]): Map<string, string> {
+  const grouped = new Map<string, Row[]>();
+  for (const row of mediaRows) {
+    const productId = String(row.product_id);
+    const list = grouped.get(productId) ?? [];
+    list.push(row);
+    grouped.set(productId, list);
+  }
+
+  const pathByProduct = new Map<string, string>();
+  for (const [productId, rows] of grouped) {
+    rows.sort((a, b) => {
+      const primaryDelta = Number(Boolean(b.is_primary)) - Number(Boolean(a.is_primary));
+      if (primaryDelta !== 0) return primaryDelta;
+      return Number(a.sort_order ?? 0) - Number(b.sort_order ?? 0);
+    });
+    const path = String(rows[0]?.storage_path ?? "");
+    if (path) pathByProduct.set(productId, path);
+  }
+  return pathByProduct;
+}
+
+async function resolvePrimaryProductImageUrls(
+  db: DatabaseClient,
+  mediaRows: Row[],
+): Promise<Map<string, string>> {
+  const pathByProduct = pickPrimaryImagePathByProduct(mediaRows);
+  if (!pathByProduct.size) return new Map();
+
+  const signedByPath = new Map<string, string>();
+  await Promise.all(
+    [...new Set(pathByProduct.values())].map(async (storagePath) => {
+      const { data, error } = await db.storage
+        .from(PRODUCT_MEDIA_BUCKET)
+        .createSignedUrl(storagePath, PRODUCT_IMAGE_SIGNED_URL_TTL_SEC);
+      if (error || !data?.signedUrl) return;
+      signedByPath.set(storagePath, data.signedUrl);
+    }),
+  );
+
+  const imageUrlByProduct = new Map<string, string>();
+  for (const [productId, storagePath] of pathByProduct) {
+    const signedUrl = signedByPath.get(storagePath);
+    if (signedUrl) imageUrlByProduct.set(productId, signedUrl);
+  }
+  return imageUrlByProduct;
 }
 
 function uniqueIds(values: unknown[]): string[] {
