@@ -28,10 +28,10 @@ export const MODULE_API_OWNERSHIP: readonly ModuleApiOwnership[] = [
   {
     id: "02",
     module: "POS / SALES",
-    apiGroup: "none",
-    mount: "none (Coming Soon)",
-    repository: "none",
-    domain: "none",
+    apiGroup: "pos",
+    mount: "/api/v1/pos",
+    repository: "PosRepository",
+    domain: "pos-transaction.ts, pos-validation.ts, pos-payment.ts",
   },
   {
     id: "03",
@@ -391,8 +391,8 @@ export const OWNERSHIP_AMBIGUITIES = [
   {
     topic: "Sales payments",
     modules: "02",
-    livesIn: "none (POS / Sales not implemented)",
-    action: "Reintroduce with POS module.",
+    livesIn: "pos.ts → /api/v1/pos/sales, /api/v1/pos/holds",
+    action: "Keep. POS terminal posts sales and holds via PosRepository.",
   },
   {
     topic: "Orders vs B2B",

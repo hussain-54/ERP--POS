@@ -57,6 +57,24 @@ import { SecurityPage } from "@/features/system/SecurityPage";
 import { IntegrationsPage } from "@/features/system/IntegrationsPage";
 import { OnlineStorePage } from "@/features/system/OnlineStorePage";
 import { SystemAdminHome } from "@/features/system/SystemAdminHome";
+import { PosTerminalPage } from "@/features/pos/terminal/PosTerminalPage";
+import {
+  PosOverviewPage,
+  PosCustomersHubPage,
+  PosProductsHubPage,
+  PosPricingHubPage,
+  PosPaymentsHubPage,
+  PosInvoicesHubPage,
+  PosReturnsHubPage,
+  PosShiftHubPage,
+  PosApprovalsHubPage,
+  PosReportsHubPage,
+  PosTaxHubPage,
+  PosOfflineHubPage,
+  PosDevicesHubPage,
+  PosSettingsPage,
+  PosHeldSalesPage,
+} from "@/features/pos/pages/PosSectionPages";
 import { SystemComingSoonPage } from "@/features/system/SystemComingSoonPage";
 
 /**
@@ -70,6 +88,28 @@ const implemented: Record<string, ReactNode> = {
   // 01 COMMAND CENTER — canonical /command-center · alias /
   "/command-center": <DashboardPage />,
   "/": <DashboardPage />,
+
+  // 02 POS / SALES — reference dashboard terminal + 15-section IA
+  "/pos": <PosTerminalPage />,
+  "/pos/overview": <PosOverviewPage />,
+  "/pos/sales/new": <PosTerminalPage />,
+  "/pos/sales/quick": <PosTerminalPage />,
+  "/pos/sales/hold": <PosTerminalPage />,
+  "/pos/sales/resume": <PosHeldSalesPage />,
+  "/pos/sales/held": <PosHeldSalesPage />,
+  "/pos/customers": <PosCustomersHubPage />,
+  "/pos/products": <PosProductsHubPage />,
+  "/pos/pricing": <PosPricingHubPage />,
+  "/pos/payments": <PosPaymentsHubPage />,
+  "/pos/invoices": <PosInvoicesHubPage />,
+  "/pos/returns": <PosReturnsHubPage />,
+  "/pos/shift": <PosShiftHubPage />,
+  "/pos/approvals": <PosApprovalsHubPage />,
+  "/pos/reports": <PosReportsHubPage />,
+  "/pos/tax": <PosTaxHubPage />,
+  "/pos/offline": <PosOfflineHubPage />,
+  "/pos/devices": <PosDevicesHubPage />,
+  "/pos/settings": <PosSettingsPage />,
 
   // 03 PRODUCT & CATALOG — canonical /product-catalog · alias /products
   "/product-catalog": <ProductsPage />,

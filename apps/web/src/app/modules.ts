@@ -166,7 +166,6 @@ export function canShowNavItem(
 }
 
 const COMING_SOON_PARENT_IDS = new Set([
-  "02",
   "18",
   "27",
   "28",
@@ -211,12 +210,28 @@ export const ERP_NAV_SECTIONS: ErpNavSection[] = [
     path: "/pos",
     description: "Point of sale, billing, payments and sales operations.",
     permission: "pos.sell",
-    folder: null,
-    status: "placeholder",
+    folder: "pos",
     children: [
-      soon("/pos", "Coming Soon", "POS / Sales is not implemented yet.", {
-        permission: "pos.sell",
-      }),
+      live("/pos", "POS Terminal", "Primary retail terminal matching the POS dashboard.", { permission: "pos.sell" }),
+      live("/pos/overview", "Overview", "POS module overview and entry points.", { permission: "pos.sell" }),
+      live("/pos/sales/new", "New Sale", "Full terminal checkout.", { permission: "pos.sell", sidebar: false }),
+      live("/pos/sales/quick", "Quick Sale", "Streamlined easy-mode terminal.", { permission: "pos.sell", sidebar: false }),
+      live("/pos/sales/hold", "Hold Sale", "Park the current cart.", { permission: "pos.hold", sidebar: false }),
+      live("/pos/sales/resume", "Resume Sale", "Held sales register.", { permission: "pos.hold", sidebar: false }),
+      live("/pos/sales/held", "Held Sales", "All parked carts.", { permission: "pos.hold", sidebar: false }),
+      live("/pos/customers", "Customers", "Customer selection and POS customer tools.", { permission: "pos.sell" }),
+      live("/pos/products", "Products", "Product discovery on the terminal.", { permission: "pos.sell" }),
+      live("/pos/pricing", "Pricing & Discounts", "Price override, coupons, and discounts.", { permission: "pos.discount" }),
+      live("/pos/payments", "Payments", "Cash, card, wallets, split, and credit.", { permission: "payments.receive" }),
+      live("/pos/invoices", "Invoices & Receipts", "Invoices, quotations, and reprints.", { permission: "pos.view_invoices" }),
+      soon("/pos/returns", "Returns & Exchange", "Sales returns and exchanges.", { permission: "pos.return", availableOn: "/pos" }),
+      live("/pos/shift", "Shift & Cash", "Open shift, cash drawer, and reconciliation.", { permission: "pos.shift" }),
+      live("/pos/approvals", "Approvals", "Discount, void, and refund approvals.", { permission: "approvals.view" }),
+      live("/pos/reports", "Reports", "Sales, cashier, and payment reports.", { permission: "reports.view" }),
+      soon("/pos/tax", "Tax & Compliance", "Tax rules and FBR compliance.", { permission: "tax.view", availableOn: "/tax" }),
+      soon("/pos/offline", "Offline & Sync", "Offline queue and sync status.", { permission: "pos.sell", availableOn: "/pos" }),
+      live("/pos/devices", "Devices & Terminal", "Scanners, printers, and terminals.", { permission: "devices.view" }),
+      live("/pos/settings", "POS Settings", "Terminal, receipt, and payment configuration.", { permission: "pos.settings" }),
     ],
   }),
   parent({
@@ -1041,15 +1056,43 @@ export const DUPLICATE_ROUTE_PAIRS: Array<{
   { canonical: "/products", duplicate: "/products/new", note: "Product form; New Product child", sameComponent: false },
 ];
 
-/** Retired POS workspace paths — module 02 is sidebar-only until reimplemented. */
-export const POS_ENVIRONMENT_PATHS = new Set<string>();
+/** POS workspace paths — terminal uses PosShell instead of stacked ModuleWorkspace chrome. */
+export const POS_ENVIRONMENT_PATHS = new Set<string>([
+  "/pos",
+  "/pos/overview",
+  "/pos/sales/new",
+  "/pos/sales/quick",
+  "/pos/sales/hold",
+  "/pos/sales/resume",
+  "/pos/sales/held",
+  "/pos/customers",
+  "/pos/products",
+  "/pos/pricing",
+  "/pos/payments",
+  "/pos/invoices",
+  "/pos/returns",
+  "/pos/shift",
+  "/pos/approvals",
+  "/pos/reports",
+  "/pos/tax",
+  "/pos/offline",
+  "/pos/devices",
+  "/pos/settings",
+]);
 
-export function isPosEnvironmentPath(_pathname: string): boolean {
-  return false;
+export function isPosEnvironmentPath(pathname: string): boolean {
+  if (POS_ENVIRONMENT_PATHS.has(pathname)) return true;
+  return pathname.startsWith("/pos/");
 }
 
-export function isPosTerminalPath(_pathname: string): boolean {
-  return false;
+export function isPosTerminalPath(pathname: string): boolean {
+  return (
+    pathname === "/pos" ||
+    pathname === "/pos/sales/new" ||
+    pathname === "/pos/sales/quick" ||
+    pathname === "/pos/sales/hold" ||
+    pathname === "/pos/sales/resume"
+  );
 }
 
 /** Module 39 workspace only — promoted modules use normal ERP chrome. */

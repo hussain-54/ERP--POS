@@ -6,6 +6,7 @@ import {
   canShowNavItem,
   ERP_NAV_SECTIONS,
   isCommandPaletteChild,
+  isPosEnvironmentPath,
   isSystemAdminPath,
   requiredPermissionForPath,
   resolveShellHeader,
@@ -29,7 +30,7 @@ export function AppShell() {
 
   const overlayNav = mode === "mobile";
   const compact = collapsed && !mobileOpen;
-  const fillWorkspace = isSystemAdminPath(location.pathname);
+  const fillWorkspace = isPosEnvironmentPath(location.pathname) || isSystemAdminPath(location.pathname);
   const required = requiredPermissionForPath(location.pathname);
   const forbidden =
     Boolean(required) && grantedCount > 0 && !canShowNavItem(required, grantedCount, hasPermission);
@@ -75,10 +76,6 @@ export function AppShell() {
   }, [location.pathname]);
 
   useEffect(() => {
-    setCollapsed(mode === "tablet");
-  }, [location.pathname, mode]);
-
-  useEffect(() => {
     if (!mobileOpen) return;
     document.getElementById("erp-nav-close")?.focus();
     const previousOverflow = document.body.style.overflow;
@@ -96,35 +93,64 @@ export function AppShell() {
     };
   }, [mobileOpen]);
 
+  useEffect(() => {
+    if (isPosEnvironmentPath(location.pathname)) {
+      setCollapsed(true);
+      return;
+    }
+    setCollapsed(mode === "tablet");
+  }, [location.pathname, mode]);
+
+  useEffect(() => {
+    function onPosToggleErpNav() {
+      if (isPosEnvironmentPath(location.pathname)) {
+        setMobileOpen(true);
+        return;
+      }
+      if (overlayNav) setMobileOpen(true);
+      else setCollapsed((value) => !value);
+    }
+    window.addEventListener("pos:toggle-erp-nav", onPosToggleErpNav);
+    return () => window.removeEventListener("pos:toggle-erp-nav", onPosToggleErpNav);
+  }, [overlayNav, location.pathname]);
+
   function closeDrawer() {
     setMobileOpen(false);
   }
 
   const navMode = overlayNav ? (mobileOpen ? "drawer-open" : "drawer") : compact ? "collapsed" : "expanded";
+  const posChrome = isPosEnvironmentPath(location.pathname);
 
   return (
     <div
       data-erp-viewport={mode}
       data-erp-nav={navMode}
       className={`${fillWorkspace ? "h-screen overflow-hidden" : "min-h-screen"} erp-app max-w-full overflow-x-hidden bg-[var(--erp-bg)] text-[var(--erp-ink)] md:grid ${
-        collapsed ? "md:grid-cols-[72px_minmax(0,1fr)]" : "md:grid-cols-[280px_minmax(0,1fr)]"
+        posChrome
+          ? "md:grid-cols-[minmax(0,1fr)]"
+          : collapsed
+            ? "md:grid-cols-[72px_minmax(0,1fr)]"
+            : "md:grid-cols-[280px_minmax(0,1fr)]"
       }`}
     >
       <GlobalSidebarBackdrop visible={mobileOpen} onClose={closeDrawer} />
-      <GlobalSidebar
-        compact={compact}
-        overlayNav={overlayNav}
-        mobileOpen={mobileOpen}
-        query={query}
-        onQueryChange={setQuery}
-        onClose={closeDrawer}
-        onToggleCollapsed={() => setCollapsed((value) => !value)}
-        grantedCount={grantedCount}
-        hasPermission={hasPermission}
-      />
+      {!posChrome || mobileOpen ? (
+        <GlobalSidebar
+          compact={compact}
+          overlayNav={overlayNav || posChrome}
+          mobileOpen={mobileOpen}
+          query={query}
+          onQueryChange={setQuery}
+          onClose={closeDrawer}
+          onToggleCollapsed={() => setCollapsed((value) => !value)}
+          grantedCount={grantedCount}
+          hasPermission={hasPermission}
+        />
+      ) : null}
 
       <div className={`flex min-w-0 max-w-full flex-col ${fillWorkspace ? "h-full min-h-0 overflow-hidden" : ""}`}>
-        <GlobalHeader
+        {posChrome ? null : (
+          <GlobalHeader
           compact={mode === "mobile"}
           moduleTitle={header.moduleTitle}
           pageTitle={header.pageTitle}
@@ -140,6 +166,7 @@ export function AppShell() {
             void logout();
           }}
         />
+        )}
 
         <main
           className={

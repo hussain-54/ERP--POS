@@ -73,11 +73,12 @@ describe("web foundation", () => {
     const sales = ERP_NAV_SECTIONS.find((s) => s.id === "02");
     expect(sales?.name).toBe("POS / SALES");
     expect(sales?.title).toBe("POS / SALES");
-    expect(sales?.status).toBe("placeholder");
-    expect(sales?.folder).toBeNull();
-    expect(sales?.children.map((c) => c.title)).toEqual(["Coming Soon"]);
-    expect(isComingSoonEngineSection(sales!)).toBe(true);
-    expect(isPosEnvironmentPath("/pos")).toBe(false);
+    expect(sales?.status).toBe("implemented");
+    expect(sales?.folder).toBe("pos");
+    expect(sales?.children.some((c) => c.title === "POS Terminal")).toBe(true);
+    expect(isComingSoonEngineSection(sales!)).toBe(false);
+    expect(isPosEnvironmentPath("/pos")).toBe(true);
+    expect(isPosEnvironmentPath("/pos/customers")).toBe(true);
     expect(isPosEnvironmentPath("/invoices")).toBe(false);
     expect(ERP_MODULES.some((m) => m.path === "/hr")).toBe(true);
     expect(ERP_MODULES.some((m) => m.path === "/orders")).toBe(true);
@@ -171,7 +172,28 @@ describe("39-module navigation lock", () => {
     const titles = (id: string) =>
       ERP_NAV_SECTIONS.find((s) => s.id === id)?.children.map((c) => c.title);
     expect(titles("01")).toEqual(["Modules"]);
-    expect(titles("02")).toEqual(["Coming Soon"]);
+    expect(titles("02")).toEqual([
+      "POS Terminal",
+      "Overview",
+      "New Sale",
+      "Quick Sale",
+      "Hold Sale",
+      "Resume Sale",
+      "Held Sales",
+      "Customers",
+      "Products",
+      "Pricing & Discounts",
+      "Payments",
+      "Invoices & Receipts",
+      "Returns & Exchange",
+      "Shift & Cash",
+      "Approvals",
+      "Reports",
+      "Tax & Compliance",
+      "Offline & Sync",
+      "Devices & Terminal",
+      "POS Settings",
+    ]);
     expect(titles("03")).toEqual([
       "Products",
       "New Product",
@@ -281,7 +303,7 @@ describe("39-module navigation lock", () => {
   });
 
   it("keeps placeholder engines as Coming Soon without implementing offline/sync", () => {
-    for (const id of ["02", "18", "27", "28", "32", "33", "34", "35", "36", "37", "38"]) {
+    for (const id of ["18", "27", "28", "32", "33", "34", "35", "36", "37", "38"]) {
       const section = ERP_NAV_SECTIONS.find((s) => s.id === id);
       const route = ERP_MODULES.find((m) => m.path === section?.path);
       expect(route?.status).toBe("placeholder");
@@ -295,7 +317,7 @@ describe("39-module navigation lock", () => {
     expect(ERP_FEATURE_FOLDERS.map((row) => row.id)).toEqual(ERP_NAV_SECTIONS.map((s) => s.id));
     expect(ERP_FEATURE_FOLDERS.map((row) => row.folder)).toEqual([
       "dashboard",
-      null,
+      "pos",
       "product-management",
       "purchases",
       "inventory",
@@ -380,8 +402,9 @@ describe("nav structure", () => {
     const child = (id: string, title: string) =>
       ERP_NAV_SECTIONS.find((s) => s.id === id)?.children.find((c) => c.title === title);
 
-    expect(child("02", "Coming Soon")?.path).toBe("/pos");
-    expect(child("02", "Coming Soon")?.status).toBe("placeholder");
+    expect(child("02", "POS Terminal")?.path).toBe("/pos");
+    expect(child("02", "POS Terminal")?.status).toBe("implemented");
+    expect(child("02", "Returns & Exchange")?.status).toBe("placeholder");
     expect(child("16", "B2B")?.path).toBe("/b2b");
     expect(child("11", "P&L")?.path).toBe("/accounts/profit-loss");
     expect(child("04", "Price Lists")?.path).toBe("/suppliers/price-lists");
@@ -397,7 +420,6 @@ describe("nav structure", () => {
       ["11", "Receipts"],
       ["39", "Maintenance"],
       ["18", "Coming Soon"],
-      ["02", "Coming Soon"],
     ] as const) {
       expect(child(id, title)?.status).toBe("placeholder");
     }
@@ -554,7 +576,7 @@ describe("nav structure", () => {
   it("resolves the ERP header from the official module tree", () => {
     expect(resolveShellHeader("/pos")).toEqual({
       moduleTitle: "POS / SALES",
-      pageTitle: "Coming Soon",
+      pageTitle: "POS Terminal",
     });
     expect(resolveShellHeader("/products")).toEqual({
       moduleTitle: "PRODUCT & CATALOG",
@@ -603,32 +625,18 @@ describe("nav structure", () => {
     unmount();
   });
 
-  it("keeps POS / SALES as a sidebar-only placeholder module", () => {
-    render(
-      <MemoryRouter initialEntries={["/pos"]}>
-        <SidebarNav query="" onNavigate={() => undefined} />
-      </MemoryRouter>,
-    );
-    expect(screen.getByRole("link", { name: "POS / SALES" })).toHaveAttribute("href", "/pos");
-    expect(screen.queryByRole("link", { name: "New Sale" })).not.toBeInTheDocument();
-    expect(screen.queryByRole("link", { name: "Hold / Resume" })).not.toBeInTheDocument();
-    expect(screen.queryByRole("link", { name: "Payments" })).not.toBeInTheDocument();
-    expect(screen.getByRole("link", { name: "COMMAND CENTER" })).toHaveAttribute("href", "/command-center");
-  });
-
-  it("shows Coming Soon when opening POS / SALES", () => {
+  it("opens POS with dedicated terminal chrome", () => {
     render(
       <MemoryRouter initialEntries={["/pos"]}>
         <AuthProvider>
           <ModuleWorkspace>
-            <ModulePlaceholderPage
-              module={ERP_MODULES.find((m) => m.path === "/pos")!}
-            />
+            <div data-testid="pos-terminal-content">Terminal</div>
           </ModuleWorkspace>
         </AuthProvider>
       </MemoryRouter>,
     );
-    expect(screen.getByRole("heading", { name: "Coming Soon" })).toBeInTheDocument();
+    expect(screen.getByLabelText("POS navigation")).toBeInTheDocument();
+    expect(screen.getByTestId("pos-terminal-content")).toBeInTheDocument();
   });
 
   it("keeps System Administration as module 39 with a control-center workspace", () => {
@@ -796,9 +804,8 @@ describe("responsive ERP shell", () => {
   it("opens every parent module inside the same ERP AppShell", () => {
     for (const path of ERP_STABLE_PARENT_PATHS) {
       const { unmount } = renderShell(path);
-      expect(screen.getByLabelText("ERP modules"), path).toBeInTheDocument();
-      expect(screen.getByRole("button", { name: "Menu" }), path).toBeInTheDocument();
       if (isPosEnvironmentPath(path)) {
+        expect(screen.getByRole("button", { name: "Menu" }), path).toBeInTheDocument();
         expect(screen.getByLabelText("POS Branch"), path).toBeInTheDocument();
         expect(screen.getByRole("link", { name: "POS Notifications" }), path).toHaveAttribute(
           "href",
@@ -807,6 +814,8 @@ describe("responsive ERP shell", () => {
         expect(screen.getByLabelText("POS navigation"), path).toBeInTheDocument();
         expect(screen.queryByRole("navigation", { name: "Breadcrumb" }), path).not.toBeInTheDocument();
       } else {
+        expect(screen.getByLabelText("ERP modules"), path).toBeInTheDocument();
+        expect(screen.getByRole("button", { name: "Menu" }), path).toBeInTheDocument();
         expect(screen.getByRole("combobox", { name: "Branch" }), path).toBeInTheDocument();
         expect(screen.getByRole("link", { name: "Notifications" }), path).toHaveAttribute("href", "/notifications");
         expect(screen.getByRole("navigation", { name: "Breadcrumb" }), path).toBeInTheDocument();
@@ -817,13 +826,11 @@ describe("responsive ERP shell", () => {
     }
   }, 60_000);
 
-  it("opens POS as a normal ERP module placeholder", () => {
+  it("opens POS with terminal navigation inside AppShell", () => {
     const { unmount } = renderShell("/pos");
-    expect(screen.getByLabelText("ERP modules")).toBeInTheDocument();
-    expect(screen.getByRole("link", { name: "POS / SALES" })).toHaveAttribute("href", "/pos");
-    expect(screen.getByRole("navigation", { name: "Breadcrumb" })).toBeInTheDocument();
-    expect(screen.queryByLabelText("POS navigation")).not.toBeInTheDocument();
-    expect(screen.getByRole("combobox", { name: "Branch" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Menu" })).toBeInTheDocument();
+    expect(screen.getByLabelText("POS navigation")).toBeInTheDocument();
+    expect(screen.queryByRole("navigation", { name: "Breadcrumb" })).not.toBeInTheDocument();
     unmount();
 
     renderShell("/salesman");

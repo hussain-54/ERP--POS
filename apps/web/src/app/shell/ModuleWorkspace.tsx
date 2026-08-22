@@ -1,15 +1,16 @@
 import { useMemo, useState, type ReactNode } from "react";
 import { useLocation } from "react-router-dom";
-import { canShowNavItem, isSystemAdminPath } from "@/app/modules";
+import { canShowNavItem, isPosEnvironmentPath, isSystemAdminPath } from "@/app/modules";
 import { ModuleContextNav } from "@/app/shell/ModuleContextNav";
 import { ModuleHeader } from "@/app/shell/ModuleHeader";
 import { filterWorkspaceNav, resolveModuleWorkspace } from "@/app/shell/module-workspace";
 import { PageContainer } from "@/app/shell/PageContainer";
 import { useAuth } from "@/features/auth/AuthContext";
+import { PosShell } from "@/features/pos/shell/PosShell";
 
 /**
  * Shared module frame inside the ERP AppShell.
- * Every major module uses this header + context nav + content pattern.
+ * POS uses PosShell (reference dashboard chrome); other modules use stacked workspace nav.
  */
 export function ModuleWorkspace({ children }: { children: ReactNode }) {
   const { pathname } = useLocation();
@@ -17,7 +18,8 @@ export function ModuleWorkspace({ children }: { children: ReactNode }) {
   const [query, setQuery] = useState("");
   const grantedCount = permissions.length;
   const model = resolveModuleWorkspace(pathname);
-  const dense = isSystemAdminPath(pathname);
+  const posWorkspace = isPosEnvironmentPath(pathname);
+  const dense = posWorkspace || isSystemAdminPath(pathname);
 
   const nav = useMemo(() => {
     if (!model) return [];
@@ -28,6 +30,20 @@ export function ModuleWorkspace({ children }: { children: ReactNode }) {
 
   if (!model) {
     return <PageContainer fill={dense}>{children}</PageContainer>;
+  }
+
+  if (posWorkspace) {
+    return (
+      <PageContainer fill>
+        <section
+          data-module-workspace={model.id}
+          data-erp-workspace-layout="pos-terminal"
+          className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden bg-[var(--erp-bg)]"
+        >
+          <PosShell>{children}</PosShell>
+        </section>
+      </PageContainer>
+    );
   }
 
   return (

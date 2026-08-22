@@ -195,12 +195,18 @@ describe("39-module navigation QA", () => {
     for (const section of ERP_NAV_SECTIONS) {
       const { unmount } = renderErp(section.path);
       expect(screen.getByTestId("erp-location").textContent, section.path).toBe(section.path);
-      expect(screen.getByLabelText("ERP modules"), section.path).toBeInTheDocument();
-      expect(screen.getAllByLabelText("ERP modules"), section.path).toHaveLength(1);
+      if (isPosEnvironmentPath(section.path)) {
+        expect(screen.getByRole("button", { name: "Menu" }), section.path).toBeInTheDocument();
+      } else {
+        expect(screen.getByLabelText("ERP modules"), section.path).toBeInTheDocument();
+        expect(screen.getAllByLabelText("ERP modules"), section.path).toHaveLength(1);
+      }
       expect(screen.queryByRole("link", { name: "ERP Home" }), section.path).not.toBeInTheDocument();
       expect(screen.queryByRole("heading", { name: "Page not found" }), section.path).not.toBeInTheDocument();
       expect(document.querySelector(`[data-module-workspace="${section.id}"]`), section.path).toBeTruthy();
-      expect(parentLink(section.masterTitle, section.path), section.path).toHaveAttribute("aria-current", "page");
+      if (!isPosEnvironmentPath(section.path)) {
+        expect(parentLink(section.masterTitle, section.path), section.path).toHaveAttribute("aria-current", "page");
+      }
 
       if (isPosEnvironmentPath(section.path)) {
         expect(document.querySelector("[data-erp-workspace-layout='pos-terminal']"), section.path).toBeTruthy();
@@ -244,11 +250,17 @@ describe("39-module navigation QA", () => {
         const { unmount } = renderErp(child.path);
         const location = screen.getByTestId("erp-location").textContent ?? "";
         expect(location, child.path).toBe(child.path);
-        expect(screen.getByLabelText("ERP modules"), child.path).toBeInTheDocument();
-        expect(screen.getAllByLabelText("ERP modules"), child.path).toHaveLength(1);
+        if (isPosEnvironmentPath(child.path)) {
+          expect(screen.getByRole("button", { name: "Menu" }), child.path).toBeInTheDocument();
+        } else {
+          expect(screen.getByLabelText("ERP modules"), child.path).toBeInTheDocument();
+          expect(screen.getAllByLabelText("ERP modules"), child.path).toHaveLength(1);
+        }
         expect(screen.queryByRole("heading", { name: "Page not found" }), child.path).not.toBeInTheDocument();
         expect(document.querySelector(`[data-module-workspace="${section.id}"]`), child.path).toBeTruthy();
-        expect(parentLink(section.masterTitle, section.path), child.path).toHaveAttribute("aria-current", "page");
+        if (!isPosEnvironmentPath(child.path)) {
+          expect(parentLink(section.masterTitle, section.path), child.path).toHaveAttribute("aria-current", "page");
+        }
 
         if (isPosEnvironmentPath(child.path)) {
           expect(document.querySelector("[data-erp-workspace-layout='pos-terminal']"), child.path).toBeTruthy();
@@ -267,12 +279,17 @@ describe("39-module navigation QA", () => {
         }
 
         if (child.status === "placeholder") {
-          const staged =
-            screen.queryAllByText(/Coming Soon/i).length > 0 ||
-            screen.queryAllByText(/not available online yet/i).length > 0 ||
-            screen.queryAllByText(/Staged/i).length > 0 ||
-            screen.queryAllByText(/Offline POS/i).length > 0;
-          expect(staged, child.path).toBe(true);
+          if (isPosEnvironmentPath(child.path) && IMPLEMENTED_ROUTES[child.path]) {
+            expect(screen.getByRole("heading", { level: 1 }), child.path).toBeInTheDocument();
+          } else {
+            const staged =
+              screen.queryAllByText(/Coming Soon/i).length > 0 ||
+              screen.queryAllByText(/\bSoon\b/i).length > 0 ||
+              screen.queryAllByText(/not available online yet/i).length > 0 ||
+              screen.queryAllByText(/Staged/i).length > 0 ||
+              screen.queryAllByText(/Offline POS/i).length > 0;
+            expect(staged, child.path).toBe(true);
+          }
         }
         unmount();
       }
@@ -288,10 +305,9 @@ describe("39-module navigation QA", () => {
     expect(posCard).toBeTruthy();
     fireEvent.click(posCard!);
     expect(screen.getByTestId("erp-location")).toHaveTextContent("/pos");
-    expect(screen.getByRole("heading", { level: 1, name: "POS / SALES" })).toBeInTheDocument();
-    expect(screen.queryByLabelText("POS navigation")).not.toBeInTheDocument();
-    expect(screen.getAllByText(/Coming Soon/i).length).toBeGreaterThan(0);
-    expect(parentLink("POS / SALES", "/pos")).toHaveAttribute("aria-current", "page");
+    expect(screen.getByLabelText("POS navigation")).toBeInTheDocument();
+    expect(screen.queryByRole("heading", { level: 1, name: "POS / SALES" })).not.toBeInTheDocument();
+    expect(document.querySelector("[data-erp-workspace-layout='pos-terminal']")).toBeTruthy();
     fireEvent.click(screen.getByRole("button", { name: "History back" }));
     expect(screen.getByTestId("erp-location")).toHaveTextContent("/command-center");
     expect(screen.getByRole("heading", { level: 1, name: "COMMAND CENTER" })).toBeInTheDocument();

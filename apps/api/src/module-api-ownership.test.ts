@@ -80,6 +80,7 @@ describe("module API ownership", () => {
       "ai",
       "enterprise",
       "infrastructure",
+      "pos",
     ]) {
       expect(groups.has(name)).toBe(true);
     }
