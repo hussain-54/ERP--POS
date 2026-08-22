@@ -21,6 +21,10 @@ export default defineConfig({
   server: {
     port: 5173,
   },
+  build: {
+    // ERP + POS share one entry; ~1–1.5 MB is expected until routes are code-split.
+    chunkSizeWarningLimit: 2000,
+  },
   test: {
     environment: "jsdom",
     setupFiles: ["./src/test/setup.ts"],

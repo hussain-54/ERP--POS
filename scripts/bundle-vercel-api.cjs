@@ -18,7 +18,7 @@ async function main() {
     outfile,
     bundle: true,
     platform: "node",
-    target: "node20",
+    target: "node24",
     format: "cjs",
     sourcemap: false,
     logLevel: "info",
