@@ -1,21 +1,5 @@
 {
   "$schema": "https://openapi.vercel.sh/vercel.json",
   "installCommand": "npm ci",
-  "buildCommand": "npm run build:vercel",
-  "outputDirectory": "apps/web/dist",
-  "framework": null,
-  "functions": {
-    "api/index.js": {
-      "maxDuration": 30
-    }
-  },
-  "rewrites": [
-    { "source": "/health", "destination": "/api" },
-    { "source": "/health/(.*)", "destination": "/api" },
-    { "source": "/api/(.*)", "destination": "/api" },
-    {
-      "source": "/((?!api/|assets/).*)",
-      "destination": "/index.html"
-    }
-  ]
+  "buildCommand": "npm run build:vercel"
 }

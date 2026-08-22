@@ -39,7 +39,7 @@ async function main() {
     format: "cjs",
     sourcemap: false,
     logLevel: "info",
-    external: [],
+    external: ["bufferutil", "utf-8-validate"],
     banner: {
       js: "/* electronic-erp vercel api bundle */",
     },

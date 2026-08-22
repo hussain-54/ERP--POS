@@ -11,7 +11,7 @@
     "build:packages": "node scripts/clean-package-dists.cjs && npm run build --prefix packages/contracts && npm run build --prefix packages/domain && npm run build --prefix packages/ai && node scripts/link-workspaces.cjs && npm run build --prefix packages/db && npm run build --prefix packages/hardware && npm run build --prefix packages/ui && node scripts/link-workspaces.cjs",
     "build:web": "npm run build:packages && npm run build --prefix apps/web",
     "build:api": "npm run build:packages && npm run build --prefix apps/api",
-    "build:vercel": "npm run build:packages && node scripts/bundle-vercel-api.cjs && node -e \"process.env.VITE_API_URL='';require('child_process').execSync('npm run build --prefix apps/web',{stdio:'inherit',env:{...process.env,VITE_API_URL:''}})\"",
+    "build:vercel": "npm run build:packages && node -e \"process.env.VITE_API_URL='';require('child_process').execSync('npm run build --prefix apps/web',{stdio:'inherit',env:{...process.env,VITE_API_URL:''}})\" && node scripts/emit-vercel-output.cjs",
     "build:desktop": "npm run build:packages && npm run build --prefix apps/desktop",
     "desktop:prepare": "npm run prepare:check --prefix apps/desktop",
     "desktop:dev": "npm run build:desktop && npm run dev --prefix apps/desktop",
