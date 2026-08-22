@@ -76,8 +76,13 @@ export function AppShell() {
   }, [location.pathname]);
 
   useEffect(() => {
+    /* POS terminal: collapse ERP modules rail so the register matches the reference viewport. Menu expands it. */
+    if (isPosEnvironmentPath(location.pathname)) {
+      setCollapsed(true);
+      return;
+    }
     setCollapsed(mode === "tablet");
-  }, [mode]);
+  }, [location.pathname, mode]);
 
   useEffect(() => {
     if (!mobileOpen) return;

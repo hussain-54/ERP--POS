@@ -57,7 +57,7 @@ interface Props {
   hasMore?: boolean;
   onLoadMore?: () => void;
   meta?: ReactNode;
-  /** Inline catalog feedback (search miss / load error). Prefer over toasts. */
+  /** Inline catalog feedback (search miss / load error / add failure). */
   catalogFeedback?: PosCatalogFeedback | null;
 }
 
@@ -101,33 +101,41 @@ const ProductCard = memo(function ProductCard({
   p: ProductSearchResult;
   locale: Props["locale"];
   priceLevel: PriceLevel;
-  onAdd: (p: ProductSearchResult) => void;
+  onAdd: (p: ProductSearchResult) => boolean | void;
   favorited: boolean;
   onToggleFavorite: (p: ProductSearchResult) => void;
   highlighted?: boolean;
 }) {
   const title = productTitle(p, locale);
   const stock = p.stockAvailable != null ? Number(p.stockAvailable) : null;
-  const outOfStock = stock != null && stock <= 0;
-  const lowStock = stock != null && stock > 0 && stock <= 5;
+  const outOfStock = stock != null && Number.isFinite(stock) && stock <= 0;
+  const lowStock = stock != null && Number.isFinite(stock) && stock > 0 && stock <= 5;
   const initial = (title.trim()[0] ?? "?").toUpperCase();
   const price = useMemo(() => sellingPrice(p, priceLevel), [p, priceLevel]);
   const photo = productImageUrl(p);
   const [photoFailed, setPhotoFailed] = useState(false);
   const showPhoto = Boolean(photo) && !photoFailed;
+  const model = p.model?.trim();
+
+  function tryAdd() {
+    if (outOfStock) return;
+    onAdd(p);
+  }
 
   return (
     <div
-      className={`pos-product-card group relative flex flex-col overflow-hidden rounded-[var(--pos-radius-sm)] border bg-[var(--pos-card)] text-left ${
+      className={`pos-product-card group relative flex flex-col overflow-hidden rounded-[var(--pos-radius)] border bg-[var(--pos-card)] text-left ${
         highlighted
           ? "border-[var(--pos-primary)] ring-1 ring-[var(--pos-ring)]"
-          : "border-[var(--pos-border)] hover:border-[var(--pos-primary)]"
+          : outOfStock
+            ? "border-[var(--pos-border)] opacity-75"
+            : "border-[var(--pos-border)] hover:border-blue-400 hover:shadow-md"
       }`}
       data-product-id={p.productId}
     >
       <button
         type="button"
-        className="absolute right-1.5 top-1.5 z-10"
+        className="absolute right-2 top-2 z-10"
         title={favorited ? "Remove favorite" : "Add favorite"}
         aria-label={favorited ? "Remove favorite" : "Add favorite"}
         onClick={(e) => {
@@ -136,7 +144,7 @@ const ProductCard = memo(function ProductCard({
         }}
       >
         <span
-          className="inline-flex h-6 w-6 items-center justify-center rounded-[var(--pos-radius-sm)] border border-[var(--pos-border)] bg-[var(--pos-workspace)] text-xs"
+          className="inline-flex h-7 w-7 items-center justify-center rounded-[var(--pos-radius-sm)] border border-[var(--pos-border)] bg-[var(--pos-workspace)] text-sm text-amber-500"
           aria-hidden
         >
           {favorited ? "★" : "☆"}
@@ -144,65 +152,75 @@ const ProductCard = memo(function ProductCard({
       </button>
       <button
         type="button"
-        onClick={() => onAdd(p)}
-        className="flex flex-1 flex-col text-left focus:outline-none focus-visible:shadow-[var(--pos-focus)]"
+        onClick={tryAdd}
+        disabled={outOfStock}
+        title={outOfStock ? "Out of stock — cannot add" : `Add ${title} to cart`}
+        className="flex flex-1 flex-col text-left focus:outline-none focus-visible:shadow-[var(--pos-focus)] disabled:cursor-not-allowed"
       >
         <div
           className="pos-product-card-media relative flex items-center justify-center bg-[var(--pos-muted-bg)]"
-          title={showPhoto ? title : "Product photos are not included in POS search"}
+          title={showPhoto ? title : undefined}
         >
           {showPhoto ? (
             <img
               src={photo ?? undefined}
               alt=""
               loading="lazy"
-              className="h-full w-full object-contain p-1"
+              className="h-full w-full object-contain p-1.5"
               onError={() => setPhotoFailed(true)}
             />
           ) : (
             <span
-              className="flex h-8 w-8 items-center justify-center rounded-[var(--pos-radius-sm)] bg-[var(--pos-workspace)] text-xs font-semibold text-[var(--pos-primary)]"
+              className="flex h-14 w-14 items-center justify-center rounded-[var(--pos-radius)] bg-[var(--pos-workspace)] text-lg font-semibold text-[var(--pos-primary)]"
               aria-hidden
             >
               {initial}
             </span>
           )}
           {outOfStock ? (
-            <span className="absolute left-1.5 top-1.5 rounded-[var(--pos-radius-sm)] bg-[var(--pos-danger)] px-1 py-0.5 text-[10px] font-semibold text-white">
+            <span className="absolute left-2 top-2 rounded-[var(--pos-radius-sm)] bg-[var(--pos-danger)] px-1.5 py-0.5 text-[10px] font-bold text-white">
               Out
             </span>
           ) : lowStock ? (
-            <span className="absolute left-1.5 top-1.5 rounded-[var(--pos-radius-sm)] bg-[var(--pos-warning)] px-1 py-0.5 text-[10px] font-semibold text-white">
+            <span className="absolute left-2 top-2 rounded-[var(--pos-radius-sm)] bg-[var(--pos-warning)] px-1.5 py-0.5 text-[10px] font-bold text-white">
               Low
             </span>
           ) : null}
         </div>
-        <div className="flex flex-1 flex-col gap-0.5 p-1.5 pb-0">
-          <div className="line-clamp-2 text-[12px] font-medium leading-snug text-[var(--pos-ink)]">{title}</div>
+        <div className="flex flex-1 flex-col gap-0.5 p-3 pb-1">
+          <div className="line-clamp-2 text-[11px] font-bold leading-snug text-[var(--pos-ink)]">{title}</div>
+          {p.nameUr && locale === "en" ? (
+            <div className="truncate text-[10px] text-[var(--pos-muted)]" dir="auto">
+              {p.nameUr}
+            </div>
+          ) : null}
           {p.brand?.trim() ? (
             <div className="truncate text-[10px] text-[var(--pos-muted)]">{p.brand}</div>
           ) : null}
           <div className="text-[10px] text-[var(--pos-muted)]">SKU {p.sku || "—"}</div>
+          {model ? <div className="truncate text-[10px] text-[var(--pos-muted)]">Model {model}</div> : null}
           <div className="text-[10px] text-[var(--pos-muted)]">Unit {p.unitName?.trim() || "—"}</div>
-          <div className="mt-auto flex items-end justify-between gap-1 pt-0.5">
-            <div>
-              <div className="text-[13px] font-bold tabular-nums text-[var(--pos-primary)]">
-                Rs {price.toFixed(2)}
-              </div>
-              <div className="text-[10px] text-[var(--pos-muted)]">
-                {stock != null ? `Stock ${p.stockAvailable}` : "Stock —"}
-              </div>
-            </div>
+          <div className="mt-auto flex items-end justify-between gap-2 pt-2">
+            <span className="text-xs font-bold tabular-nums text-[var(--pos-ink)]">Rs {price.toFixed(2)}</span>
+            <span
+              className={`rounded px-1.5 py-0.5 text-[10px] font-semibold ${
+                outOfStock
+                  ? "bg-[var(--pos-danger-soft)] text-[var(--pos-danger)]"
+                  : "bg-emerald-50 text-emerald-700"
+              }`}
+            >
+              {stock != null && Number.isFinite(stock) ? `Stock: ${p.stockAvailable}` : "Stock —"}
+            </span>
           </div>
         </div>
       </button>
-      <div className="p-1.5 pt-1">
+      <div className="p-3 pt-1">
         <button
           type="button"
           className="pos-product-card-add"
           disabled={outOfStock}
           title={outOfStock ? "Out of stock — this product cannot be sold right now" : "Quick add to cart"}
-          onClick={() => onAdd(p)}
+          onClick={tryAdd}
         >
           {outOfStock ? "Out of stock" : "Quick Add"}
         </button>
@@ -246,9 +264,11 @@ export const PosProductPanel = memo(function PosProductPanel({
   useEffect(() => {
     setDraft(query);
   }, [query]);
+
   useEffect(() => {
-    if (draft === query) return;
-    const handle = window.setTimeout(() => onQueryChange(draft), POS_SEARCH_FLUSH_MS);
+    const normalized = draft.trim() === "" ? "" : draft;
+    if (normalized === query) return;
+    const handle = window.setTimeout(() => onQueryChange(normalized), POS_SEARCH_FLUSH_MS);
     return () => window.clearTimeout(handle);
   }, [draft, query, onQueryChange]);
 
@@ -302,8 +322,8 @@ export const PosProductPanel = memo(function PosProductPanel({
   });
 
   return (
-    <section className="pos-product-discovery flex min-h-0 flex-1 flex-col">
-        <div className="pos-product-search-block shrink-0 space-y-2">
+    <section className="pos-product-discovery flex min-h-0 flex-1 flex-col space-y-3.5 overflow-y-auto">
+      <div className="pos-product-search-block shrink-0 space-y-3.5">
         <POSSearch
           ref={searchRef as React.RefObject<HTMLInputElement>}
           aria-label="Product search"
@@ -319,9 +339,10 @@ export const PosProductPanel = memo(function PosProductPanel({
               setHighlight((i) => Math.max(0, i - 1));
             } else if (e.key === "Enter") {
               e.preventDefault();
-              if (draft !== query) onQueryChange(draft);
+              const next = draft.trim();
+              if (next !== query) onQueryChange(next);
               const highlighted = visible[highlight] ?? null;
-              if (onCommitSearch) onCommitSearch(draft, highlighted);
+              if (onCommitSearch) onCommitSearch(next, highlighted);
               else addHighlightedOrExact();
             } else if (e.key === "Escape") {
               e.preventDefault();
@@ -331,7 +352,7 @@ export const PosProductPanel = memo(function PosProductPanel({
           }}
           autoComplete="off"
           autoFocus
-          title="Type to search · ↑↓ navigate · Enter add · Esc clear"
+          title="Name · Urdu · SKU · barcode · model · specification · ↑↓ · Enter add · Esc clear"
         />
 
         <PosDiscoveryTools
@@ -351,7 +372,23 @@ export const PosProductPanel = memo(function PosProductPanel({
         <POSTabs items={DISCOVERY_TABS} value={visibleTab} onChange={onTabChange} />
       </div>
 
-      <div className="mt-2 min-h-0 flex-1 overflow-auto">
+      {catalogFeedback ? (
+        <div
+          role="alert"
+          className={`shrink-0 rounded-[var(--pos-radius)] border px-3 py-2 text-xs ${
+            catalogFeedback.tone === "danger"
+              ? "border-[var(--pos-danger)]/40 bg-[var(--pos-danger-soft)] text-[var(--pos-danger)]"
+              : "border-[var(--pos-border)] bg-[var(--pos-muted-bg)] text-[var(--pos-ink)]"
+          }`}
+        >
+          <strong className="font-semibold">{catalogFeedback.title}</strong>
+          {catalogFeedback.description ? (
+            <span className="mt-0.5 block opacity-90">{catalogFeedback.description}</span>
+          ) : null}
+        </div>
+      ) : null}
+
+      <div className="mt-1 min-h-0 flex-1 overflow-auto">
         {visibleTab === "categories" && !searchingCatalog ? (
           <div className="mb-2 flex flex-wrap gap-1.5">
             <POSButton
@@ -378,7 +415,9 @@ export const PosProductPanel = memo(function PosProductPanel({
         ) : null}
 
         {searchingCatalog ? (
-          <p className="mb-2 text-[11px] text-[var(--pos-muted)]">Showing catalog search results</p>
+          <p className="mb-2 text-[11px] text-[var(--pos-muted)]">
+            Live catalog search — name, Urdu, SKU, barcode, brand, model, specification
+          </p>
         ) : null}
 
         {searching && list.length === 0 ? (
@@ -389,20 +428,28 @@ export const PosProductPanel = memo(function PosProductPanel({
               <POSErrorState
                 title={catalogFeedback.title}
                 description={catalogFeedback.description}
+                actionLabel="Focus search"
+                onAction={() => searchRef.current?.focus()}
               />
             ) : (
               <POSEmptyState
                 title={catalogFeedback?.title ?? empty.title}
                 description={catalogFeedback?.description ?? empty.description}
+                actionLabel="Focus search"
+                onAction={() => searchRef.current?.focus()}
               />
             )}
           </POSCard>
         ) : (
           <>
-            <div className="pos-product-grid">
+            <div
+              className="pos-product-grid"
+              aria-busy={searching || undefined}
+              style={searching ? { opacity: 0.72 } : undefined}
+            >
               {visible.map((p, index) => (
                 <ProductCard
-                  key={p.productId}
+                  key={`${p.productId}:${p.sku ?? ""}:${p.unitId}`}
                   p={p}
                   locale={locale}
                   priceLevel={priceLevel}

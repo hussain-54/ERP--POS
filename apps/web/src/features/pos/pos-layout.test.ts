@@ -27,7 +27,7 @@ describe("POS responsive layout modes", () => {
     expect(posLayoutMode(1920)).toBe("desktop");
     expect(posLayoutMode(1366)).toBe("desktop");
     expect(posSidebarCollapsedByDefault("desktop")).toBe(false);
-    expect(posSidebarCollapsedByDefault("tablet")).toBe(true);
+    expect(posSidebarCollapsedByDefault("tablet")).toBe(false);
     expect(posSidebarCollapsedByDefault("mobile")).toBe(true);
   });
 

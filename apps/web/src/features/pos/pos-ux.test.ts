@@ -96,7 +96,7 @@ describe("POS cashier UX helpers", () => {
       "F3 Customers",
       "F4 Price Override",
       "F5 Discount",
-      "F6 Recalculate",
+      "F6 Payment",
       "F7 Clear Cart",
       "F8 Cancel Sale",
     ]);
@@ -107,7 +107,7 @@ describe("POS cashier UX helpers", () => {
     expect(matchPosFunctionShortcut(event("F3"))).toBe("customers");
     expect(matchPosFunctionShortcut(event("F4"))).toBe("price-override");
     expect(matchPosFunctionShortcut(event("F5"))).toBe("discount");
-    expect(matchPosFunctionShortcut(event("F6"))).toBe("recalculate");
+    expect(matchPosFunctionShortcut(event("F6"))).toBe("payment");
     expect(matchPosFunctionShortcut(event("F7"))).toBe("clear-cart");
     expect(matchPosFunctionShortcut(event("F8"))).toBe("cancel-sale");
     expect(matchPosFunctionShortcut(event("F1", { altKey: true }))).toBeNull();
@@ -116,16 +116,20 @@ describe("POS cashier UX helpers", () => {
     expect(posShortcutFallbackPath("new-sale")).toBe("/pos");
     expect(posShortcutFallbackPath("hold-resume")).toBe("/pos/resume-sale");
     expect(posShortcutFallbackPath("customers")).toBe("/pos/customer-selection");
-    expect(posShortcutFallbackPath("discount")).toBe("/discounts");
+    expect(posShortcutFallbackPath("discount")).toBe("/pos?focus=discount");
+    expect(posShortcutFallbackPath("payment")).toBe("/pos?focus=payment");
     expect(posShortcutFallbackPath("clear-cart")).toBeNull();
     const input = document.createElement("input");
     document.body.appendChild(input);
     const typingEvent = { key: "F2", target: input, ctrlKey: false, metaKey: false, altKey: false, shiftKey: false } as unknown as KeyboardEvent;
     const idleEvent = { key: "F2", target: document.body, ctrlKey: false, metaKey: false, altKey: false, shiftKey: false } as unknown as KeyboardEvent;
-    expect(resolvePosFunctionShortcut(typingEvent)).toBeNull();
+    // F2 Hold stays available while searching (industrial cashier habit).
+    expect(resolvePosFunctionShortcut(typingEvent)).toBe("hold-resume");
     expect(resolvePosFunctionShortcut(idleEvent)).toBe("hold-resume");
     const typingF5 = { key: "F5", target: input, ctrlKey: false, metaKey: false, altKey: false, shiftKey: false } as unknown as KeyboardEvent;
     expect(resolvePosFunctionShortcut(typingF5)).toBe("discount");
+    const typingF4 = { key: "F4", target: input, ctrlKey: false, metaKey: false, altKey: false, shiftKey: false } as unknown as KeyboardEvent;
+    expect(resolvePosFunctionShortcut(typingF4)).toBeNull();
     input.remove();
     const button = document.createElement("button");
     expect(isActionTarget(button)).toBe(true);

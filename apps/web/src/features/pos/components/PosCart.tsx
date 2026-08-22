@@ -4,13 +4,16 @@ import { cartEmptyCopy } from "../pos-user-messages";
 import {
   POSButton,
   POSEmptyState,
-  POSInput,
   POSTable,
   POSTableBody,
   POSTableHead,
   POSTh,
 } from "../design-system";
 import { PosCartRow } from "./PosCartRow";
+import {
+  PosInvoiceDiscountField,
+  type InvoiceDiscountMode,
+} from "./PosInvoiceDiscountField";
 
 export type PosCartProps = {
   cart: CartLine[];
@@ -28,6 +31,8 @@ export type PosCartProps = {
   canPriceOverride: boolean;
   cartError?: string | null;
   invoiceDiscount?: string;
+  invoiceDiscountKind?: InvoiceDiscountMode;
+  invoiceDiscountPercent?: number;
   onInvoiceDiscount?: (value: string) => void;
   discountRef?: RefObject<HTMLInputElement | null>;
   canInvoiceDiscount?: boolean;
@@ -48,16 +53,13 @@ export const PosCart = memo(function PosCart({
   canPriceOverride,
   cartError,
   invoiceDiscount = "",
+  invoiceDiscountKind = "fixed",
+  invoiceDiscountPercent = 0,
   onInvoiceDiscount,
   discountRef,
   canInvoiceDiscount = false,
 }: PosCartProps) {
   const itemLabel = cart.length === 1 ? "ITEM" : "ITEMS";
-
-  function applyInvoiceDiscount() {
-    discountRef?.current?.focus();
-    discountRef?.current?.select();
-  }
 
   return (
     <section className="pos-tx-cart flex min-h-0 flex-1 flex-col overflow-hidden">
@@ -65,36 +67,15 @@ export const PosCart = memo(function PosCart({
         <h3 className="pos-cart-title text-[var(--pos-ink)]">
           Cart · {cart.length} {itemLabel.toLowerCase()}
         </h3>
-        <div className="flex flex-wrap items-center justify-end gap-1">
-          {canInvoiceDiscount ? (
-            <div className="flex items-center gap-1">
-              <POSInput
-                ref={discountRef as RefObject<HTMLInputElement>}
-                aria-label="Invoice discount"
-                placeholder="amount or 10%"
-                value={invoiceDiscount}
-                onChange={(e) => onInvoiceDiscount?.(e.target.value)}
-                className="w-[5.5rem]"
-              />
-              <POSButton
-                size="sm"
-                variant="secondary"
-                onClick={applyInvoiceDiscount}
-                title="Focus invoice discount"
-              >
-                Apply Discount
-              </POSButton>
-            </div>
-          ) : (
-            <POSButton
-              size="sm"
-              variant="ghost"
-              disabled
-              title="Invoice discount requires a POS discount permission"
-            >
-              Apply Discount
-            </POSButton>
-          )}
+        <div className="flex flex-wrap items-center justify-end gap-1.5">
+          <PosInvoiceDiscountField
+            appliedAmount={invoiceDiscount}
+            kind={invoiceDiscountKind}
+            percent={invoiceDiscountPercent}
+            canDiscount={canInvoiceDiscount}
+            discountRef={discountRef}
+            onApply={(raw) => onInvoiceDiscount?.(raw)}
+          />
           <POSButton
             size="sm"
             variant="ghost"
@@ -118,10 +99,12 @@ export const PosCart = memo(function PosCart({
 
       <div className="min-h-0 flex-1 overflow-auto">
         {cart.length === 0 ? (
-          <POSEmptyState
-            title={cartEmptyCopy().title}
-            description={cartEmptyCopy().description}
-          />
+          <div className="flex h-full min-h-[12rem] flex-col items-center justify-center px-6 py-10 text-center">
+            <POSEmptyState
+              title={cartEmptyCopy().title}
+              description={cartEmptyCopy().description}
+            />
+          </div>
         ) : (
           <POSTable className="pos-cart-table">
             <POSTableHead>

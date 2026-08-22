@@ -5,13 +5,14 @@ import {
   POSButton,
   POSEmptyState,
   POSInput,
+  POSLoadingState,
   POSTable,
   POSTableBody,
   POSTableHead,
   POSTd,
   POSTh,
 } from "../design-system";
-import { holdNumber, snapshotTotals } from "../held-sales";
+import { displayCustomerName, holdNumber, snapshotTotals } from "../held-sales";
 
 export type HeldSaleListItem = {
   id: string;
@@ -139,16 +140,19 @@ export const PosHoldsPanel = memo(function PosHoldsPanel({
         ))}
       </div>
 
-      {holds.length === 0 ? (
+      {busy && holds.length === 0 ? (
+        <POSLoadingState label="Loading held bills…" rows={4} />
+      ) : holds.length === 0 ? (
         <POSEmptyState title="No held bills" description="Hold a sale to resume later (F2)" />
       ) : (
         <POSTable className="pos-register-table">
           <POSTableHead>
-            <tr>
+              <tr>
               <POSTh>Hold #</POSTh>
+              <POSTh>Customer</POSTh>
               <POSTh>Items</POSTh>
-              <POSTh className="text-right">Total Amount</POSTh>
-              <POSTh>Hold Time</POSTh>
+              <POSTh className="text-right">Amount</POSTh>
+              <POSTh>Time</POSTh>
               <POSTh>Status</POSTh>
               <POSTh>Action</POSTh>
             </tr>
@@ -157,6 +161,14 @@ export const PosHoldsPanel = memo(function PosHoldsPanel({
             {holds.map((h) => {
               const totals = snapshotTotals(h.cartSnapshot);
               const resumable = h.status === "held" && h.bucket !== "expired";
+              const customerLabel = displayCustomerName(
+                {
+                  customerName: null,
+                  customerId: h.customerId ?? null,
+                  cartSnapshot: h.cartSnapshot ?? {},
+                },
+                {},
+              );
               return (
                 <tr key={h.id}>
                   <POSTd>
@@ -167,8 +179,15 @@ export const PosHoldsPanel = memo(function PosHoldsPanel({
                       ) : null}
                     </div>
                   </POSTd>
+                  <POSTd>
+                    <div className="max-w-[8rem] truncate text-sm font-medium" title={customerLabel}>
+                      {customerLabel}
+                    </div>
+                  </POSTd>
                   <POSTd className="tabular-nums">{h.cartItemCount ?? "—"}</POSTd>
-                  <POSTd className="text-right tabular-nums">{totals ? formatMoney(totals.grand) : "—"}</POSTd>
+                  <POSTd className="text-right tabular-nums font-semibold">
+                    {totals ? `Rs ${formatMoney(totals.grand)}` : "—"}
+                  </POSTd>
                   <POSTd className="text-[11px] text-[var(--pos-muted)]">
                     {h.heldAt ? new Date(h.heldAt).toLocaleString() : "—"}
                     {h.minutesUntilExpiry != null ? ` · ${h.minutesUntilExpiry}m left` : ""}

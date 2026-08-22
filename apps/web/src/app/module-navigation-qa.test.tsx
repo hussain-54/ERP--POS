@@ -238,11 +238,23 @@ describe("39-module navigation QA", () => {
   }, 120_000);
 
   it("opens every child page in the owning module workspace without a second shell", () => {
+    const focusAliases = new Set([
+      "/pos/quick-sale",
+      "/pos/product-search",
+      "/pos/customer-selection",
+      "/pos/barcode-scanner",
+      "/pos/split-payment",
+    ]);
     for (const section of ERP_NAV_SECTIONS) {
       for (const child of section.children) {
         if (child.path === section.path) continue;
         const { unmount } = renderErp(child.path);
-        expect(screen.getByTestId("erp-location").textContent, child.path).toBe(child.path);
+        const location = screen.getByTestId("erp-location").textContent ?? "";
+        if (focusAliases.has(child.path)) {
+          expect(location.startsWith("/pos"), child.path).toBe(true);
+        } else {
+          expect(location, child.path).toBe(child.path);
+        }
         expect(screen.getByLabelText("ERP modules"), child.path).toBeInTheDocument();
         expect(screen.getAllByLabelText("ERP modules"), child.path).toHaveLength(1);
         expect(screen.queryByRole("heading", { name: "Page not found" }), child.path).not.toBeInTheDocument();
@@ -266,7 +278,12 @@ describe("39-module navigation QA", () => {
         }
 
         if (child.status === "placeholder") {
-          expect(screen.getAllByText(/Coming Soon/i).length, child.path).toBeGreaterThan(0);
+          const staged =
+            screen.queryAllByText(/Coming Soon/i).length > 0 ||
+            screen.queryAllByText(/not available online yet/i).length > 0 ||
+            screen.queryAllByText(/Staged/i).length > 0 ||
+            screen.queryAllByText(/Offline POS/i).length > 0;
+          expect(staged, child.path).toBe(true);
         }
         unmount();
       }

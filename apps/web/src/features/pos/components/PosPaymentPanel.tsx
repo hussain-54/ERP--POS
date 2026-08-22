@@ -11,13 +11,16 @@ import {
 import type { PaySplit } from "../pos-types";
 import { confirmationStatusLabel, paymentTypeLabel } from "../pos-quotation";
 import { toPosTransactionSummary } from "../pos-transaction";
+import { humanizePaymentError } from "../pos-user-messages";
 import {
+  cashTenderSuggestions,
   isCashPaymentKind,
   isCreditLikePaymentKind,
   isInstallmentPaymentKind,
   paymentMethodKind,
   paymentMethodLabel,
   paymentMethodSettlementNote,
+  sanitizePaymentAmountInput,
   selectedPaymentMethodId,
   type PosPaymentMethod,
 } from "../pos-payment-ux";
@@ -64,6 +67,8 @@ interface Props {
   quoteReason?: string | null;
   quoting?: boolean;
   onRetry?: () => void;
+  /** Focus in-terminal customer search (credit / udhaar). */
+  onFocusCustomer?: () => void;
   advanced: boolean;
   useInstallment: boolean;
   onUseInstallment: (v: boolean) => void;
@@ -117,6 +122,7 @@ export const PosPaymentPanel = memo(function PosPaymentPanel({
   quoteReason,
   quoting,
   onRetry,
+  onFocusCustomer,
   advanced,
   useInstallment,
   onUseInstallment,
@@ -224,9 +230,8 @@ export const PosPaymentPanel = memo(function PosPaymentPanel({
   const selectedKind = paymentMethodKind(selectedMethod) || String(payments[0]?.methodKind ?? "");
   const methodLabel = selectedMethod ? paymentMethodLabel(selectedMethod) : "None";
   const settlementNote = paymentMethodSettlementNote(selectedKind);
-  const cashSelected = isCashPaymentKind(selectedKind);
+  const cashSelected = isCashPaymentKind(selectedKind) || payments.some((p) => isCashPaymentKind(kindById.get(p.paymentMethodId) ?? p.methodKind));
   const creditSelected = isCreditLikePaymentKind(selectedKind) || useInstallment;
-  const defaultMethod = methods[0]?.id ?? "";
   const payBlocked =
     busy ||
     !canPay ||
@@ -241,9 +246,43 @@ export const PosPaymentPanel = memo(function PosPaymentPanel({
   const tenderedDisplay = cashSelected
     ? Number(cashReceived || prep.amountReceived || summary.grand)
     : prep.amountReceived || null;
+  const cashSuggestions = useMemo(() => cashTenderSuggestions(summary.grand), [summary.grand]);
+  const splitLabels = useMemo(
+    () =>
+      payments
+        .map((p) => {
+          const method = methods.find((m) => m.id === p.paymentMethodId);
+          const amount = Number(p.amount) || 0;
+          if (!(amount > 0) && !isCreditLikePaymentKind(kindById.get(p.paymentMethodId) ?? "")) {
+            return null;
+          }
+          return {
+            label: method ? paymentMethodLabel(method) : "Tender",
+            amount: isCreditLikePaymentKind(kindById.get(p.paymentMethodId) ?? p.methodKind)
+              ? prep.remaining
+              : amount,
+          };
+        })
+        .filter((row): row is { label: string; amount: number } => Boolean(row && row.amount > 0)),
+    [payments, methods, kindById, prep.remaining],
+  );
+
+  const paymentAlert =
+    confirmationError ||
+    (!prep.ok ? prep.errors[0] : null) ||
+    (prep.remaining > 0.009 && !allowCreditDue ? "Walk-in sales must be paid in full" : null) ||
+    (creditSelected && !allowCreditDue ? "Customer required for credit sale" : null);
 
   function setAmount(id: string, amount: string) {
-    onPayments(payments.map((p) => (p.id === id ? { ...p, amount } : p)));
+    const next = sanitizePaymentAmountInput(amount);
+    if (next == null) return;
+    onPayments(payments.map((p) => (p.id === id ? { ...p, amount: next } : p)));
+  }
+
+  function setCashReceivedSafe(value: string) {
+    const next = sanitizePaymentAmountInput(value);
+    if (next == null) return;
+    onCashReceived(next);
   }
 
   function setMethod(id: string, paymentMethodId: string) {
@@ -254,13 +293,18 @@ export const PosPaymentPanel = memo(function PosPaymentPanel({
   }
 
   function addSplit() {
+    const preferred =
+      methods.find((m) => !isCashPaymentKind(paymentMethodKind(m)) && !isCreditLikePaymentKind(paymentMethodKind(m))) ??
+      methods.find((m) => !isCashPaymentKind(paymentMethodKind(m))) ??
+      methods[0];
+    if (!preferred) return;
     onPayments([
       ...payments,
       {
         id: crypto.randomUUID(),
-        paymentMethodId: defaultMethod,
+        paymentMethodId: preferred.id,
         amount: prep.remaining > 0 ? String(prep.remaining) : "",
-        methodKind: kindById.get(defaultMethod),
+        methodKind: kindById.get(preferred.id),
       },
     ]);
   }
@@ -274,6 +318,10 @@ export const PosPaymentPanel = memo(function PosPaymentPanel({
     const kind = paymentMethodKind(method);
     const lineId = payments[0]?.id ?? crypto.randomUUID();
     if (isInstallmentPaymentKind(kind)) {
+      if (!allowCreditDue) {
+        onFocusCustomer?.();
+        return;
+      }
       onUseInstallment(true);
       const down = downPayment && Number(downPayment) > 0 ? downPayment : "0";
       const cash = methods.find((m) => isCashPaymentKind(paymentMethodKind(m)));
@@ -285,6 +333,10 @@ export const PosPaymentPanel = memo(function PosPaymentPanel({
           methodKind: cash ? "cash" : kind,
         },
       ]);
+      return;
+    }
+    if (isCreditLikePaymentKind(kind) && !allowCreditDue) {
+      onFocusCustomer?.();
       return;
     }
     if (useInstallment) onUseInstallment(false);
@@ -301,10 +353,8 @@ export const PosPaymentPanel = memo(function PosPaymentPanel({
 
   const payTitle =
     payBlockedReason ||
-    (!prep.ok ? prep.errors[0] : undefined) ||
-    (prep.remaining > 0.009 && !allowCreditDue
-      ? "Walk-in must be paid in full"
-      : "Review and post this sale");
+    (paymentAlert ? humanizePaymentError(paymentAlert) : undefined) ||
+    "Review and complete this sale";
 
   function requestPay() {
     if (payBlocked || !prep.ok || !methods.length) return;
@@ -345,11 +395,27 @@ export const PosPaymentPanel = memo(function PosPaymentPanel({
           </POSBadge>
         ) : null}
       </div>
-      {confirmationError ? (
-        <p role="alert" className="mt-1 text-xs text-[var(--pos-danger)]">
-          {confirmationError}
+
+      {confirmation === "success" ? (
+        <p role="status" className="mt-2 rounded-[var(--pos-radius-sm)] bg-emerald-50 px-2 py-1.5 text-xs font-medium text-emerald-800">
+          Sale completed — receipt is ready and the register was reset for the next customer.
         </p>
       ) : null}
+
+      {paymentAlert ? (
+        <div
+          role="alert"
+          className="mt-2 rounded-[var(--pos-radius-sm)] border border-[var(--pos-danger)]/40 bg-[var(--pos-danger-soft)] px-2.5 py-2 text-xs text-[var(--pos-danger)]"
+        >
+          <p>{humanizePaymentError(paymentAlert)}</p>
+          {(creditSelected && !allowCreditDue) || /customer required|select a customer/i.test(paymentAlert) ? (
+            <POSButton size="sm" variant="secondary" className="mt-2" onClick={() => onFocusCustomer?.()}>
+              Select customer
+            </POSButton>
+          ) : null}
+        </div>
+      ) : null}
+
 
       {onCouponCode && onApplyCoupon ? (
         <div className="mt-3 flex flex-wrap items-end gap-2">
@@ -392,21 +458,55 @@ export const PosPaymentPanel = memo(function PosPaymentPanel({
       </div>
 
       {cashSelected ? (
-        <div className="mt-3">
+        <div className="mt-3 space-y-2 rounded-[var(--pos-radius)] border border-[var(--pos-border)] bg-[var(--pos-muted-bg)]/40 p-2.5">
           <POSInput
             label="Cash amount received"
             type="number"
             value={cashReceived}
-            onChange={(e) => onCashReceived(e.target.value)}
+            onChange={(e) => setCashReceivedSafe(e.target.value)}
+            hint="Change is calculated automatically"
           />
+          <div className="flex flex-wrap gap-1.5">
+            {cashSuggestions.map((amount) => (
+              <POSButton
+                key={amount}
+                size="sm"
+                variant="secondary"
+                onClick={() => setCashReceivedSafe(String(amount))}
+                title={`Tender Rs ${amount.toFixed(2)}`}
+              >
+                {amount === summary.grand ? "Exact" : `Rs ${amount.toFixed(0)}`}
+              </POSButton>
+            ))}
+          </div>
+          <div className="flex items-center justify-between gap-2 rounded-[var(--pos-radius-sm)] bg-[var(--pos-workspace)] px-2.5 py-2">
+            <span className="text-xs font-medium text-[var(--pos-muted)]">Change to return</span>
+            <span
+              className={`text-lg font-bold tabular-nums ${
+                prep.change > 0.009 ? "text-emerald-700" : "text-[var(--pos-ink)]"
+              }`}
+              data-pos-cash-change={prep.change.toFixed(2)}
+            >
+              Rs {prep.change.toFixed(2)}
+            </span>
+          </div>
         </div>
       ) : null}
 
-      {advanced ? (
-        <div className="mt-3 space-y-2">
-          {payments.map((p) => (
-            <div key={p.id} className="flex gap-2">
-              <div className="min-w-0 flex-1">
+      <div className="mt-3 space-y-2">
+        <div className="flex items-center justify-between gap-2">
+          <p className="text-xs font-medium uppercase tracking-wide text-[var(--pos-muted)]">
+            Tender amounts
+          </p>
+          <POSButton size="sm" variant="ghost" onClick={addSplit} disabled={!methods.length || busy}>
+            + Split payment
+          </POSButton>
+        </div>
+        {payments.map((p) => {
+          const kind = kindById.get(p.paymentMethodId) ?? p.methodKind ?? "";
+          return (
+            <div key={p.id} className="flex flex-wrap items-end gap-2">
+              <div className="min-w-[8rem] flex-1">
                 <POSSelect
                   value={p.paymentMethodId}
                   onChange={(e) => setMethod(p.id, e.target.value)}
@@ -422,7 +522,13 @@ export const PosPaymentPanel = memo(function PosPaymentPanel({
                 type="number"
                 value={p.amount}
                 onChange={(e) => setAmount(p.id, e.target.value)}
-                aria-label="Amount"
+                aria-label={`${paymentMethodLabel(methods.find((m) => m.id === p.paymentMethodId) ?? { id: p.paymentMethodId, name: "Tender" })} amount`}
+                disabled={isCreditLikePaymentKind(kind)}
+                title={
+                  isCreditLikePaymentKind(kind)
+                    ? "Udhaar balance is the unpaid remainder"
+                    : "Tender amount (no negatives)"
+                }
               />
               {payments.length > 1 ? (
                 <POSButton size="sm" variant="ghost" onClick={() => removeSplit(p.id)} aria-label="Remove payment">
@@ -430,102 +536,140 @@ export const PosPaymentPanel = memo(function PosPaymentPanel({
                 </POSButton>
               ) : null}
             </div>
-          ))}
-          <POSButton size="sm" variant="ghost" onClick={addSplit} disabled={!methods.length}>
-            + Split payment
-          </POSButton>
-        </div>
-      ) : null}
+          );
+        })}
+      </div>
 
       <PaymentSummary
         methodLabel={methodLabel}
         settlementNote={settlementNote}
+        grandTotal={summary.grand}
         paid={prep.paidTowardBill}
         due={prep.remaining}
         change={prep.change}
         tendered={tenderedDisplay}
+        splitLabels={splitLabels}
       />
 
-      {prep.remaining > 0.009 && !allowCreditDue ? (
-        <p className="mt-2 text-xs text-[var(--pos-danger)]">
-          Walk-in must be paid in full. Select a customer to allow credit / partial.
-        </p>
-      ) : null}
-      {!prep.ok && prep.errors[0] ? (
-        <p className="mt-2 text-xs text-[var(--pos-danger)]">{prep.errors[0]}</p>
-      ) : null}
-
-      {allowCreditDue && (creditSelected || advanced) ? (
-        <div className="mt-3 space-y-2 rounded-[var(--pos-radius-sm)] border border-[var(--pos-border)] p-2">
-          {customer ? (
-            <p className="text-xs text-[var(--pos-muted)]">
-              Limit {customer.creditLimit} · outstanding {customer.outstanding}
-              {credit?.reason ? ` · ${credit.reason}` : ""}
-            </p>
-          ) : null}
-          <label className="flex items-center gap-2 text-sm">
-            <input
-              type="checkbox"
-              checked={isAdvance}
-              onChange={(e) => onIsAdvance(e.target.checked)}
-            />
-            Advance / deposit payment
-          </label>
-          <label className="flex items-center gap-2 text-sm">
-            <input
-              type="checkbox"
-              checked={useInstallment}
-              onChange={(e) => onUseInstallment(e.target.checked)}
-              disabled={!canInstallment}
-              title={canInstallment ? "Create installment plan" : "Requires installments.manage"}
-            />
-            Create installment plan
-          </label>
-          {useInstallment ? (
-            <div className="grid grid-cols-2 gap-2">
-              <POSInput
-                label="Down payment"
-                type="number"
-                value={downPayment}
-                onChange={(e) => onDownPayment(e.target.value)}
-              />
-              <POSInput
-                label="Installments"
-                type="number"
-                value={installmentCount}
-                onChange={(e) => onInstallmentCount(e.target.value)}
-              />
-              <POSSelect
-                label="Frequency"
-                value={installmentFrequency}
-                onChange={(e) => onInstallmentFrequency(e.target.value as InstallmentFrequency)}
-                options={[
-                  { value: "weekly", label: "Weekly" },
-                  { value: "biweekly", label: "Biweekly" },
-                  { value: "monthly", label: "Monthly" },
-                  { value: "quarterly", label: "Quarterly" },
-                ]}
-              />
-              <POSInput
-                label="Late fee %"
-                type="number"
-                value={lateFeePercent}
-                onChange={(e) => onLateFeePercent(e.target.value)}
-              />
-              <POSInput
-                label="Late fee fixed"
-                type="number"
-                value={lateFeeFixed}
-                onChange={(e) => onLateFeeFixed(e.target.value)}
-              />
-              {installmentPreview ? (
-                <div className="col-span-2 text-xs text-[var(--pos-muted)]">
-                  Period amount {installmentPreview.monthlyAmount} · first due{" "}
-                  {installmentPreview.schedule[0]?.dueDate ?? "—"} · remaining{" "}
-                  {installmentPreview.remainingAmount}
+      {allowCreditDue || creditSelected ? (
+        <div className="mt-3 space-y-2 rounded-[var(--pos-radius-sm)] border border-[var(--pos-border)] p-2.5">
+          <div className="text-xs font-semibold uppercase tracking-wide text-[var(--pos-muted)]">
+            Credit / Udhaar
+          </div>
+          {!allowCreditDue ? (
+            <div className="space-y-2">
+              <p className="text-xs text-[var(--pos-warning)]">
+                Customer required for credit / udhaar. Search and select a named customer on this screen —
+                do not leave the POS.
+              </p>
+              <POSButton size="sm" variant="secondary" onClick={() => onFocusCustomer?.()}>
+                Select customer
+              </POSButton>
+            </div>
+          ) : customer ? (
+            <div className="grid grid-cols-2 gap-2 text-xs">
+              <div>
+                <div className="text-[var(--pos-muted)]">Credit limit</div>
+                <div className="font-semibold tabular-nums">Rs {customer.creditLimit}</div>
+              </div>
+              <div>
+                <div className="text-[var(--pos-muted)]">Udhaar</div>
+                <div className="font-semibold tabular-nums">Rs {customer.outstanding}</div>
+              </div>
+              <div>
+                <div className="text-[var(--pos-muted)]">Available</div>
+                <div className="font-semibold tabular-nums">
+                  Rs{" "}
+                  {Math.max(
+                    0,
+                    (Number(customer.creditLimit) || 0) - (Number(customer.outstanding) || 0),
+                  ).toFixed(2)}
                 </div>
+              </div>
+              <div>
+                <div className="text-[var(--pos-muted)]">This sale balance</div>
+                <div className="font-semibold tabular-nums">Rs {prep.remaining.toFixed(2)}</div>
+              </div>
+              {credit?.reason ? (
+                <p className="col-span-2 text-[11px] text-[var(--pos-warning)]">{credit.reason}</p>
               ) : null}
             </div>
+          ) : (
+            <p className="text-xs text-[var(--pos-warning)]">Loading customer credit details…</p>
+          )}
+          {allowCreditDue ? (
+            <>
+              <label className="flex items-center gap-2 text-sm">
+                <input
+                  type="checkbox"
+                  checked={isAdvance}
+                  onChange={(e) => onIsAdvance(e.target.checked)}
+                />
+                Advance / deposit payment
+              </label>
+              <label className="flex items-center gap-2 text-sm">
+                <input
+                  type="checkbox"
+                  checked={useInstallment}
+                  onChange={(e) => onUseInstallment(e.target.checked)}
+                  disabled={!canInstallment}
+                  title={canInstallment ? "Create installment plan" : "Requires installments.manage"}
+                />
+                Create installment plan
+              </label>
+              {useInstallment ? (
+                <div className="grid grid-cols-2 gap-2">
+                  <POSInput
+                    label="Down payment"
+                    type="number"
+                    value={downPayment}
+                    onChange={(e) => {
+                      const next = sanitizePaymentAmountInput(e.target.value);
+                      if (next != null) onDownPayment(next);
+                    }}
+                  />
+                  <POSInput
+                    label="Installments"
+                    type="number"
+                    value={installmentCount}
+                    onChange={(e) => onInstallmentCount(e.target.value)}
+                  />
+                  <POSSelect
+                    label="Frequency"
+                    value={installmentFrequency}
+                    onChange={(e) => onInstallmentFrequency(e.target.value as InstallmentFrequency)}
+                    options={[
+                      { value: "weekly", label: "Weekly" },
+                      { value: "biweekly", label: "Biweekly" },
+                      { value: "monthly", label: "Monthly" },
+                      { value: "quarterly", label: "Quarterly" },
+                    ]}
+                  />
+                  <POSInput
+                    label="Late fee %"
+                    type="number"
+                    value={lateFeePercent}
+                    onChange={(e) => onLateFeePercent(e.target.value)}
+                  />
+                  <POSInput
+                    label="Late fee fixed"
+                    type="number"
+                    value={lateFeeFixed}
+                    onChange={(e) => {
+                      const next = sanitizePaymentAmountInput(e.target.value);
+                      if (next != null) onLateFeeFixed(next);
+                    }}
+                  />
+                  {installmentPreview ? (
+                    <div className="col-span-2 text-xs text-[var(--pos-muted)]">
+                      Period amount {installmentPreview.monthlyAmount} · first due{" "}
+                      {installmentPreview.schedule[0]?.dueDate ?? "—"} · remaining{" "}
+                      {installmentPreview.remainingAmount}
+                    </div>
+                  ) : null}
+                </div>
+              ) : null}
+            </>
           ) : null}
         </div>
       ) : null}
@@ -536,48 +680,51 @@ export const PosPaymentPanel = memo(function PosPaymentPanel({
         </div>
       ) : null}
 
-      <div className="mt-4 grid grid-cols-2 gap-2">
-        <HoldSaleButton
-          onClick={onHold}
-          disabled={busy || !canPay || !canHold}
-          loading={busy && confirmation !== "pending"}
-          loadingLabel="Holding sale…"
-          title={
-            !canHold
-              ? "Requires pos.hold permission"
-              : !canPay
-                ? payBlockedReason ?? "Add products before holding"
-                : busy
-                  ? "Hold in progress…"
-                  : "F2 Hold"
-          }
-        />
-        <QuotationButton
-          onClick={onQuotation}
-          disabled={busy || quoting || !canQuote}
-          loading={quoting}
-          title={quoteReason ?? "Save this cart as a quotation"}
-        />
-        {confirmation === "failure" && onRetry ? (
-          <POSButton variant="secondary" className="col-span-2" onClick={onRetry} disabled={busy}>
-            Retry payment
-          </POSButton>
-        ) : null}
+      <div className="pos-pay-actions mt-3 space-y-2 border-t border-[var(--pos-border)] pt-3">
         <PayNowButton
-          className="col-span-2"
+          className="w-full"
+          data-pos-complete-sale=""
           onClick={requestPay}
           onDoubleClick={(event) => event.preventDefault()}
           disabled={payBlocked || !prep.ok || !methods.length}
           loading={busy || confirmation === "pending"}
           loadingLabel="Processing payment…"
-          title={payTitle}
+          title={payTitle.includes("F6") ? payTitle : `${payTitle} · F6`}
         >
           {confirmation === "pending"
             ? "Processing payment…"
             : prep.remaining > 0.009 && allowCreditDue
-              ? "PAY NOW (credit remaining)"
-              : "PAY NOW"}
+              ? "COMPLETE SALE (udhaar remaining)"
+              : "COMPLETE SALE"}
         </PayNowButton>
+        <div className="grid grid-cols-2 gap-2">
+          <HoldSaleButton
+            onClick={onHold}
+            disabled={busy || !canPay || !canHold}
+            loading={busy && confirmation !== "pending"}
+            loadingLabel="Holding sale…"
+            title={
+              !canHold
+                ? "Requires pos.hold permission"
+                : !canPay
+                  ? payBlockedReason ?? "Add products before holding"
+                  : busy
+                    ? "Hold in progress…"
+                    : "F2 Hold"
+            }
+          />
+          <QuotationButton
+            onClick={onQuotation}
+            disabled={busy || quoting || !canQuote}
+            loading={quoting}
+            title={quoteReason ?? "Save this cart as a quotation"}
+          />
+        </div>
+        {confirmation === "failure" && onRetry ? (
+          <POSButton variant="secondary" className="w-full" onClick={onRetry} disabled={busy}>
+            Retry payment
+          </POSButton>
+        ) : null}
       </div>
 
       <PaymentConfirmModal
@@ -593,13 +740,14 @@ export const PosPaymentPanel = memo(function PosPaymentPanel({
         methodLabel={methodLabel}
         settlementNote={settlementNote}
         tendered={cashSelected ? cashReceived || String(summary.grand) : String(prep.amountReceived || 0)}
-        onTenderedChange={cashSelected ? onCashReceived : undefined}
+        onTenderedChange={cashSelected ? setCashReceivedSafe : undefined}
         showTendered={cashSelected}
         paid={prep.paidTowardBill}
         due={prep.remaining}
         change={prep.change}
         customer={!walkIn ? customer : null}
         credit={credit}
+        splitLabels={splitLabels}
       />
     </section>
   );

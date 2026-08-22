@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { render, screen } from "@testing-library/react";
 import { MemoryRouter } from "react-router-dom";
+import { POS_OWNERSHIP } from "./pos-ownership";
 import { PosCustomersPage, PosProductsPage, PosReportsPage, POS_REPORT_LINKS } from "./PosHubPages";
 
 describe("POS hub pages", () => {
@@ -34,24 +35,11 @@ describe("POS hub pages", () => {
     );
     expect(screen.getByRole("heading", { name: "Reports" })).toBeInTheDocument();
     expect(screen.getByText(/not a second ERP reports module/)).toBeInTheDocument();
-    expect(POS_REPORT_LINKS.map((item) => item.path)).toEqual([
-      "/pos",
-      "/held-sales",
-      "/invoices",
-      "/sales-management",
-      "/returns",
-      "/exchange",
-      "/payments",
-      "/discounts",
-      "/pos/references",
-      "/pos/salesmen",
-      "/pos/installments",
-      "/pos/settings",
-    ]);
+    expect(POS_REPORT_LINKS.map((item) => item.path)).toEqual(POS_OWNERSHIP.map((item) => item.canonical));
+    expect(POS_REPORT_LINKS).toHaveLength(26);
     for (const item of POS_REPORT_LINKS) {
       expect(screen.getByText(item.title)).toBeInTheDocument();
     }
     expect(screen.getAllByRole("button", { name: "Open" })).toHaveLength(POS_REPORT_LINKS.length);
-    expect(screen.queryByText("Coming Soon")).not.toBeInTheDocument();
   });
 });

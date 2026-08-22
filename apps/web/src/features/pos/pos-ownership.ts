@@ -371,9 +371,10 @@ export type PosTerminalNavItem = {
 /**
  * Dense terminal strip — operational shortcuts (not the full 26 ERP children).
  */
+/** Operational rail — labels match the POS reference shell (7 links). */
 export const POS_TERMINAL_NAV: readonly PosTerminalNavItem[] = [
   { label: "POS", path: "/pos" },
-  { label: "Resume Sale", path: "/pos/resume-sale", badge: "hold" },
+  { label: "Hold / Resume", path: "/pos/resume-sale", badge: "hold" },
   { label: "Customers", path: "/pos/customer-selection" },
   { label: "Products", path: "/pos/product-search" },
   { label: "Price & Discount", path: "/discounts" },

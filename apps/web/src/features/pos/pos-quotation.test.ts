@@ -47,6 +47,6 @@ describe("POS operator-facing labels", () => {
   it("never exposes raw confirmation status tokens", () => {
     expect(confirmationStatusLabel("pending")).toBe("Processing payment…");
     expect(confirmationStatusLabel("failure")).toBe("Payment could not be completed");
-    expect(paymentTypeLabel("credit")).toBe("Credit / Udhar");
+    expect(paymentTypeLabel("credit")).toBe("Credit / Udhaar");
   });
 });

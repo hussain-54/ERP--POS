@@ -52,9 +52,9 @@ describe("POS design tokens", () => {
     }
     expect(tokens).toContain("--pos-primary: #2563eb");
     expect(tokens).toContain("--pos-workspace: #ffffff");
-    expect(tokens).toContain("--pos-navy: #0f1b33");
+    expect(tokens).toContain("--pos-navy: #0d1527");
     expect(tokens).toContain("--pos-ink: #111827");
-    expect(tokens).toContain("--pos-bg: #f5f7fb");
+    expect(tokens).toContain("--pos-bg: #f8fafc");
     expect(tokens).toContain("var(--erp-font)");
     expect(tokens).toContain(":focus-within");
     expect(tokens).toContain(".pos-nav-link:focus-visible");

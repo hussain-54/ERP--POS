@@ -59,11 +59,12 @@ describe("POS workspace chrome", () => {
     expect(screen.getByLabelText("Keyboard shortcuts")).toBeInTheDocument();
     expect(screen.getByRole("button", { name: /F1/ })).toHaveAttribute("title", "F1 New Sale");
     expect(screen.getByRole("button", { name: /F2/ })).toHaveAttribute("title", "F2 Hold / Resume");
+    expect(screen.getByRole("button", { name: /F6/ })).toHaveAttribute("title", "F6 Payment");
     expect(screen.getByRole("button", { name: /F8/ })).toHaveAttribute("title", "F8 Cancel Sale");
     expect(POS_IA_TITLES).toHaveLength(26);
     expect(POS_TERMINAL_NAV.map((item) => item.label)).toEqual([
       "POS",
-      "Resume Sale",
+      "Hold / Resume",
       "Customers",
       "Products",
       "Price & Discount",

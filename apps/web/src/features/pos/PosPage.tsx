@@ -38,6 +38,7 @@ import { cameraScanner, posHardware } from "./hardware";
 import { aiApi } from "@/features/ai-camera/ai-api";
 import "./pos-tokens.css";
 import { PosSaleLayout } from "./components/PosSaleLayout";
+import { PosSaleQuickActions, type PosSaleQuickActionId } from "./components/PosSaleQuickActions";
 import { PosSaleMeta } from "./components/PosSaleMeta";
 import { usePosLayout } from "./usePosLayoutMode";
 import type { PosMobileSheet } from "./pos-layout";
@@ -99,7 +100,7 @@ import {
 } from "@/lib/online-required";
 import {
   formatPosFailure,
-  humanizeCartError,
+  humanizePaymentError,
   logPosDeveloperError,
   toPosUserDescription,
   type PosCatalogFeedback,
@@ -193,7 +194,6 @@ export function PosPage({ entry = "sale" }: { entry?: "sale" | "holds" }) {
     setWalkIn,
     lastCartError,
     setAllowManualOverride,
-    recalculate,
   } = session;
 
   const [online, setOnline] = useState(
@@ -344,6 +344,44 @@ export function PosPage({ entry = "sale" }: { entry?: "sale" | "holds" }) {
   const discountRef = useRef<HTMLInputElement>(null);
   const paymentGateRef = useRef(new PaymentAttemptGate());
 
+  useEffect(() => {
+    const focus = searchParams.get("focus");
+    const modeParam = searchParams.get("mode");
+    if (!focus && !modeParam) return;
+    if (modeParam === "easy" || focus === "quick") setMode("easy");
+    if (modeParam === "advanced") setMode("advanced");
+    if (focus === "customer") {
+      setWalkIn(false);
+      queueMicrotask(() => customerRef.current?.focus());
+      if (layoutMode === "mobile") setMobileSheet("customer");
+    }
+    if (focus === "payment") {
+      if (layoutMode === "mobile") setMobileSheet("pay");
+      else {
+        queueMicrotask(() => {
+          document.querySelector(".pos-sale-ops-pay")?.scrollIntoView({ block: "nearest", behavior: "smooth" });
+          document.querySelector<HTMLButtonElement>(".pos-sale-ops-pay [data-pos-complete-sale]")?.focus();
+        });
+      }
+    }
+    if (focus === "discount") {
+      if (layoutMode === "mobile") setMobileSheet("cart");
+      queueMicrotask(() => {
+        discountRef.current?.focus();
+        discountRef.current?.select();
+      });
+    }
+    if (focus === "search" || focus === "scan" || focus === "quick") {
+      queueMicrotask(() => searchRef.current?.focus());
+    }
+    // Consume focus params so remounts / refreshes do not keep re-applying.
+    const next = new URLSearchParams(searchParams);
+    next.delete("focus");
+    next.delete("mode");
+    setSearchParams(next, { replace: true });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
   const posFlags = posActionFlags(hasPermission);
   const canDiscount = posFlags.canDiscount;
   const canPriceOverride = posFlags.canPriceOverride;
@@ -447,7 +485,7 @@ export function PosPage({ entry = "sale" }: { entry?: "sale" | "holds" }) {
   }, []);
 
   useEffect(() => {
-    if (!branchId || !showHolds) return;
+    if (!branchId) return;
     void refreshHolds();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [branchId, holdsFilter, showHolds]);
@@ -628,7 +666,11 @@ export function PosPage({ entry = "sale" }: { entry?: "sale" | "holds" }) {
   const addProduct = useCallback((p: ProductSearchResult, qty?: string) => {
     const result = sessionAddProduct(p, undefined, qty);
     if (!result.ok) {
-      // lastCartError is set inline on the cart — avoid a duplicate toast.
+      setCatalogFeedback({
+        tone: "danger",
+        title: "Could not add product",
+        description: result.error ?? "Check stock, unit, and try again.",
+      });
       return false;
     }
     rememberRecent(p);
@@ -687,6 +729,50 @@ export function PosPage({ entry = "sale" }: { entry?: "sale" | "holds" }) {
   const onHoldSale = useCallback(() => {
     pageOpsRef.current.hold();
   }, []);
+  const onOpenHolds = useCallback(() => {
+    setShowHolds(true);
+  }, []);
+  const onSaleQuickAction = useCallback(
+    (id: PosSaleQuickActionId) => {
+      if (id === "hold") {
+        onHoldSale();
+        return;
+      }
+      if (id === "resume") {
+        onOpenHolds();
+        return;
+      }
+      if (id === "clear") {
+        onCartClear();
+        return;
+      }
+      if (id === "customer") {
+        if (chrome === "sheets") setMobileSheet("customer");
+        queueMicrotask(() => customerRef.current?.focus());
+        return;
+      }
+      if (id === "discount") {
+        if (chrome === "sheets") setMobileSheet("cart");
+        queueMicrotask(() => {
+          discountRef.current?.focus();
+          discountRef.current?.select();
+        });
+        return;
+      }
+      if (id === "payment") {
+        if (chrome === "sheets") {
+          setMobileSheet("pay");
+          return;
+        }
+        document.querySelector(".pos-sale-ops-pay")?.scrollIntoView({ block: "nearest", behavior: "smooth" });
+      }
+    },
+    [chrome, onCartClear, onHoldSale, onOpenHolds],
+  );
+  const onFocusCustomer = useCallback(() => {
+    if (chrome === "sheets") setMobileSheet("customer");
+    queueMicrotask(() => customerRef.current?.focus());
+  }, [chrome]);
   const onPaySale = useCallback(() => {
     pageOpsRef.current.pay();
   }, []);
@@ -896,13 +982,6 @@ export function PosPage({ entry = "sale" }: { entry?: "sale" | "holds" }) {
     setPendingDiscount({ kind: "price" });
     setApprovalReason("Price override requested");
     setApprovalOpen(true);
-  }
-
-  function recalculateTotals() {
-    recalculate();
-    requestInvoiceDiscount(invoiceDiscount);
-    setPayments((prev) => [...prev]);
-    toast.push({ title: "Totals recalculated", tone: "info" });
   }
 
   async function createQuotationFromCart() {
@@ -1246,7 +1325,7 @@ export function PosPage({ entry = "sale" }: { entry?: "sale" | "holds" }) {
     if (!prep.ok) {
       setPaymentConfirmation("failure");
       setPaymentConfirmationError(
-        humanizeCartError(prep.errors[0] ?? "Payment is invalid. Check amounts and try again."),
+        humanizePaymentError(prep.errors[0] ?? "Payment amount is incomplete. Check amounts and try again."),
       );
       return;
     }
@@ -1265,7 +1344,7 @@ export function PosPage({ entry = "sale" }: { entry?: "sale" | "holds" }) {
     if (!validation.ok) {
       setPaymentConfirmation("failure");
       setPaymentConfirmationError(
-        humanizeCartError(validation.errors[0] ?? "Checkout is invalid. Review the cart and try again."),
+        humanizePaymentError(validation.errors[0] ?? "Checkout is invalid. Review the cart and try again."),
       );
       return;
     }
@@ -1276,14 +1355,16 @@ export function PosPage({ entry = "sale" }: { entry?: "sale" | "holds" }) {
       });
       if (creditCustomer.isBlocked) {
         setPaymentConfirmation("failure");
-        setPaymentConfirmationError("This customer is blocked and cannot buy on credit.");
+        setPaymentConfirmationError("This customer is blocked and cannot buy on credit / udhaar.");
         return;
       }
       if (credit.requiresApproval && !hasPermission("credit.approve")) {
         setPaymentConfirmation("failure");
         setPaymentConfirmationError(
-          credit.reason ??
-            "Credit approval is required before this sale can be completed.",
+          humanizePaymentError(
+            credit.reason ??
+              "Credit approval is required before this sale can be completed.",
+          ),
         );
         return;
       }
@@ -1394,10 +1475,12 @@ export function PosPage({ entry = "sale" }: { entry?: "sale" | "holds" }) {
       }
 
       paymentGateRef.current.succeed(idempotencyKey);
-      setPaymentConfirmation("success");
       setMobileSheet(null);
       setLastInvoice(result.invoiceNumber);
       clearSale();
+      setPaymentConfirmation("success");
+      setPaymentConfirmationError(null);
+      schedulePosFocus(() => searchRef.current);
       void posHardware.openDrawer({ reason: `sale ${result.invoiceNumber}` });
       void posApi
         .getInvoice(result.id)
@@ -1834,9 +1917,17 @@ export function PosPage({ entry = "sale" }: { entry?: "sale" | "holds" }) {
         searchRef.current?.focus();
         return;
       case "hold-resume":
-        if (showHolds) setShowHolds(false);
-        else if (cart.length > 0 && canHold) void holdBill();
-        else if (canHold) setShowHolds(true);
+        // F2: hold when cart has lines; resume drawer when empty / already holding list open.
+        if (showHolds) {
+          setShowHolds(false);
+          schedulePosFocus(() => searchRef.current);
+          return;
+        }
+        if (cart.length > 0 && canHold) {
+          void holdBill();
+          return;
+        }
+        if (canHold) setShowHolds(true);
         return;
       case "customers":
         setWalkIn(false);
@@ -1849,10 +1940,20 @@ export function PosPage({ entry = "sale" }: { entry?: "sale" | "holds" }) {
         return;
       case "discount":
         if (layoutMode === "mobile") setMobileSheet("cart");
-        schedulePosFocus(() => discountRef.current);
+        schedulePosFocus(() => {
+          discountRef.current?.select();
+          return discountRef.current;
+        });
         return;
-      case "recalculate":
-        recalculateTotals();
+      case "payment":
+        if (layoutMode === "mobile") {
+          setMobileSheet("pay");
+          return;
+        }
+        document.querySelector(".pos-sale-ops-pay")?.scrollIntoView({ block: "nearest", behavior: "smooth" });
+        schedulePosFocus(() =>
+          document.querySelector<HTMLButtonElement>(".pos-sale-ops-pay [data-pos-complete-sale]"),
+        );
         return;
       case "clear-cart":
         requestClearCart();
@@ -2037,12 +2138,12 @@ export function PosPage({ entry = "sale" }: { entry?: "sale" | "holds" }) {
       customer,
       additionalCredit: String(due),
     });
-    if (customer.isBlocked) return "Customer is blocked — credit sales not allowed";
+    if (customer.isBlocked) return "Customer is blocked — credit / udhaar sales not allowed";
     if (credit.requiresApproval) {
-      return `Credit limit exceeded (projected ${credit.projectedOutstanding}) — approval required`;
+      return `Udhaar limit exceeded (projected ${credit.projectedOutstanding}) — approval required`;
     }
-    if (credit.isOverdue) return "Customer has overdue balance";
-    return `Credit available · due date ${credit.dueDate ?? "—"}`;
+    if (credit.isOverdue) return "Customer has overdue udhaar balance";
+    return `Udhaar available · due date ${credit.dueDate ?? "—"}`;
   }, [customer, walkIn, payments, totals.grand]);
   const canWriteCustomers = hasPermission("customers.write");
   const canLoadCustomerHistory =
@@ -2176,6 +2277,16 @@ export function PosPage({ entry = "sale" }: { entry?: "sale" | "holds" }) {
             mobileSheet={mobileSheet}
             onMobileSheet={setMobileSheet}
             onCancelSale={onCancelSale}
+            quickActions={
+              <PosSaleQuickActions
+                canHold={canHold && cart.length > 0}
+                canDiscount={canDiscount}
+                canClear={cart.length > 0}
+                canPay={canPayNow}
+                holdCount={holds.filter((h) => h.status === "held" && h.bucket !== "expired").length}
+                onAction={onSaleQuickAction}
+              />
+            }
             product={
             <PosProductPanel
                 query={q}
@@ -2258,6 +2369,8 @@ export function PosPage({ entry = "sale" }: { entry?: "sale" | "holds" }) {
                 canPriceOverride={canPriceOverride}
                 cartError={lastCartError}
                 invoiceDiscount={invoiceDiscount}
+                invoiceDiscountKind={invoiceDiscountKind}
+                invoiceDiscountPercent={invoiceDiscountPercent}
                 onInvoiceDiscount={onInvoiceDiscount}
                 discountRef={discountRef}
                 canInvoiceDiscount={canDiscount}
@@ -2283,6 +2396,7 @@ export function PosPage({ entry = "sale" }: { entry?: "sale" | "holds" }) {
                 canInstallment={canInstallment}
                 onHold={onHoldSale}
                 onPay={onPaySale}
+                onFocusCustomer={onFocusCustomer}
                 onQuotation={onQuotation}
                 canQuote={canQuote}
                 quoteReason={quoteReason}
@@ -2334,7 +2448,7 @@ export function PosPage({ entry = "sale" }: { entry?: "sale" | "holds" }) {
           ) : null}
         </div>
 
-      <POSDrawer open={showHolds} title="Held sales" onClose={() => setShowHolds(false)} side="right">
+      <POSDrawer open={showHolds} title="Hold / Resume sale" onClose={() => setShowHolds(false)} side="right">
         <PosHoldsPanel
           holds={holds}
           filter={holdsFilter}

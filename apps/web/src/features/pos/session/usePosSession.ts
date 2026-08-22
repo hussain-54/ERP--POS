@@ -90,6 +90,21 @@ export function usePosSession() {
       }
 
       const places = Number(p.unitSymbolPlaces ?? 0);
+      if (!p.productId?.trim()) {
+        const error = humanizeCartError("Invalid product");
+        setLastCartError(error);
+        return { ok: false, error };
+      }
+      if (!p.unitId?.trim()) {
+        const error = humanizeCartError("Unit is required");
+        setLastCartError(error);
+        return { ok: false, error };
+      }
+
+      const stockRaw = p.stockAvailable;
+      const stock =
+        stockRaw != null && String(stockRaw).trim() !== "" ? String(stockRaw).trim() : undefined;
+
       const line = createCartLineFromProduct({
         key: newKey(),
         productId: p.productId,
@@ -101,7 +116,7 @@ export function usePosSession() {
         unitSymbolPlaces: places,
         unitPrice,
         warrantyDays: p.warrantyDays,
-        stock: p.stockAvailable,
+        stock,
         imageUrl: (p as ProductSearchResult & { imageUrl?: string | null }).imageUrl ?? null,
         unitOptions:
           unitOptions ??
@@ -125,44 +140,50 @@ export function usePosSession() {
         promotionPrice: p.promotionPrice != null ? Number(p.promotionPrice) : null,
         priceLevel,
       });
-      let outcome: { ok: boolean; error?: string; key?: string } = { ok: true };
+
+      /** Pure cart transition — no React setState side effects inside the updater. */
+      let outcome: { ok: boolean; error?: string; key?: string } = { ok: false, error: "Cannot add product" };
       setCartState((prev) => {
         const result = addOrIncrementProduct(prev, line, taxRate);
-        if (result.ok) {
-          const added =
-            result.cart.find((x) => x.productId === line.productId && !x.isManual) ??
-            result.cart[result.cart.length - 1];
-          const key = added?.key;
-          let nextCart = result.cart;
-          const qty = addQty?.trim();
-          if (qty && qty !== "1" && key) {
-            const prior = prev.find((x) => x.productId === line.productId && !x.isManual);
-            let desired = qty;
-            if (prior) {
-              try {
-                desired = addDecimal(prior.qty, qty);
-              } catch {
-                desired = qty;
-              }
-            }
-            const updated = updateCartLineQty(nextCart, key, desired, taxRate);
-            if (!updated.ok) {
-              const error = humanizeCartError(updated.error ?? "Invalid quantity");
-              setLastCartError(error);
-              outcome = { ok: false, error };
-              return prev;
-            }
-            nextCart = updated.cart;
-          }
-          setLastCartError(null);
-          outcome = { ok: true, key };
-          return nextCart;
+        if (!result.ok) {
+          outcome = {
+            ok: false,
+            error: humanizeCartError(result.error ?? "Cannot add product"),
+          };
+          return prev;
         }
-        const error = humanizeCartError(result.error ?? "Cannot add product");
-        setLastCartError(error);
-        outcome = { ok: false, error };
-        return prev;
+        const added =
+          result.cart.find((x) => x.productId === line.productId && x.unitId === line.unitId && !x.isManual) ??
+          result.cart[result.cart.length - 1];
+        const key = added?.key;
+        let nextCart = result.cart;
+        const qty = addQty?.trim();
+        if (qty && qty !== "1" && key) {
+          const prior = prev.find((x) => x.productId === line.productId && x.unitId === line.unitId && !x.isManual);
+          let desired = qty;
+          if (prior) {
+            try {
+              desired = addDecimal(prior.qty, qty);
+            } catch {
+              desired = qty;
+            }
+          }
+          const updated = updateCartLineQty(nextCart, key, desired, taxRate);
+          if (!updated.ok) {
+            outcome = {
+              ok: false,
+              error: humanizeCartError(updated.error ?? "Invalid quantity"),
+            };
+            return prev;
+          }
+          nextCart = updated.cart;
+        }
+        outcome = { ok: true, key };
+        return nextCart;
       });
+
+      if (outcome.ok) setLastCartError(null);
+      else setLastCartError(outcome.error ?? "Cannot add product");
       return outcome;
     },
     [priceLevel, taxRate],

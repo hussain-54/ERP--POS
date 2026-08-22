@@ -60,7 +60,7 @@ describe("POS ownership map", () => {
     expect(POS_OWNERSHIP.find((item) => item.title === "POS Terminal")?.status).toBe("live");
     expect(POS_TERMINAL_NAV.map((item) => item.label)).toEqual([
       "POS",
-      "Resume Sale",
+      "Hold / Resume",
       "Customers",
       "Products",
       "Price & Discount",

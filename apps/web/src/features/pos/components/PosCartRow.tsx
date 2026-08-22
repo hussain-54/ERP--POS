@@ -1,6 +1,6 @@
 import { memo, useState, type KeyboardEvent } from "react";
 import type { CartLine, LocaleMode } from "../pos-types";
-import { moveCartQtyFocus, priceOverrideWarning, stockAvailabilityWarning } from "../pos-ux";
+import { moveCartQtyFocus, priceOverrideWarning, schedulePosFocus, stockAvailabilityWarning } from "../pos-ux";
 import {
   cartLineDisplayTotal,
   cartLineImageUrl,
@@ -50,12 +50,12 @@ export const PosCartRow = memo(function PosCartRow({
   const initial = (name.trim()[0] ?? "?").toUpperCase();
 
   return (
-    <tr className="pos-cart-row align-top hover:bg-[var(--pos-muted-bg)]/60">
+    <tr className="pos-cart-row align-middle hover:bg-[var(--pos-muted-bg)]/60">
       <POSTd className="pos-cart-optional">
-        <span className="tabular-nums text-xs text-[var(--pos-muted)]">{index + 1}</span>
+        <span className="tabular-nums text-xs font-semibold text-[var(--pos-muted)]">{index + 1}</span>
       </POSTd>
       <POSTd>
-        <div className="flex min-w-0 items-start gap-2">
+        <div className="flex min-w-0 items-center gap-2">
           <div className="pos-cart-row-photo" title={showPhoto ? name : undefined}>
             {showPhoto ? (
               <img
@@ -70,11 +70,11 @@ export const PosCartRow = memo(function PosCartRow({
             )}
           </div>
           <div className="min-w-0">
-            <div className="max-w-[9rem] font-medium leading-snug text-[var(--pos-ink)] sm:max-w-[12rem]">
+            <div className="max-w-[9rem] truncate text-[11px] font-bold leading-snug text-[var(--pos-ink)] sm:max-w-[12rem]">
               {name}
             </div>
-            <div className="text-[11px] text-[var(--pos-muted)]">
-              {line.sku ?? (line.isManual ? "Manual" : "—")}
+            <div className="text-[10px] text-[var(--pos-muted)]">
+              SKU: {line.sku ?? (line.isManual ? "Manual" : "—")}
               {line.stock != null ? ` · Stock ${line.stock}` : ""}
             </div>
             {stockWarn ? (
@@ -86,16 +86,16 @@ export const PosCartRow = memo(function PosCartRow({
         </div>
       </POSTd>
       <POSTd>
-        <div className="flex items-center gap-0.5">
+        <div className="pos-cart-qty inline-flex items-center gap-0.5 rounded-[var(--pos-radius-sm)] border border-[var(--pos-border)] bg-white px-0.5 py-0.5">
           <POSIconButton
-            className="h-7 w-7"
+            className="h-9 w-9 text-base font-bold"
             label="Decrease quantity"
             onClick={() => onDecrease(line.key)}
           >
             −
           </POSIconButton>
           <POSInput
-            className="w-12"
+            className="h-9 w-14 border-0 bg-transparent text-center text-sm font-bold shadow-none"
             value={line.qty}
             data-pos-cart-qty={index}
             onChange={(e) => {
@@ -104,6 +104,11 @@ export const PosCartRow = memo(function PosCartRow({
               onQty(line.key, next);
             }}
             onKeyDown={(e: KeyboardEvent<HTMLInputElement>) => {
+              if (e.key === "Enter") {
+                e.preventDefault();
+                schedulePosFocus(() => document.querySelector<HTMLInputElement>('[aria-label="Product search"]'));
+                return;
+              }
               if (e.key !== "ArrowDown" && e.key !== "ArrowUp") return;
               e.preventDefault();
               moveCartQtyFocus(index, e.key === "ArrowDown" ? 1 : -1);
@@ -112,7 +117,7 @@ export const PosCartRow = memo(function PosCartRow({
             inputMode={(line.unitSymbolPlaces ?? 0) > 0 ? "decimal" : "numeric"}
           />
           <POSIconButton
-            className="h-7 w-7"
+            className="h-9 w-9 text-base font-bold"
             label="Increase quantity"
             onClick={() => onIncrease(line.key)}
           >
@@ -132,14 +137,14 @@ export const PosCartRow = memo(function PosCartRow({
             }))}
           />
         ) : (
-          <span className="text-xs text-[var(--pos-muted)]">{line.unitName ?? "—"}</span>
+          <span className="text-xs font-medium text-[var(--pos-muted)]">{line.unitName ?? "—"}</span>
         )}
       </POSTd>
       <POSTd>
         {canEditRate ? (
           <div>
             <POSInput
-              className="w-20"
+              className="h-9 w-24 text-sm font-semibold"
               type="number"
               value={String(line.unitPrice)}
               title="Unit price"
@@ -154,21 +159,31 @@ export const PosCartRow = memo(function PosCartRow({
             ) : null}
           </div>
         ) : (
-          <span className="tabular-nums text-xs" title="Price override requires manager approval (F4)">
+          <span className="tabular-nums text-xs font-semibold" title="Price override requires manager approval (F4)">
             {line.unitPrice.toFixed(2)}
           </span>
         )}
       </POSTd>
       <POSTd>
         {canDiscount ? (
-          <POSInput
-            className="w-16"
-            type="text"
-            value={line.discountPercent ? `${line.discountPercent}%` : String(line.discount)}
-            onChange={(e) => onDiscount(line.key, e.target.value)}
-            aria-label={`Discount for ${name}`}
-            title="Amount or 10%"
-          />
+          <div className="min-w-[6.5rem]">
+            <POSInput
+              className="h-9 w-[5.5rem] text-sm"
+              type="text"
+              value={line.discountPercent ? `${line.discountPercent}%` : String(line.discount)}
+              onChange={(e) => onDiscount(line.key, e.target.value)}
+              aria-label={`Discount for ${name}`}
+              title="10% for percent · 100 for Rs fixed"
+              placeholder="10% or 100"
+            />
+            <div className="mt-0.5 text-[10px] tabular-nums text-[var(--pos-muted)]">
+              {line.discount > 0
+                ? line.discountPercent
+                  ? `−Rs ${line.discount.toFixed(2)} (${line.discountPercent}%)`
+                  : `−Rs ${line.discount.toFixed(2)}`
+                : "Rs or %"}
+            </div>
+          </div>
         ) : (
           <span
             className="tabular-nums text-xs"
@@ -181,9 +196,16 @@ export const PosCartRow = memo(function PosCartRow({
       <POSTd className="pos-cart-optional">
         <span className="tabular-nums text-xs text-[var(--pos-muted)]">{line.tax.toFixed(2)}</span>
       </POSTd>
-      <POSTd className="text-right font-medium tabular-nums">{cartLineDisplayTotal(line).toFixed(2)}</POSTd>
+      <POSTd className="text-right text-sm font-bold tabular-nums">
+        {cartLineDisplayTotal(line).toFixed(2)}
+      </POSTd>
       <POSTd>
-        <POSIconButton label="Remove item" tone="danger" className="h-7 w-7" onClick={() => onRemove(line.key)}>
+        <POSIconButton
+          label="Remove item"
+          tone="danger"
+          className="h-9 w-9 text-base"
+          onClick={() => onRemove(line.key)}
+        >
           ✕
         </POSIconButton>
       </POSTd>

@@ -382,15 +382,33 @@ export const PosCustomerPanel = memo(function PosCustomerPanel({
           )}
         </div>
 
-        <div className="mt-2 grid grid-cols-2 gap-1.5 sm:grid-cols-4">
+        <div className="mt-2 grid grid-cols-2 gap-1.5 sm:grid-cols-3">
           <CustomerStat label="Price Tier" value={priceTierLabel(priceLevel)} />
           <CustomerStat
             label="Credit Limit"
             value={walkIn || !customer ? "—" : moneyLabel(customer.creditLimit)}
+            hint="Maximum udhaar allowed for this customer"
           />
           <CustomerStat
-            label="Outstanding"
+            label="Udhaar"
             value={walkIn || !customer ? "—" : moneyLabel(customer.outstanding)}
+            hint="Current outstanding balance (udhaar)"
+          />
+          <CustomerStat
+            label="Available"
+            value={
+              walkIn || !customer
+                ? "—"
+                : moneyLabel(
+                    String(
+                      Math.max(
+                        0,
+                        (Number(customer.creditLimit) || 0) - (Number(customer.outstanding) || 0),
+                      ),
+                    ),
+                  )
+            }
+            hint="Credit limit minus outstanding udhaar"
           />
           <CustomerStat
             label="Loyalty Points"
