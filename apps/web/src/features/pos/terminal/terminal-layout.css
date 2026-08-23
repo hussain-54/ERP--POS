@@ -72,5 +72,38 @@
 @media (max-width: 1024px) {
   .pos-terminal-grid {
     grid-template-columns: 1fr;
+    grid-template-rows: minmax(12rem, 34vh) minmax(14rem, 1fr) minmax(12rem, 38vh);
+    overflow-y: auto;
+  }
+
+  .pos-zone {
+    border-right: none;
+    border-bottom: 1px solid var(--pos-border, #e5e7eb);
+    min-height: 12rem;
+  }
+
+  .pos-zone-checkout {
+    border-bottom: none;
+  }
+}
+
+@media (max-width: 640px) {
+  .pos-terminal-grid {
+    grid-template-rows: minmax(11rem, 30vh) minmax(12rem, 1fr) minmax(14rem, auto);
+  }
+
+  .pos-zone-header {
+    padding: 0.55rem 0.75rem;
+  }
+
+  .pos-modal-backdrop {
+    align-items: flex-end;
+    padding: 0;
+  }
+
+  .pos-modal {
+    width: 100%;
+    max-height: min(92dvh, 40rem);
+    border-radius: 1rem 1rem 0 0;
   }
 }

@@ -102,8 +102,8 @@ export function ProductsPage() {
 
   return (
     <div className="space-y-4">
-      <div className="flex flex-wrap items-center justify-between gap-3">
-        <div>
+      <div className="erp-page-toolbar flex flex-wrap items-center justify-between gap-3">
+        <div className="min-w-0">
           <h1 className="text-2xl font-semibold">Products</h1>
           <p className="text-sm text-[var(--erp-muted)]">Product master, pricing, barcodes, and attributes.</p>
         </div>
@@ -130,7 +130,7 @@ export function ProductsPage() {
 
       <Card>
         <FilterBar className="mb-3">
-          <div className="min-w-[240px] flex-1">
+          <div className="min-w-0 flex-1 basis-full sm:basis-auto sm:min-w-[240px]">
             <SearchInput
               label="Search"
               value={q}

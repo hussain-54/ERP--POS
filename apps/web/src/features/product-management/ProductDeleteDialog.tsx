@@ -21,7 +21,7 @@ export function ProductDeleteDialog({
       role="presentation"
       onClick={onCancel}
     >
-      <div className="w-full max-w-md" onClick={(e) => e.stopPropagation()} role="dialog" aria-modal>
+      <div className="erp-modal-panel w-full max-w-md" onClick={(e) => e.stopPropagation()} role="dialog" aria-modal>
         <Card title="Deactivate product?">
           <p className="text-sm text-[var(--erp-muted)]">
             <strong className="text-[var(--erp-ink)]">{productName}</strong> will be deactivated (soft delete). Sales

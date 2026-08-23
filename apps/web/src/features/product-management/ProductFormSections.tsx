@@ -107,7 +107,7 @@ export function ProductFormSections({
 
       {tab === "identity" && (
         <Card title="Product identity" description="Codes and names used in search, barcode scan, and POS.">
-          <div className="grid gap-4 md:grid-cols-2">
+          <div className="erp-form-grid grid gap-4 md:grid-cols-2">
             <Input
               label="Product code"
               required
@@ -142,7 +142,7 @@ export function ProductFormSections({
 
       {tab === "business" && (
         <Card title="Business & taxonomy" description="Company, brand, and category for reporting and POS browse.">
-          <div className="grid gap-4 md:grid-cols-2">
+          <div className="erp-form-grid grid gap-4 md:grid-cols-2">
             <div className="space-y-2 md:col-span-2">
               <Select
                 label="Company"
@@ -215,7 +215,7 @@ export function ProductFormSections({
 
       {tab === "pricing" && (
         <Card title="Pricing" description="Retail price is shown on POS by default.">
-          <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
+          <div className="erp-form-grid grid gap-4 md:grid-cols-2 lg:grid-cols-3">
             {(
               [
                 ["costPrice", "Cost price"],

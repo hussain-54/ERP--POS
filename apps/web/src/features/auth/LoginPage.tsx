@@ -1,7 +1,18 @@
-import { useState, type FormEvent } from "react";
+import { useEffect, useState, type FormEvent } from "react";
 import { Link, Navigate, useLocation, useNavigate } from "react-router-dom";
-import { Button, Card, Form, Input, useToast } from "@electronic-erp/ui";
+import { Button, Form, Input, useToast } from "@electronic-erp/ui";
+import { AuthShell } from "./AuthShell";
 import { useAuth } from "./AuthContext";
+
+const REMEMBER_EMAIL_KEY = "erp.auth.rememberEmail";
+
+function readRememberedEmail(): string {
+  try {
+    return localStorage.getItem(REMEMBER_EMAIL_KEY) ?? "";
+  } catch {
+    return "";
+  }
+}
 
 export function LoginPage() {
   const { login, session, loading } = useAuth();
@@ -9,21 +20,57 @@ export function LoginPage() {
   const navigate = useNavigate();
   const location = useLocation();
   const from = (location.state as { from?: string } | null)?.from ?? "/";
+
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
+  const [showPassword, setShowPassword] = useState(false);
+  const [rememberMe, setRememberMe] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [fieldErrors, setFieldErrors] = useState<{ email?: string; password?: string }>({});
+
+  useEffect(() => {
+    const remembered = readRememberedEmail();
+    if (remembered) {
+      setEmail(remembered);
+      setRememberMe(true);
+    }
+  }, []);
 
   if (!loading && session) {
     return <Navigate to={from} replace />;
   }
 
+  function validate(): boolean {
+    const next: { email?: string; password?: string } = {};
+    const trimmed = email.trim();
+    if (!trimmed) next.email = "Email or username is required";
+    else if (!trimmed.includes("@") && trimmed.length < 3) next.email = "Enter a valid email or username";
+    else if (trimmed.includes("@") && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(trimmed)) {
+      next.email = "Enter a valid email address";
+    }
+    if (!password) next.password = "Password is required";
+    else if (password.length < 4) next.password = "Password is too short";
+    setFieldErrors(next);
+    return Object.keys(next).length === 0;
+  }
+
   async function onSubmit(e: FormEvent) {
     e.preventDefault();
-    setSubmitting(true);
     setError(null);
+    if (!validate()) return;
+
+    setSubmitting(true);
     try {
-      await login({ email, password });
+      const trimmed = email.trim();
+      try {
+        if (rememberMe) localStorage.setItem(REMEMBER_EMAIL_KEY, trimmed);
+        else localStorage.removeItem(REMEMBER_EMAIL_KEY);
+      } catch {
+        /* ignore storage failures */
+      }
+
+      await login({ email: trimmed, password });
       toast.push({ title: "Signed in", tone: "success" });
       navigate(from, { replace: true });
     } catch (err) {
@@ -36,40 +83,88 @@ export function LoginPage() {
   }
 
   return (
-    <div className="grid min-h-screen place-items-center px-4">
-      <Card
-        className="w-full max-w-md"
-        title="Electronic ERP"
-        description="Sign in to your organization workspace."
-      >
-        <Form onSubmit={onSubmit}>
-          <Input
-            label="Email"
-            type="email"
-            autoComplete="username"
-            required
-            value={email}
-            onChange={(e) => setEmail(e.target.value)}
-          />
+    <AuthShell
+      title="Sign in"
+      subtitle="Enter your credentials to access your organization workspace."
+      footer={
+        <>
+          Need help? Contact your system administrator.
+        </>
+      }
+    >
+      <Form onSubmit={onSubmit} noValidate className="flex flex-col gap-4">
+        {error ? (
+          <div
+            role="alert"
+            className="rounded-[var(--erp-radius)] border border-[var(--erp-danger)]/30 bg-[var(--erp-danger-soft)] px-3 py-2.5 text-sm text-[var(--erp-danger)]"
+          >
+            {error}
+          </div>
+        ) : null}
+
+        <Input
+          label="Email or username"
+          type="text"
+          name="email"
+          autoComplete="username"
+          inputMode="email"
+          required
+          value={email}
+          error={fieldErrors.email}
+          onChange={(e) => {
+            setEmail(e.target.value);
+            if (fieldErrors.email) setFieldErrors((prev) => ({ ...prev, email: undefined }));
+          }}
+        />
+
+        <div className="relative">
           <Input
             label="Password"
-            type="password"
+            type={showPassword ? "text" : "password"}
+            name="password"
             autoComplete="current-password"
             required
             value={password}
-            onChange={(e) => setPassword(e.target.value)}
+            error={fieldErrors.password}
+            className="pr-16"
+            onChange={(e) => {
+              setPassword(e.target.value);
+              if (fieldErrors.password) setFieldErrors((prev) => ({ ...prev, password: undefined }));
+            }}
           />
-          {error ? <p className="text-sm text-[var(--erp-danger)]">{error}</p> : null}
-          <Button type="submit" loading={submitting} className="w-full">
-            Sign in
-          </Button>
-          <p className="text-center text-sm text-[var(--erp-muted)]">
-            <Link className="text-[var(--erp-brand)] underline" to="/auth/forgot-password">
-              Forgot password?
-            </Link>
-          </p>
-        </Form>
-      </Card>
-    </div>
+          <button
+            type="button"
+            className="absolute right-2 top-[1.85rem] inline-flex h-9 min-h-9 items-center rounded-md px-2 text-xs font-semibold text-[var(--erp-brand)] hover:bg-[var(--erp-brand-soft)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--erp-ring)]"
+            onClick={() => setShowPassword((v) => !v)}
+            aria-pressed={showPassword}
+            aria-label={showPassword ? "Hide password" : "Show password"}
+          >
+            {showPassword ? "Hide" : "Show"}
+          </button>
+        </div>
+
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <label className="inline-flex min-h-11 cursor-pointer items-center gap-2 text-sm text-[var(--erp-ink)]">
+            <input
+              type="checkbox"
+              className="h-4 w-4 rounded border-[var(--erp-border)] text-[var(--erp-brand)] focus:ring-[var(--erp-ring)]"
+              checked={rememberMe}
+              onChange={(e) => setRememberMe(e.target.checked)}
+            />
+            Remember me
+          </label>
+          <Link
+            className="min-h-11 inline-flex items-center text-sm font-medium text-[var(--erp-brand)] hover:underline"
+            to="/auth/forgot-password"
+          >
+            Forgot password?
+          </Link>
+        </div>
+
+        <Button type="submit" loading={submitting} disabled={submitting || loading} className="mt-1 w-full">
+          Sign in
+        </Button>
+      </Form>
+    </AuthShell>
   );
 }

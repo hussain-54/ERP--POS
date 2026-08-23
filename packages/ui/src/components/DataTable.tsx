@@ -21,7 +21,7 @@ export interface DataColumn<T> {
 
 export type DataTableLayout = "auto" | "table" | "cards";
 
-export const DATA_TABLE_CARD_COLUMN_LIMIT = 5;
+export const DATA_TABLE_CARD_COLUMN_LIMIT = 12;
 
 export function shouldUseMobileTableCards(
   columnCount: number,

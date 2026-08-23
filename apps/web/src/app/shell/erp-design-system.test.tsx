@@ -73,7 +73,8 @@ describe("DataTable", () => {
     expect(within(screen.getByRole("table")).getByRole("button", { name: "Edit Cable" })).toBeInTheDocument();
     expect(document.querySelector("[data-erp-table-cards]")).toBeTruthy();
     expect(shouldUseMobileTableCards(3)).toBe(true);
-    expect(shouldUseMobileTableCards(7)).toBe(false);
+    expect(shouldUseMobileTableCards(7)).toBe(true);
+    expect(shouldUseMobileTableCards(20)).toBe(false);
     expect(shouldUseMobileTableCards(3, "table")).toBe(false);
 
     fireEvent.click(screen.getByRole("button", { name: /Name/ }));

@@ -63,8 +63,8 @@ export function ModuleWorkspace({ children }: { children: ReactNode }) {
         <div
           className={
             dense
-              ? "min-h-0 min-w-0 flex-1 overflow-auto p-4 md:p-5"
-              : "min-w-0 flex-1 overflow-x-auto px-3 py-3 md:px-5 md:py-4"
+              ? "min-h-0 min-w-0 flex-1 overflow-auto p-3 sm:p-4 md:p-5"
+              : "min-w-0 max-w-full flex-1 overflow-x-auto px-3 py-3 sm:px-4 md:px-5 md:py-4"
           }
         >
           {children}

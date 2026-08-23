@@ -8,6 +8,11 @@ html,
 body,
 #root {
   min-height: 100%;
+  max-width: 100%;
+}
+
+html {
+  overflow-x: hidden;
 }
 
 body {
@@ -15,4 +20,69 @@ body {
   font-family: var(--erp-font);
   background: var(--erp-bg);
   color: var(--erp-ink);
+  overflow-x: hidden;
+  -webkit-text-size-adjust: 100%;
+}
+
+/* Auth / login surfaces */
+.erp-auth-shell {
+  background:
+    radial-gradient(1200px 600px at 10% -10%, rgba(24, 119, 242, 0.12), transparent 55%),
+    radial-gradient(900px 500px at 100% 0%, rgba(15, 27, 51, 0.06), transparent 50%),
+    var(--erp-bg);
+}
+
+.erp-auth-brand {
+  background:
+    linear-gradient(165deg, #0f1b33 0%, #163a6b 48%, #1877f2 120%);
+}
+
+.erp-auth-brand-glow {
+  pointer-events: none;
+  position: absolute;
+  inset: auto -20% -30% auto;
+  width: 28rem;
+  height: 28rem;
+  border-radius: 999px;
+  background: radial-gradient(circle, rgba(255, 255, 255, 0.18), transparent 68%);
+}
+
+/* Workspace content: avoid page-level horizontal scroll from nested grids */
+.erp-app [data-module-workspace] {
+  max-width: 100%;
+}
+
+.erp-app [data-module-workspace] > div {
+  max-width: 100%;
+}
+
+@media (max-width: 767.98px) {
+  .erp-page-toolbar {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .erp-page-toolbar > div:last-child {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.5rem;
+  }
+
+  .erp-page-toolbar a,
+  .erp-page-toolbar button {
+    flex: 1 1 auto;
+    justify-content: center;
+    text-align: center;
+  }
+
+  .erp-form-grid {
+    grid-template-columns: 1fr !important;
+  }
+
+  .erp-modal-panel,
+  .pos-modal {
+    width: min(100%, 28rem);
+    max-height: min(92dvh, 40rem);
+    overflow: auto;
+  }
 }

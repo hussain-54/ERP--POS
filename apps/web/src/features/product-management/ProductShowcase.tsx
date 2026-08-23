@@ -31,9 +31,9 @@ export function ProductShowcase({
   primaryBarcode?: string;
 }) {
   return (
-    <div className="grid gap-4 lg:grid-cols-[240px_1fr]">
+    <div className="grid gap-4 lg:grid-cols-[240px_minmax(0,1fr)]">
       <Card className="overflow-hidden p-0">
-        <div className="aspect-square bg-[var(--erp-surface-muted)]">
+        <div className="aspect-square max-h-[min(60vw,20rem)] bg-[var(--erp-surface-muted)] sm:max-h-none">
           {imageUrl ? (
             <img src={imageUrl} alt={product.name} className="h-full w-full object-cover" />
           ) : (

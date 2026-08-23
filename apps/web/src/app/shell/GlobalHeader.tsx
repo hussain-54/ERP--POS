@@ -34,8 +34,8 @@ export function GlobalHeader({
   return (
     <header
       data-erp-chrome="header"
-      className={`sticky top-0 z-20 flex min-h-14 min-w-0 items-center gap-1.5 overflow-x-auto border-b border-[var(--erp-border)] bg-[var(--erp-surface)] px-2 py-1.5 md:overflow-x-hidden md:px-5 md:py-2 lg:gap-2 ${
-        compact ? "flex-nowrap" : "flex-wrap md:flex-nowrap"
+      className={`sticky top-0 z-20 flex min-h-14 min-w-0 items-center gap-1.5 border-b border-[var(--erp-border)] bg-[var(--erp-surface)] px-2 py-1.5 md:gap-2 md:overflow-x-hidden md:px-5 md:py-2 ${
+        compact ? "flex-nowrap overflow-x-auto overscroll-x-contain" : "flex-wrap md:flex-nowrap"
       }`}
     >
       <Button
@@ -63,7 +63,7 @@ export function GlobalHeader({
       <Button className="min-h-11 shrink-0 md:hidden" variant="secondary" size="sm" onClick={onOpenSearch}>
         Search
       </Button>
-      <div className="w-[7.5rem] shrink-0 sm:w-[9.5rem]">
+      <div className="w-[6.75rem] shrink-0 sm:w-[9.5rem]">
         <Select
           aria-label="Branch"
           className="min-h-11 lg:min-h-9 lg:h-9"
