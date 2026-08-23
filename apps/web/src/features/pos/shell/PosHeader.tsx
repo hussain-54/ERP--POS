@@ -1,7 +1,8 @@
 import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
+import { POS_TOGGLE_ERP_NAV, POS_TOGGLE_SIDEBAR } from "./events";
 
-export const POS_TOGGLE_ERP_NAV = "pos:toggle-erp-nav";
+export { POS_TOGGLE_ERP_NAV };
 
 function PosClock() {
   const [now, setNow] = useState(() => new Date());
@@ -10,11 +11,11 @@ function PosClock() {
     return () => window.clearInterval(id);
   }, []);
   return (
-    <div className="text-right">
-      <div className="text-[11px] font-medium text-gray-400">
+    <div className="hidden text-right md:block">
+      <div className="text-[11px] font-medium text-slate-400">
         {now.toLocaleDateString(undefined, { weekday: "short", day: "numeric", month: "short", year: "numeric" })}
       </div>
-      <div className="text-xs font-black tracking-wide text-gray-800">
+      <div className="text-xs font-black tracking-wide text-slate-800">
         {now.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}
       </div>
     </div>
@@ -27,12 +28,14 @@ export function PosHeader({
   cashierName,
   holdCount,
   shiftOpen,
+  showBack = false,
 }: {
   branchLabel: string;
   terminalId: string;
   cashierName?: string;
   holdCount: number;
   shiftOpen: boolean;
+  showBack?: boolean;
 }) {
   const cashier = cashierName ?? "Cashier";
   const initials = cashier
@@ -47,12 +50,26 @@ export function PosHeader({
       <div className="pos-header-left">
         <button
           type="button"
-          className="mr-1 cursor-pointer text-lg text-gray-500 hover:text-gray-800"
-          aria-label="Menu"
-          onClick={() => window.dispatchEvent(new Event(POS_TOGGLE_ERP_NAV))}
+          className="cursor-pointer text-lg text-slate-500 hover:text-slate-800 lg:hidden"
+          aria-label="Open POS navigation"
+          onClick={() => window.dispatchEvent(new Event(POS_TOGGLE_SIDEBAR))}
         >
           <i className="fa-solid fa-bars" aria-hidden />
         </button>
+        <button
+          type="button"
+          className="cursor-pointer text-lg text-slate-500 hover:text-slate-800"
+          aria-label="Menu"
+          onClick={() => window.dispatchEvent(new Event(POS_TOGGLE_ERP_NAV))}
+        >
+          <i className="fa-solid fa-table-cells-large" aria-hidden />
+        </button>
+        {showBack ? (
+          <Link to="/pos" className="pos-back-link hidden sm:inline-flex">
+            <i className="fa-solid fa-arrow-left text-[11px]" aria-hidden />
+            Back to POS Command Center
+          </Link>
+        ) : null}
         <div className="pos-header-field">
           <span className="pos-header-kicker">Branch</span>
           <span className="pos-header-value" aria-label="POS Branch">
@@ -60,7 +77,7 @@ export function PosHeader({
           </span>
         </div>
         <div className="pos-header-field">
-          <span className="pos-header-kicker">POS Terminal</span>
+          <span className="pos-header-kicker">Terminal</span>
           <span className="pos-header-value">{terminalId}</span>
         </div>
         <div className="pos-header-field">
@@ -77,21 +94,21 @@ export function PosHeader({
 
       <PosClock />
 
-      <div className="pos-header-right border-l border-gray-200 pl-5">
-        <Link to="/pos/sales/resume" className="pos-header-held" aria-label="Held Sales">
-          <span className="text-[10px] font-semibold text-gray-500">Held Sales</span>
-          <i className="fa-solid fa-cart-shopping text-sm text-gray-600" aria-hidden />
-          <span className="text-xs font-bold text-gray-800">{holdCount}</span>
+      <div className="pos-header-right border-l border-slate-200 pl-4">
+        <Link to="/pos/sales/held" className="pos-header-held" aria-label="Held Sales">
+          <span className="text-[10px] font-semibold text-slate-500">Held</span>
+          <i className="fa-solid fa-cart-shopping text-sm text-slate-600" aria-hidden />
+          <span className="text-xs font-bold text-slate-800">{holdCount}</span>
         </Link>
         <Link
           to="/notifications"
-          className="relative rounded-xl border border-gray-200 bg-gray-50 p-2.5 transition hover:bg-gray-100"
+          className="relative rounded-xl border border-slate-200 bg-slate-50 p-2.5 transition hover:bg-slate-100"
           aria-label="POS Notifications"
         >
-          <i className="fa-regular fa-bell text-sm text-gray-600" aria-hidden />
+          <i className="fa-regular fa-bell text-sm text-slate-600" aria-hidden />
         </Link>
         <span
-          className="inline-flex h-9 w-9 items-center justify-center rounded-full border border-gray-300 bg-blue-600 text-xs font-bold text-white shadow-sm"
+          className="inline-flex h-9 w-9 items-center justify-center rounded-full border border-slate-200 bg-[var(--pos-primary)] text-xs font-bold text-white shadow-sm"
           title={cashier}
           aria-label="POS User"
         >

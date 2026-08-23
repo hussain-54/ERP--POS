@@ -1,20 +1,21 @@
 import { useEffect, useState } from "react";
 import { posApi } from "../api";
 import { money } from "../format";
+import { mapShiftRow } from "../shift/shift-utils";
 import type { PosDrawerSummary } from "../types";
 
-const FALLBACK_DRAWER: PosDrawerSummary = {
-  opening: "25,000.00",
-  inHand: "32,450.00",
-  sales: "78,320.00",
-  expenses: "-2,000.00",
-  expected: "101,320.00",
+const EMPTY_DRAWER: PosDrawerSummary = {
+  opening: "0.00",
+  inHand: "0.00",
+  sales: "0.00",
+  expenses: "0.00",
+  expected: "0.00",
 };
 
 export function usePosShell(branchId: string | null) {
   const [holdCount, setHoldCount] = useState(0);
   const [shiftOpen, setShiftOpen] = useState(true);
-  const [drawer, setDrawer] = useState<PosDrawerSummary>(FALLBACK_DRAWER);
+  const [drawer, setDrawer] = useState<PosDrawerSummary>(EMPTY_DRAWER);
   const [terminalId] = useState("POS-01");
 
   useEffect(() => {
@@ -24,20 +25,25 @@ export function usePosShell(branchId: string | null) {
     async function load() {
       try {
         const shiftRes = await posApi.currentShift(branchId!);
-        const shift = shiftRes.item;
+        const mapped = mapShiftRow(shiftRes.item);
         if (cancelled) return;
-        setShiftOpen(Boolean(shift));
-        if (shift) {
+        setShiftOpen(Boolean(mapped && mapped.status === "open"));
+        if (mapped) {
           setDrawer({
-            opening: money(Number(shift.openingFloat ?? 0)),
-            inHand: money(Number(shift.expectedCash ?? shift.cashInHand ?? 0)),
-            sales: money(Number(shift.totalSales ?? 0)),
-            expenses: money(Number(shift.totalExpenses ?? 0)),
-            expected: money(Number(shift.expectedCash ?? 0)),
+            opening: money(mapped.openingFloat),
+            inHand: money(mapped.expectedCash),
+            sales: money(mapped.salesTotal),
+            expenses: money(mapped.expenseTotal),
+            expected: money(mapped.expectedCash),
           });
+        } else {
+          setDrawer(EMPTY_DRAWER);
         }
       } catch {
-        if (!cancelled) setDrawer(FALLBACK_DRAWER);
+        if (!cancelled) {
+          setShiftOpen(false);
+          setDrawer(EMPTY_DRAWER);
+        }
       }
 
       try {

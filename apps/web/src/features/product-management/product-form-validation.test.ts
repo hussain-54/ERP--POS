@@ -1,7 +1,9 @@
 import { describe, expect, it } from "vitest";
+import { EMPTY_PRODUCT_FORM } from "./product-form-state";
 import { firstProductFormError, validateProductForm } from "./product-form-validation";
 
 const valid = {
+  ...EMPTY_PRODUCT_FORM,
   productCode: "P-1",
   sku: "SKU-1",
   name: "Switch",
@@ -11,9 +13,6 @@ const valid = {
   wholesalePrice: "15",
   dealerPrice: "12",
   minimumSalePrice: "10",
-  specialPrice: "",
-  warrantyDays: "0",
-  primaryBarcode: "",
 };
 
 describe("validateProductForm", () => {

@@ -50,6 +50,18 @@ export const catalogApi = {
       body: JSON.stringify(input),
     });
   },
+  deactivateProduct(id: string) {
+    return apiFetch<ProductMaster>(`/api/v1/catalog/products/${id}/deactivate`, {
+      method: "POST",
+      token: token(),
+    });
+  },
+  restoreProduct(id: string) {
+    return apiFetch<ProductMaster>(`/api/v1/catalog/products/${id}/restore`, {
+      method: "POST",
+      token: token(),
+    });
+  },
   bulk(ids: string[], action: "deactivate" | "activate" | "restore") {
     return apiFetch<{ affected: number }>("/api/v1/catalog/products/bulk", {
       method: "POST",

@@ -1,16 +1,22 @@
-import { useEffect, type ReactNode } from "react";
-import { useNavigate } from "react-router-dom";
+import { useEffect, useState, type ReactNode } from "react";
+import { useLocation, useNavigate } from "react-router-dom";
 import { useAuth } from "@/features/auth/AuthContext";
+import { POS_TERMINAL_PATHS } from "../ownership";
+import { POS_TOGGLE_SIDEBAR } from "./events";
 import { PosHeader } from "./PosHeader";
 import { PosSidebar } from "./PosSidebar";
 import { PosShortcutBar } from "./PosShortcutBar";
-import { usePosShell } from "../hooks/usePosShell";
+import { PosShellProvider, usePosShellState } from "./PosShellContext";
 import "../tokens.css";
 
-export function PosShell({ children }: { children: ReactNode }) {
+function PosShellFrame({ children }: { children: ReactNode }) {
   const navigate = useNavigate();
+  const { pathname } = useLocation();
   const { user, branchId, branches } = useAuth();
-  const { holdCount, shiftOpen, drawer, terminalId } = usePosShell(branchId);
+  const { holdCount, shiftOpen, drawer, terminalId } = usePosShellState();
+  const [mobileNavOpen, setMobileNavOpen] = useState(false);
+  const commandCenter = pathname === "/pos";
+  const showShortcuts = POS_TERMINAL_PATHS.has(pathname);
   const branchLabel = branchId
     ? branches.find((b) => b === branchId)
       ? `Branch ${branchId.slice(0, 8)}`
@@ -18,14 +24,40 @@ export function PosShell({ children }: { children: ReactNode }) {
     : "Main Branch";
 
   useEffect(() => {
+    setMobileNavOpen(false);
+  }, [pathname]);
+
+  useEffect(() => {
+    function onToggle() {
+      setMobileNavOpen((v) => !v);
+    }
+    window.addEventListener(POS_TOGGLE_SIDEBAR, onToggle);
+    return () => window.removeEventListener(POS_TOGGLE_SIDEBAR, onToggle);
+  }, []);
+
+  useEffect(() => {
     function onKey(event: KeyboardEvent) {
       if (!event.key.startsWith("F")) return;
+      const target = event.target as HTMLElement | null;
+      if (target && (target.tagName === "INPUT" || target.tagName === "TEXTAREA" || target.isContentEditable)) {
+        // Allow F2 even in inputs to jump search; block others while typing
+        if (event.key !== "F2") return;
+      }
       const map: Record<string, () => void> = {
-        F1: () => window.dispatchEvent(new CustomEvent("pos:shortcut", { detail: "new-sale" })),
-        F2: () => navigate("/pos/sales/resume"),
-        F3: () => navigate("/pos/customers"),
+        F1: () => {
+          navigate("/pos/sales/new");
+          window.dispatchEvent(new CustomEvent("pos:shortcut", { detail: "new-sale" }));
+        },
+        F2: () => {
+          if (!pathname.startsWith("/pos/sales/")) navigate("/pos/sales/new");
+          window.dispatchEvent(new CustomEvent("pos:shortcut", { detail: "focus-search" }));
+        },
+        F3: () => window.dispatchEvent(new CustomEvent("pos:shortcut", { detail: "customers" })),
+        F4: () => window.dispatchEvent(new CustomEvent("pos:shortcut", { detail: "price-override" })),
+        F5: () => window.dispatchEvent(new CustomEvent("pos:shortcut", { detail: "discount" })),
+        F6: () => window.dispatchEvent(new CustomEvent("pos:shortcut", { detail: "hold" })),
         F7: () => window.dispatchEvent(new CustomEvent("pos:shortcut", { detail: "clear-cart" })),
-        F8: () => window.dispatchEvent(new CustomEvent("pos:shortcut", { detail: "cancel-sale" })),
+        F8: () => window.dispatchEvent(new CustomEvent("pos:shortcut", { detail: "pay" })),
       };
       const action = map[event.key];
       if (action) {
@@ -35,22 +67,38 @@ export function PosShell({ children }: { children: ReactNode }) {
     }
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [navigate]);
+  }, [navigate, pathname]);
 
   return (
-    <div className="pos-root pos-terminal flex h-full min-h-0 min-w-0 flex-1 flex-col overflow-hidden">
+    <div className="pos-root pos-workspace flex h-full min-h-0 min-w-0 flex-1 flex-col overflow-hidden">
       <PosHeader
         branchLabel={branchLabel}
         terminalId={terminalId}
         cashierName={user?.fullName}
         holdCount={holdCount}
         shiftOpen={shiftOpen}
+        showBack={!commandCenter}
       />
       <div className="flex min-h-0 min-w-0 flex-1 overflow-hidden">
-        <PosSidebar holdCount={holdCount} drawer={drawer} onCloseShift={() => navigate("/pos/shift")} />
+        <PosSidebar
+          holdCount={holdCount}
+          drawer={drawer}
+          mobileOpen={mobileNavOpen}
+          onCloseMobile={() => setMobileNavOpen(false)}
+          onCloseShift={() => navigate("/pos/shifts")}
+        />
         <div className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden">{children}</div>
       </div>
-      <PosShortcutBar />
+      {showShortcuts ? <PosShortcutBar /> : null}
     </div>
+  );
+}
+
+export function PosShell({ children }: { children: ReactNode }) {
+  const { branchId } = useAuth();
+  return (
+    <PosShellProvider branchId={branchId}>
+      <PosShellFrame>{children}</PosShellFrame>
+    </PosShellProvider>
   );
 }

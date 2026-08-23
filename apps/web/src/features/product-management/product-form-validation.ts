@@ -1,19 +1,6 @@
-export type ProductFormValues = {
-  productCode: string;
-  sku: string;
-  name: string;
-  baseUnitId: string;
-  costPrice: string;
-  retailPrice: string;
-  wholesalePrice: string;
-  dealerPrice: string;
-  minimumSalePrice: string;
-  specialPrice: string;
-  warrantyDays: string;
-  primaryBarcode: string;
-};
+import type { ProductFormState } from "./product-form-state";
 
-export type ProductFormFieldErrors = Partial<Record<keyof ProductFormValues, string>>;
+export type ProductFormFieldErrors = Partial<Record<keyof ProductFormState, string>>;
 
 function parseNonNegativeMoney(raw: string, label: string): string | null {
   const trimmed = raw.trim();
@@ -28,20 +15,21 @@ function parseNonNegativeMoney(raw: string, label: string): string | null {
 }
 
 /** Client-side required-field / money checks before calling the catalog API. */
-export function validateProductForm(form: ProductFormValues): ProductFormFieldErrors {
+export function validateProductForm(form: ProductFormState): ProductFormFieldErrors {
   const errors: ProductFormFieldErrors = {};
 
   if (!form.productCode.trim()) errors.productCode = "Product code is required";
   if (!form.sku.trim()) errors.sku = "SKU is required";
-  if (!form.name.trim()) errors.name = "Product name is required";
+  if (!form.name.trim()) errors.name = "Business / product name is required";
   if (!form.baseUnitId.trim()) errors.baseUnitId = "Base unit is required";
 
-  const moneyFields: Array<[keyof ProductFormValues, string]> = [
+  const moneyFields: Array<[keyof ProductFormState, string]> = [
     ["costPrice", "Cost price"],
     ["retailPrice", "Retail price"],
     ["wholesalePrice", "Wholesale price"],
     ["dealerPrice", "Dealer price"],
     ["minimumSalePrice", "Minimum sale price"],
+    ["reorderLevel", "Reorder level"],
   ];
   for (const [key, label] of moneyFields) {
     const message = parseNonNegativeMoney(String(form[key] ?? ""), label);

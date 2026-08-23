@@ -137,6 +137,11 @@ export const enterpriseApi = {
       body: JSON.stringify(body),
     });
   },
+  listTaxDocuments() {
+    return apiFetch<{ items: Array<Record<string, unknown>> }>("/api/v1/tax/documents", {
+      token: token(),
+    });
+  },
   taxReport() {
     return apiFetch<Record<string, unknown>>("/api/v1/tax/reports", { token: token() });
   },

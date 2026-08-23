@@ -1,70 +1,80 @@
-import { POS_SECTIONS } from "../ownership";
+import { POS_MODULES } from "../ownership";
 import { PosHubPage } from "./PosHubPage";
+import { HeldSalesRegister } from "../sales/HeldSalesRegister";
+import { PosDiscountPage } from "./PosDiscountPage";
 
 function sectionById(id: string) {
-  return POS_SECTIONS.find((s) => s.id === id)!;
+  const section = POS_MODULES.find((s) => s.id === id);
+  if (!section) throw new Error(`Unknown POS section: ${id}`);
+  return section;
+}
+
+function Hub({ id }: { id: string }) {
+  return <PosHubPage section={sectionById(id)} />;
 }
 
 export function PosOverviewPage() {
-  return <PosHubPage section={sectionById("overview")} />;
+  return <Hub id="overview" />;
 }
 
 export function PosSalesHubPage() {
-  return <PosHubPage section={sectionById("sales")} />;
+  return <Hub id="sales" />;
 }
 
 export function PosCustomersHubPage() {
-  return <PosHubPage section={sectionById("customers")} />;
+  return <Hub id="customers" />;
 }
 
 export function PosProductsHubPage() {
-  return <PosHubPage section={sectionById("products")} />;
+  return <Hub id="products" />;
 }
 
 export function PosPricingHubPage() {
-  return <PosHubPage section={sectionById("pricing")} />;
+  return <Hub id="pricing" />;
 }
 
 export function PosPaymentsHubPage() {
-  return <PosHubPage section={sectionById("payments")} />;
+  return <Hub id="payments" />;
 }
 
 export function PosInvoicesHubPage() {
-  return <PosHubPage section={sectionById("invoices")} />;
+  return <Hub id="invoices" />;
 }
 
 export function PosReturnsHubPage() {
-  return <PosHubPage section={sectionById("returns")} />;
+  return <Hub id="returns" />;
 }
 
 export function PosShiftHubPage() {
-  return <PosHubPage section={sectionById("shift")} />;
+  return <Hub id="shift" />;
 }
 
 export function PosApprovalsHubPage() {
-  return <PosHubPage section={sectionById("approvals")} />;
+  return <Hub id="approvals" />;
 }
 
 export function PosReportsHubPage() {
-  return <PosHubPage section={sectionById("reports")} />;
+  return <Hub id="reports" />;
 }
 
 export function PosTaxHubPage() {
-  return <PosHubPage section={sectionById("tax")} />;
+  return <Hub id="tax" />;
 }
 
 export function PosOfflineHubPage() {
-  return <PosHubPage section={sectionById("offline")} />;
+  return <Hub id="offline" />;
 }
 
 export function PosDevicesHubPage() {
-  return <PosHubPage section={sectionById("devices")} />;
+  return <Hub id="devices" />;
 }
 
 export function PosSettingsPage() {
-  return <PosHubPage section={sectionById("settings")} />;
+  return <Hub id="settings" />;
 }
 
 export function PosHeldSalesPage() {
-  return <PosHubPage section={sectionById("sales")} />;
+  return <HeldSalesRegister />;
 }
+
+export { PosDiscountPage };

@@ -13,7 +13,7 @@ function renderWorkspace(path: string) {
     <MemoryRouter initialEntries={[path]}>
       <AuthProvider>
         <ModuleWorkspace>
-          <div>Selected feature</div>
+          <div data-testid="pos-workspace-child">Selected feature</div>
         </ModuleWorkspace>
       </AuthProvider>
     </MemoryRouter>,
@@ -21,13 +21,12 @@ function renderWorkspace(path: string) {
 }
 
 describe("ModuleWorkspace", () => {
-  it("uses stacked module chrome for POS placeholder", () => {
+  it("uses POS workspace chrome for POS routes", () => {
     renderWorkspace("/pos");
-    expect(document.querySelector("[data-erp-workspace-layout='stacked']")).toBeTruthy();
-    expect(screen.getByRole("heading", { name: "POS / SALES" })).toBeInTheDocument();
-    expect(screen.getByRole("navigation", { name: "POS / SALES workspace" })).toBeInTheDocument();
-    expect(screen.queryByLabelText("POS navigation")).not.toBeInTheDocument();
-    expect(screen.getByText("Selected feature")).toBeInTheDocument();
+    expect(document.querySelector("[data-erp-workspace-layout='pos-workspace']")).toBeTruthy();
+    expect(screen.getByLabelText("POS navigation")).toBeInTheDocument();
+    expect(screen.queryByRole("heading", { name: "POS / SALES" })).not.toBeInTheDocument();
+    expect(screen.getByTestId("pos-workspace-child")).toBeInTheDocument();
   });
 
   it("keeps stacked module chrome for non-POS workspaces", () => {

@@ -1,0 +1,76 @@
+.pos-terminal-root {
+  background: var(--pos-workspace, #f5f7fb);
+}
+
+.pos-terminal-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1.15fr) minmax(0, 1.2fr) minmax(0, 0.95fr);
+  gap: 0;
+  min-height: 0;
+  height: 100%;
+  max-width: 100%;
+}
+
+.pos-zone {
+  display: flex;
+  min-height: 0;
+  min-width: 0;
+  flex: 1;
+  flex-direction: column;
+  overflow: hidden;
+  background: white;
+  border-right: 1px solid var(--pos-border, #e5e7eb);
+}
+
+.pos-zone-checkout {
+  border-right: none;
+}
+
+.pos-zone-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+  flex-shrink: 0;
+  border-bottom: 1px solid var(--pos-border, #e5e7eb);
+  padding: 0.65rem 0.85rem;
+}
+
+.pos-zone-title {
+  margin: 0;
+  font-size: 0.8125rem;
+  font-weight: 800;
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+  color: #0f172a;
+}
+
+.pos-zone-scroll {
+  -webkit-overflow-scrolling: touch;
+}
+
+.pos-modal-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 60;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 1rem;
+  background: rgb(15 23 42 / 0.45);
+}
+
+.pos-modal {
+  width: min(28rem, 100%);
+  max-height: min(90vh, 40rem);
+  overflow: hidden;
+  border-radius: 1rem;
+  background: white;
+  box-shadow: 0 20px 50px rgb(15 23 42 / 0.2);
+}
+
+@media (max-width: 1024px) {
+  .pos-terminal-grid {
+    grid-template-columns: 1fr;
+  }
+}

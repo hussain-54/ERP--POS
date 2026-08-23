@@ -40,7 +40,7 @@ describe("ERP module launcher", () => {
     expect(invoice).toMatchObject({
       moduleNumber: "02",
       moduleName: "POS / SALES",
-      href: "/invoices",
+      href: "/pos/invoices",
     });
     expect(suggestions.every((item) => ERP_STABLE_PARENT_PATHS.includes(item.modulePath as (typeof ERP_STABLE_PARENT_PATHS)[number]))).toBe(
       true,

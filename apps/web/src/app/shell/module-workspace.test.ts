@@ -20,14 +20,35 @@ describe("module workspace model", () => {
     }
   });
 
-  it("lists POS / SALES as a placeholder workspace", () => {
+  it("lists POS / SALES workspace hubs for the registry model", () => {
     const model = resolveModuleWorkspace("/pos");
     expect(model?.name).toBe("POS / SALES");
     expect(model?.searchPlaceholder).toBe("Search sales...");
     expect(model?.description).toContain("Point of sale");
-    expect(model?.nav.map((item) => item.title)).toEqual(["Overview"]);
+    expect(model?.nav[0]).toMatchObject({ title: "Overview", path: "/pos" });
+    expect(model?.nav.map((item) => item.title)).toEqual([
+      "Overview",
+      "POS Overview",
+      "Sales",
+      "Customers",
+      "Products",
+      "Pricing & Discounts",
+      "Payments",
+      "Invoices",
+      "Returns & Exchange",
+      "Shift & Cash",
+      "Approvals",
+      "Reports",
+      "Tax & Compliance",
+      "Offline & Sync",
+      "Devices & Terminal",
+      "POS Settings",
+    ]);
     expect(isWorkspaceNavItemActive(model!.nav[0]!, "/pos", model!)).toBe(true);
-    expect(filterWorkspaceNav("overview", model!.nav).map((item) => item.title)).toEqual(["Overview"]);
+    expect(filterWorkspaceNav("overview", model!.nav).map((item) => item.title)).toEqual([
+      "Overview",
+      "POS Overview",
+    ]);
   });
 
   it("keeps System Administration overview plus settings children", () => {

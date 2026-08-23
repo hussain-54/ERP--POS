@@ -209,7 +209,7 @@ describe("39-module navigation QA", () => {
       }
 
       if (isPosEnvironmentPath(section.path)) {
-        expect(document.querySelector("[data-erp-workspace-layout='pos-terminal']"), section.path).toBeTruthy();
+        expect(document.querySelector("[data-erp-workspace-layout='pos-workspace']"), section.path).toBeTruthy();
         expect(screen.queryByRole("heading", { level: 1, name: section.name }), section.path).not.toBeInTheDocument();
         expect(
           screen.queryByRole("navigation", { name: `${section.name} workspace` }),
@@ -263,7 +263,7 @@ describe("39-module navigation QA", () => {
         }
 
         if (isPosEnvironmentPath(child.path)) {
-          expect(document.querySelector("[data-erp-workspace-layout='pos-terminal']"), child.path).toBeTruthy();
+          expect(document.querySelector("[data-erp-workspace-layout='pos-workspace']"), child.path).toBeTruthy();
           expect(screen.queryByRole("heading", { level: 1, name: section.name }), child.path).not.toBeInTheDocument();
           expect(
             screen.queryByRole("navigation", { name: `${section.name} workspace` }),
@@ -307,7 +307,8 @@ describe("39-module navigation QA", () => {
     expect(screen.getByTestId("erp-location")).toHaveTextContent("/pos");
     expect(screen.getByLabelText("POS navigation")).toBeInTheDocument();
     expect(screen.queryByRole("heading", { level: 1, name: "POS / SALES" })).not.toBeInTheDocument();
-    expect(document.querySelector("[data-erp-workspace-layout='pos-terminal']")).toBeTruthy();
+    expect(document.querySelector("[data-erp-workspace-layout='pos-workspace']")).toBeTruthy();
+    expect(screen.getByTestId("pos-command-center")).toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: "History back" }));
     expect(screen.getByTestId("erp-location")).toHaveTextContent("/command-center");
     expect(screen.getByRole("heading", { level: 1, name: "COMMAND CENTER" })).toBeInTheDocument();

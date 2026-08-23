@@ -12,10 +12,19 @@ import {
   SearchInput,
   useToast,
 } from "@electronic-erp/ui";
+import { useAuth } from "@/features/auth/AuthContext";
 import { catalogApi, CATALOG_CHANGED_EVENT } from "./catalog-api";
+import { ProductDeleteDialog } from "./ProductDeleteDialog";
+import { labelForOption } from "./product-form-state";
+import { useProductTaxonomy } from "./useProductTaxonomy";
 
 export function ProductsPage() {
   const toast = useToast();
+  const { hasPermission } = useAuth();
+  const canWrite = hasPermission("products.write");
+  const canDelete = hasPermission("products.delete");
+  const taxonomy = useProductTaxonomy();
+
   const [items, setItems] = useState<ProductMaster[]>([]);
   const [total, setTotal] = useState(0);
   const [page, setPage] = useState(1);
@@ -23,6 +32,10 @@ export function ProductsPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [selected, setSelected] = useState<string[]>([]);
+  const [deleteTarget, setDeleteTarget] = useState<ProductMaster | null>(null);
+  const [deleting, setDeleting] = useState(false);
+
+  const companyLabel = (id?: string | null) => labelForOption(taxonomy.companies, id);
 
   async function load(nextPage = page, query = q) {
     setLoading(true);
@@ -68,6 +81,25 @@ export function ProductsPage() {
     }
   }
 
+  async function confirmDeactivate() {
+    if (!deleteTarget) return;
+    setDeleting(true);
+    try {
+      await catalogApi.deactivateProduct(deleteTarget.id);
+      toast.push({ title: "Product deactivated", tone: "success" });
+      setDeleteTarget(null);
+      await load();
+    } catch (err) {
+      toast.push({
+        title: "Deactivate failed",
+        description: err instanceof Error ? err.message : "Error",
+        tone: "danger",
+      });
+    } finally {
+      setDeleting(false);
+    }
+  }
+
   return (
     <div className="space-y-4">
       <div className="flex flex-wrap items-center justify-between gap-3">
@@ -85,12 +117,14 @@ export function ProductsPage() {
           <Link className="inline-flex h-10 items-center rounded-xl border px-4 text-sm" to="/import-export">
             Import / Export
           </Link>
-          <Link
-            className="inline-flex h-10 items-center rounded-xl bg-[var(--erp-brand)] px-4 text-sm text-white"
-            to="/products/new"
-          >
-            New product
-          </Link>
+          {canWrite ? (
+            <Link
+              className="inline-flex h-10 items-center rounded-xl bg-[var(--erp-brand)] px-4 text-sm text-white"
+              to="/products/new"
+            >
+              New product
+            </Link>
+          ) : null}
         </div>
       </div>
 
@@ -109,15 +143,19 @@ export function ProductsPage() {
           <Button variant="secondary" onClick={() => void load(1, q)}>
             Search
           </Button>
-          <Button variant="secondary" disabled={!selected.length} onClick={() => void bulk("deactivate")}>
-            Deactivate
-          </Button>
-          <Button variant="secondary" disabled={!selected.length} onClick={() => void bulk("activate")}>
-            Activate
-          </Button>
-          <Button variant="secondary" disabled={!selected.length} onClick={() => void bulk("restore")}>
-            Restore
-          </Button>
+          {canDelete ? (
+            <>
+              <Button variant="secondary" disabled={!selected.length} onClick={() => void bulk("deactivate")}>
+                Deactivate
+              </Button>
+              <Button variant="secondary" disabled={!selected.length} onClick={() => void bulk("activate")}>
+                Activate
+              </Button>
+              <Button variant="secondary" disabled={!selected.length} onClick={() => void bulk("restore")}>
+                Restore
+              </Button>
+            </>
+          ) : null}
         </FilterBar>
 
         {error ? (
@@ -161,6 +199,13 @@ export function ProductsPage() {
                   </div>
                 ),
               },
+              {
+                key: "company",
+                header: "Company",
+                sortValue: (r) => companyLabel(r.companyId),
+                filterValue: (r) => companyLabel(r.companyId),
+                cell: (r) => companyLabel(r.companyId),
+              },
               { key: "sku", header: "SKU", sortValue: (r) => r.sku, filterValue: (r) => r.sku, cell: (r) => r.sku },
               {
                 key: "code",
@@ -190,6 +235,28 @@ export function ProductsPage() {
                 filterValue: (r) => r.status,
                 cell: (r) => <Badge tone={r.isActive ? "success" : "neutral"}>{r.status}</Badge>,
               },
+              {
+                key: "actions",
+                header: "",
+                hideable: false,
+                cell: (r) => (
+                  <div className="flex flex-wrap justify-end gap-1">
+                    {canWrite ? (
+                      <Link
+                        className="inline-flex h-8 items-center rounded-lg border px-2 text-xs"
+                        to={`/products/${r.id}?edit=1`}
+                      >
+                        Edit
+                      </Link>
+                    ) : null}
+                    {canDelete && r.isActive ? (
+                      <Button type="button" size="sm" variant="danger" onClick={() => setDeleteTarget(r)}>
+                        Deactivate
+                      </Button>
+                    ) : null}
+                  </div>
+                ),
+              },
             ]}
           />
         )}
@@ -198,6 +265,14 @@ export function ProductsPage() {
           <Pagination page={page} pageSize={20} total={total} onPageChange={(p) => void load(p)} />
         </div>
       </Card>
+
+      <ProductDeleteDialog
+        open={Boolean(deleteTarget)}
+        productName={deleteTarget?.name ?? ""}
+        busy={deleting}
+        onCancel={() => setDeleteTarget(null)}
+        onConfirm={() => void confirmDeactivate()}
+      />
     </div>
   );
 }

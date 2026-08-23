@@ -126,27 +126,23 @@ export function AppShell() {
       data-erp-viewport={mode}
       data-erp-nav={navMode}
       className={`${fillWorkspace ? "h-screen overflow-hidden" : "min-h-screen"} erp-app max-w-full overflow-x-hidden bg-[var(--erp-bg)] text-[var(--erp-ink)] md:grid ${
-        posChrome
-          ? "md:grid-cols-[minmax(0,1fr)]"
-          : collapsed
-            ? "md:grid-cols-[72px_minmax(0,1fr)]"
-            : "md:grid-cols-[280px_minmax(0,1fr)]"
+        collapsed
+          ? "md:grid-cols-[72px_minmax(0,1fr)]"
+          : "md:grid-cols-[280px_minmax(0,1fr)]"
       }`}
     >
       <GlobalSidebarBackdrop visible={mobileOpen} onClose={closeDrawer} />
-      {!posChrome || mobileOpen ? (
-        <GlobalSidebar
-          compact={compact}
-          overlayNav={overlayNav || posChrome}
-          mobileOpen={mobileOpen}
-          query={query}
-          onQueryChange={setQuery}
-          onClose={closeDrawer}
-          onToggleCollapsed={() => setCollapsed((value) => !value)}
-          grantedCount={grantedCount}
-          hasPermission={hasPermission}
-        />
-      ) : null}
+      <GlobalSidebar
+        compact={compact}
+        overlayNav={overlayNav || (posChrome && mobileOpen)}
+        mobileOpen={mobileOpen}
+        query={query}
+        onQueryChange={setQuery}
+        onClose={closeDrawer}
+        onToggleCollapsed={() => setCollapsed((value) => !value)}
+        grantedCount={grantedCount}
+        hasPermission={hasPermission}
+      />
 
       <div className={`flex min-w-0 max-w-full flex-col ${fillWorkspace ? "h-full min-h-0 overflow-hidden" : ""}`}>
         {posChrome ? null : (

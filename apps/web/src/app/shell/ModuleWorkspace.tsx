@@ -10,7 +10,8 @@ import { PosShell } from "@/features/pos/shell/PosShell";
 
 /**
  * Shared module frame inside the ERP AppShell.
- * POS uses PosShell (reference dashboard chrome); other modules use stacked workspace nav.
+ * POS uses PosShell (Command Center + POS module nav) inside the ERP AppShell.
+ * Other modules use stacked workspace nav.
  */
 export function ModuleWorkspace({ children }: { children: ReactNode }) {
   const { pathname } = useLocation();
@@ -37,7 +38,7 @@ export function ModuleWorkspace({ children }: { children: ReactNode }) {
       <PageContainer fill>
         <section
           data-module-workspace={model.id}
-          data-erp-workspace-layout="pos-terminal"
+          data-erp-workspace-layout="pos-workspace"
           className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden bg-[var(--erp-bg)]"
         >
           <PosShell>{children}</PosShell>

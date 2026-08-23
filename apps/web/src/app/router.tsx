@@ -6,10 +6,12 @@ import { ForgotPasswordPage } from "@/features/auth/ForgotPasswordPage";
 import { ResetPasswordPage } from "@/features/auth/ResetPasswordPage";
 import { AppShell } from "@/app/shell/AppShell";
 import { ERP_MODULES, isSystemAdminPath } from "@/app/modules";
+import { POS_ROUTE_PATHS } from "@/features/pos/ownership";
 import { ModulePlaceholderPage } from "@/features/modules/ModulePlaceholderPage";
 import { NotFoundPage } from "@/features/modules/RouteFallbackPage";
 import { DashboardPage } from "@/features/dashboard/DashboardPage";
 import { ProductsPage } from "@/features/product-management/ProductsPage";
+import { ProductDetailPage } from "@/features/product-management/ProductDetailPage";
 import { ProductFormPage } from "@/features/product-management/ProductFormPage";
 import { TaxonomyPage } from "@/features/product-management/TaxonomyPage";
 import { UnitsPage } from "@/features/product-management/UnitsPage";
@@ -57,24 +59,7 @@ import { SecurityPage } from "@/features/system/SecurityPage";
 import { IntegrationsPage } from "@/features/system/IntegrationsPage";
 import { OnlineStorePage } from "@/features/system/OnlineStorePage";
 import { SystemAdminHome } from "@/features/system/SystemAdminHome";
-import { PosTerminalPage } from "@/features/pos/terminal/PosTerminalPage";
-import {
-  PosOverviewPage,
-  PosCustomersHubPage,
-  PosProductsHubPage,
-  PosPricingHubPage,
-  PosPaymentsHubPage,
-  PosInvoicesHubPage,
-  PosReturnsHubPage,
-  PosShiftHubPage,
-  PosApprovalsHubPage,
-  PosReportsHubPage,
-  PosTaxHubPage,
-  PosOfflineHubPage,
-  PosDevicesHubPage,
-  PosSettingsPage,
-  PosHeldSalesPage,
-} from "@/features/pos/pages/PosSectionPages";
+import { buildPosImplementedRoutes } from "@/features/pos/posRoutes";
 import { SystemComingSoonPage } from "@/features/system/SystemComingSoonPage";
 
 /**
@@ -89,27 +74,8 @@ const implemented: Record<string, ReactNode> = {
   "/command-center": <DashboardPage />,
   "/": <DashboardPage />,
 
-  // 02 POS / SALES — reference dashboard terminal + 15-section IA
-  "/pos": <PosTerminalPage />,
-  "/pos/overview": <PosOverviewPage />,
-  "/pos/sales/new": <PosTerminalPage />,
-  "/pos/sales/quick": <PosTerminalPage />,
-  "/pos/sales/hold": <PosTerminalPage />,
-  "/pos/sales/resume": <PosHeldSalesPage />,
-  "/pos/sales/held": <PosHeldSalesPage />,
-  "/pos/customers": <PosCustomersHubPage />,
-  "/pos/products": <PosProductsHubPage />,
-  "/pos/pricing": <PosPricingHubPage />,
-  "/pos/payments": <PosPaymentsHubPage />,
-  "/pos/invoices": <PosInvoicesHubPage />,
-  "/pos/returns": <PosReturnsHubPage />,
-  "/pos/shift": <PosShiftHubPage />,
-  "/pos/approvals": <PosApprovalsHubPage />,
-  "/pos/reports": <PosReportsHubPage />,
-  "/pos/tax": <PosTaxHubPage />,
-  "/pos/offline": <PosOfflineHubPage />,
-  "/pos/devices": <PosDevicesHubPage />,
-  "/pos/settings": <PosSettingsPage />,
+  // 02 POS / SALES — Command Center + 15-module workspace
+  ...buildPosImplementedRoutes(),
 
   // 03 PRODUCT & CATALOG — canonical /product-catalog · alias /products
   "/product-catalog": <ProductsPage />,
@@ -313,7 +279,11 @@ export const router = createBrowserRouter([
             index: module.path === "/",
             element: elementForModulePath(module.path),
           })),
-          { path: "products/:id", element: <ProductFormPage /> },
+          ...POS_ROUTE_PATHS.filter((path) => !ERP_MODULES.some((m) => m.path === path)).map((path) => ({
+            path: path.replace(/^\//, ""),
+            element: elementForModulePath(path),
+          })),
+          { path: "products/:id", element: <ProductDetailPage /> },
           { path: "*", element: <NotFoundPage /> },
         ],
       },

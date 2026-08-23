@@ -58,7 +58,7 @@ describe("ModuleLauncherPage", () => {
     fireEvent.change(search, { target: { value: "invoice" } });
     const invoiceResults = screen.getByRole("list", { name: "Module search results" });
     const invoice = within(invoiceResults).getByRole("link", { name: /→ Invoices/i });
-    expect(invoice).toHaveAttribute("href", "/invoices");
+    expect(invoice).toHaveAttribute("href", "/pos/invoices");
     expect(within(invoiceResults).getByText("02 POS / SALES")).toBeInTheDocument();
 
     fireEvent.change(search, { target: { value: "warehouse" } });
