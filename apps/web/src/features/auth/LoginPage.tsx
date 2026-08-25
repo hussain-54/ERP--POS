@@ -1,6 +1,7 @@
 import { useEffect, useState, type FormEvent } from "react";
 import { Link, Navigate, useLocation, useNavigate } from "react-router-dom";
 import { Button, Form, Input, useToast } from "@electronic-erp/ui";
+import { useDocumentTitle } from "@/app/useDocumentTitle";
 import { AuthShell } from "./AuthShell";
 import { useAuth } from "./AuthContext";
 
@@ -14,12 +15,20 @@ function readRememberedEmail(): string {
   }
 }
 
+type LoginLocationState = {
+  from?: string;
+  sessionExpired?: boolean;
+  sessionExpiredMessage?: string;
+};
+
 export function LoginPage() {
-  const { login, session, loading } = useAuth();
+  const { login, session, loading, sessionExpiredMessage, clearSessionExpiredMessage } = useAuth();
   const toast = useToast();
   const navigate = useNavigate();
   const location = useLocation();
-  const from = (location.state as { from?: string } | null)?.from ?? "/";
+  const locState = (location.state as LoginLocationState | null) ?? null;
+  const from = locState?.from ?? "/";
+  useDocumentTitle("Sign in");
 
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
@@ -28,6 +37,7 @@ export function LoginPage() {
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [fieldErrors, setFieldErrors] = useState<{ email?: string; password?: string }>({});
+  const [expiredNotice, setExpiredNotice] = useState<string | null>(null);
 
   useEffect(() => {
     const remembered = readRememberedEmail();
@@ -36,6 +46,19 @@ export function LoginPage() {
       setRememberMe(true);
     }
   }, []);
+
+  useEffect(() => {
+    const fromNav =
+      locState?.sessionExpiredMessage ??
+      (locState?.sessionExpired ? "Your session has expired. Please sign in again." : null);
+    if (fromNav) setExpiredNotice(fromNav);
+  }, [locState?.sessionExpired, locState?.sessionExpiredMessage]);
+
+  useEffect(() => {
+    if (!sessionExpiredMessage) return;
+    setExpiredNotice(sessionExpiredMessage);
+    clearSessionExpiredMessage();
+  }, [sessionExpiredMessage, clearSessionExpiredMessage]);
 
   if (!loading && session) {
     return <Navigate to={from} replace />;
@@ -93,6 +116,14 @@ export function LoginPage() {
       }
     >
       <Form onSubmit={onSubmit} noValidate className="flex flex-col gap-4">
+        {expiredNotice ? (
+          <div
+            role="status"
+            className="rounded-[var(--erp-radius)] border border-[var(--erp-brand)]/30 bg-[var(--erp-brand-soft)] px-3 py-2.5 text-sm text-[var(--erp-ink)]"
+          >
+            {expiredNotice}
+          </div>
+        ) : null}
         {error ? (
           <div
             role="alert"

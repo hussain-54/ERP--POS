@@ -1,6 +1,6 @@
-import type { ReactNode } from "react";
 import { Link } from "react-router-dom";
 import { Button, SearchInput } from "@electronic-erp/ui";
+import { APP_MARK, APP_NAME } from "@/branding";
 import { SidebarNav } from "@/app/shell/SidebarNav";
 
 export function GlobalSidebar({
@@ -32,21 +32,19 @@ export function GlobalSidebar({
       aria-hidden={overlayNav && !mobileOpen}
       aria-modal={overlayNav && mobileOpen ? true : undefined}
       role={overlayNav && mobileOpen ? "dialog" : undefined}
-      className={`fixed inset-y-0 left-0 z-40 flex w-[min(20rem,calc(100vw-2.75rem))] max-w-full flex-col border-r border-[var(--erp-border)] bg-white transition-transform duration-200 ease-out md:static md:z-auto md:w-auto md:max-w-none md:translate-x-0 ${
+      className={`fixed inset-y-0 left-0 z-40 flex w-[min(20rem,calc(100vw-2.75rem))] max-w-full flex-col border-r border-[var(--erp-border)] bg-[var(--erp-surface)] transition-transform duration-200 ease-out md:static md:z-auto md:w-auto md:max-w-none md:translate-x-0 ${
         mobileOpen ? "translate-x-0" : "-translate-x-full invisible md:visible"
       } ${overlayNav && !mobileOpen ? "pointer-events-none" : ""}`}
     >
       <div className="flex h-14 shrink-0 items-center justify-between gap-2 border-b border-[var(--erp-border)] px-3">
         <Link to="/command-center" className="flex min-w-0 items-center gap-2" onClick={onClose}>
-          <span className="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-[var(--erp-brand)] text-sm font-bold text-white">
-            E
+          <span className="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-[var(--erp-brand)] text-[10px] font-bold tracking-tight text-white">
+            {APP_MARK}
           </span>
           {compact ? (
-            <span className="sr-only">Electronic ERP</span>
+            <span className="sr-only">{APP_NAME}</span>
           ) : (
-            <span className="min-w-0 text-sm font-semibold leading-snug text-[var(--erp-ink)]">
-              Electronic ERP
-            </span>
+            <span className="min-w-0 text-sm font-semibold leading-snug text-[var(--erp-ink)]">{APP_NAME}</span>
           )}
         </Link>
         <div className="flex items-center gap-1">
@@ -99,7 +97,7 @@ export function GlobalSidebarBackdrop({
 }: {
   visible: boolean;
   onClose: () => void;
-}): ReactNode {
+}) {
   if (!visible) return null;
   return (
     <button

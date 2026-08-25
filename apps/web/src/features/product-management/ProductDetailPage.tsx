@@ -1,25 +1,31 @@
-import { useCallback, useEffect, useState, type FormEvent } from "react";
-import { Link, useNavigate, useParams, useSearchParams } from "react-router-dom";
-import type { ProductMaster } from "@electronic-erp/contracts";
+import { useCallback, useEffect, useMemo, useState, type FormEvent } from "react";
+import { useNavigate, useParams, useSearchParams } from "react-router-dom";
+import type { ProductMaster, ProductSpecifications, ProductStockSummary } from "@electronic-erp/contracts";
 import {
   Badge,
+  Breadcrumb,
   Button,
   ErrorState,
   Form,
   FormActions,
   LoadingState,
+  PageHeader,
   useToast,
 } from "@electronic-erp/ui";
+import { useDocumentTitle } from "@/app/useDocumentTitle";
 import { useAuth } from "@/features/auth/AuthContext";
 import { catalogApi, notifyCatalogChanged } from "./catalog-api";
+import { BarcodeStrip } from "./BarcodeStrip";
 import { ProductDeleteDialog } from "./ProductDeleteDialog";
 import { ProductFormSections } from "./ProductFormSections";
 import { ProductMediaPanel } from "./ProductMediaPanel";
 import { ProductShowcase } from "./ProductShowcase";
+import { statusTone } from "./product-display-utils";
 import { useProductMedia } from "./product-media";
 import {
   buildProductPayload,
   EMPTY_PRODUCT_FORM,
+  labelForOption,
   productToForm,
   type ProductFormState,
 } from "./product-form-state";
@@ -32,7 +38,7 @@ import { useProductTaxonomy } from "./useProductTaxonomy";
 
 function primaryBarcodeFromList(items: Array<Record<string, unknown>>): string {
   const primary = items.find((b) => b.is_primary) ?? items[0];
-  return primary ? String(primary.barcode ?? "") : "";
+  return primary ? String(primary.code ?? primary.barcode ?? "") : "";
 }
 
 export function ProductDetailPage() {
@@ -47,6 +53,8 @@ export function ProductDetailPage() {
   const [mode, setMode] = useState<"view" | "edit">("view");
   const [product, setProduct] = useState<ProductMaster | null>(null);
   const [primaryBarcode, setPrimaryBarcode] = useState("");
+  const [stock, setStock] = useState<ProductStockSummary | null>(null);
+  const [specifications, setSpecifications] = useState<ProductSpecifications | null>(null);
   const [form, setForm] = useState<ProductFormState>(EMPTY_PRODUCT_FORM);
   const [fieldErrors, setFieldErrors] = useState<ProductFormFieldErrors>({});
   const [loading, setLoading] = useState(true);
@@ -58,16 +66,33 @@ export function ProductDetailPage() {
   const taxonomy = useProductTaxonomy();
   const media = useProductMedia(id, organizationId);
 
+  useDocumentTitle(product?.name ?? "Product");
+
+  const galleryUrls = useMemo(() => {
+    const urls = Object.values(media.mediaPreviewUrls);
+    if (media.primaryImageUrl && !urls.includes(media.primaryImageUrl)) {
+      return [media.primaryImageUrl, ...urls];
+    }
+    return urls.length ? urls : media.primaryImageUrl ? [media.primaryImageUrl] : [];
+  }, [media.mediaPreviewUrls, media.primaryImageUrl]);
+
   const loadProduct = useCallback(async () => {
     if (!id) return;
     setLoading(true);
     setError(null);
     try {
-      const [p, barcodes] = await Promise.all([catalogApi.getProduct(id), catalogApi.listBarcodes(id)]);
+      const [p, barcodes, stockSummary, specs] = await Promise.all([
+        catalogApi.getProduct(id),
+        catalogApi.listBarcodes(id),
+        catalogApi.getProductStock(id).catch(() => null),
+        catalogApi.getProductSpecifications(id).catch(() => null),
+      ]);
       setProduct(p);
+      setStock(stockSummary);
+      setSpecifications(specs);
       const barcode = primaryBarcodeFromList(barcodes.items);
       setPrimaryBarcode(barcode);
-      setForm({ ...productToForm(p), primaryBarcode: barcode });
+      setForm(productToForm(p, { primaryBarcode: barcode, specifications: specs }));
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to load product");
     } finally {
@@ -81,11 +106,11 @@ export function ProductDetailPage() {
 
   useEffect(() => {
     if (searchParams.get("edit") === "1" && product && canWrite && mode === "view") {
-      setForm({ ...productToForm(product), primaryBarcode });
+      setForm(productToForm(product, { primaryBarcode, specifications }));
       setMode("edit");
       setSearchParams({}, { replace: true });
     }
-  }, [canWrite, mode, primaryBarcode, product, searchParams, setSearchParams]);
+  }, [canWrite, mode, primaryBarcode, product, searchParams, setSearchParams, specifications]);
 
   function setField<K extends keyof ProductFormState>(key: K, value: ProductFormState[K]) {
     setForm((prev) => ({ ...prev, [key]: value }));
@@ -99,7 +124,7 @@ export function ProductDetailPage() {
 
   function startEdit() {
     if (!product) return;
-    setForm({ ...productToForm(product), primaryBarcode });
+    setForm(productToForm(product, { primaryBarcode, specifications }));
     setFieldErrors({});
     setMode("edit");
   }
@@ -127,14 +152,14 @@ export function ProductDetailPage() {
       setProduct(updated);
       notifyCatalogChanged({ productId: id });
       toast.push({ title: "Product updated", tone: "success" });
-      try {
-        await catalogApi.generateBarcode(id);
-        const barcodes = await catalogApi.listBarcodes(id);
-        const barcode = primaryBarcodeFromList(barcodes.items);
-        setPrimaryBarcode(barcode);
-      } catch {
-        /* barcode refresh is best-effort */
-      }
+      const [barcodes, stockSummary, specs] = await Promise.all([
+        catalogApi.listBarcodes(id).catch(() => ({ items: [] as Array<Record<string, unknown>> })),
+        catalogApi.getProductStock(id).catch(() => null),
+        catalogApi.getProductSpecifications(id).catch(() => null),
+      ]);
+      setPrimaryBarcode(primaryBarcodeFromList(barcodes.items) || form.primaryBarcode.trim());
+      setStock(stockSummary);
+      setSpecifications(specs);
       setMode("view");
     } catch (err) {
       toast.push({
@@ -216,34 +241,32 @@ export function ProductDetailPage() {
 
   return (
     <div className="space-y-4">
-      <div className="flex flex-wrap items-start justify-between gap-3">
-        <div>
-          <p className="text-sm text-[var(--erp-muted)]">
-            <Link className="text-[var(--erp-brand)] underline" to="/products">
-              Products
-            </Link>
-            {" / "}
-            {product.name}
-          </p>
-          <div className="mt-1 flex flex-wrap items-center gap-2">
-            <h1 className="text-2xl font-semibold">{product.name}</h1>
-            <Badge tone={product.isActive ? "success" : "neutral"}>{product.status}</Badge>
-          </div>
-          <p className="mt-1 text-sm text-[var(--erp-muted)]">
-            SKU {product.sku} · Code {product.productCode}
-          </p>
-        </div>
-        <div className="flex flex-wrap gap-2">
-          {mode === "view" ? (
+      <Breadcrumb
+        items={[
+          { label: "Home", href: "/" },
+          { label: "Products", href: "/products" },
+          { label: product.name },
+        ]}
+      />
+
+      <PageHeader
+        title={product.name}
+        description={
+          mode === "view"
+            ? `${labelForOption(taxonomy.brands, product.brandId)} · SKU ${product.sku} · ${labelForOption(taxonomy.categories, product.categoryId)}`
+            : "Edit product information and save changes."
+        }
+        actions={
+          mode === "view" ? (
             <>
               {canWrite ? (
                 <Button type="button" onClick={startEdit}>
-                  Edit product
+                  Edit Product
                 </Button>
               ) : null}
               {canDelete && product.isActive ? (
                 <Button type="button" variant="danger" onClick={() => setDeleteOpen(true)}>
-                  Deactivate
+                  Delete Product
                 </Button>
               ) : null}
             </>
@@ -256,9 +279,37 @@ export function ProductDetailPage() {
                 Save changes
               </Button>
             </>
+          )
+        }
+      />
+
+      {mode === "view" ? (
+        <div className="flex flex-wrap items-center gap-3 rounded-[var(--erp-radius-lg)] border border-[var(--erp-border)] bg-[var(--erp-surface)] p-3">
+          {media.primaryImageUrl ? (
+            <img
+              src={media.primaryImageUrl}
+              alt=""
+              className="h-14 w-14 rounded-md border border-[var(--erp-border)] object-cover"
+            />
+          ) : (
+            <div className="flex h-14 w-14 items-center justify-center rounded-md border border-[var(--erp-border)] bg-[var(--erp-surface-muted)] text-xs font-semibold text-[var(--erp-muted)]">
+              {product.name.slice(0, 2).toUpperCase()}
+            </div>
           )}
+          <div className="min-w-0 flex-1">
+            <div className="flex flex-wrap items-center gap-2">
+              <Badge tone={statusTone(product)}>{product.status}</Badge>
+              <span className="text-xs text-[var(--erp-muted)]">SKU {product.sku}</span>
+              <span className="text-xs text-[var(--erp-muted)]">Code {product.productCode}</span>
+            </div>
+            <p className="mt-1 text-sm text-[var(--erp-muted)]">
+              {labelForOption(taxonomy.brands, product.brandId)} ·{" "}
+              {labelForOption(taxonomy.categories, product.categoryId)}
+            </p>
+          </div>
+          {primaryBarcode ? <BarcodeStrip value={primaryBarcode} /> : null}
         </div>
-      </div>
+      ) : null}
 
       {mode === "view" ? (
         <ProductShowcase
@@ -269,7 +320,10 @@ export function ProductDetailPage() {
           brands={taxonomy.brands}
           companies={taxonomy.companies}
           imageUrl={media.primaryImageUrl}
+          galleryUrls={galleryUrls}
           primaryBarcode={primaryBarcode}
+          stock={stock}
+          specifications={specifications}
         />
       ) : (
         <Form id="product-edit-form" onSubmit={onSave} className="space-y-4">

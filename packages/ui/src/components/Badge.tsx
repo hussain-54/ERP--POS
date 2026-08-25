@@ -16,7 +16,12 @@ export function Badge({
     brand: "bg-[var(--erp-brand-soft)] text-[var(--erp-brand)]",
   };
   return (
-    <span className={cn("inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium", tones[tone])}>
+    <span
+      className={cn(
+        "inline-flex items-center rounded-[var(--erp-radius-sm)] px-2 py-0.5 text-xs font-semibold",
+        tones[tone],
+      )}
+    >
       {children}
     </span>
   );

@@ -1,4 +1,5 @@
 import { Breadcrumb } from "@electronic-erp/ui";
+import { APP_NAME } from "@/branding";
 
 export function Breadcrumbs({
   moduleTitle,
@@ -10,7 +11,7 @@ export function Breadcrumbs({
   modulePath?: string;
 }) {
   const items = [
-    { label: "Electronic ERP" },
+    { label: APP_NAME },
     { label: moduleTitle },
     ...(pageTitle ? [{ label: pageTitle }] : []),
   ];
@@ -20,9 +21,7 @@ export function Breadcrumbs({
       <div className="hidden md:block">
         <Breadcrumb items={items} />
       </div>
-      <div className="truncate text-sm font-semibold text-[var(--erp-ink)]">
-        {pageTitle ?? "Workspace"}
-      </div>
+      <div className="truncate text-sm font-semibold text-[var(--erp-ink)]">{pageTitle ?? moduleTitle}</div>
     </div>
   );
 }

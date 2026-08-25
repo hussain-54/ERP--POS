@@ -1,4 +1,4 @@
-import type { CreateProductMasterInput, ProductMaster } from "@electronic-erp/contracts";
+import type { CreateProductMasterInput, ProductMaster, ProductSpecifications } from "@electronic-erp/contracts";
 
 export type ProductFormState = {
   productCode: string;
@@ -78,7 +78,11 @@ export function slugTaxonomyCode(name: string): string {
   return base || `item-${Date.now()}`;
 }
 
-export function productToForm(product: ProductMaster): ProductFormState {
+export function productToForm(
+  product: ProductMaster,
+  extras?: { primaryBarcode?: string; specifications?: ProductSpecifications | null },
+): ProductFormState {
+  const specs = extras?.specifications;
   return {
     productCode: product.productCode,
     sku: product.sku,
@@ -103,12 +107,12 @@ export function productToForm(product: ProductMaster): ProductFormState {
     dealerPrice: String(product.dealerPrice),
     minimumSalePrice: String(product.minimumSalePrice),
     specialPrice: product.specialPrice == null ? "" : String(product.specialPrice),
-    primaryBarcode: "",
-    size: "",
-    color: "",
-    watt: "",
-    voltage: "",
-    material: "",
+    primaryBarcode: extras?.primaryBarcode ?? "",
+    size: specs?.size ?? "",
+    color: specs?.color ?? "",
+    watt: specs?.watt ?? "",
+    voltage: specs?.voltage ?? "",
+    material: specs?.material ?? "",
   };
 }
 

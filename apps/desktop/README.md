@@ -1,4 +1,4 @@
-# Electronic ERP — Windows Desktop POS
+# ERP System — Windows Desktop POS
 
 Production Electron shell with:
 

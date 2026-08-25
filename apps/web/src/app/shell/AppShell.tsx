@@ -15,6 +15,7 @@ import { GlobalHeader } from "@/app/shell/GlobalHeader";
 import { GlobalSidebar, GlobalSidebarBackdrop } from "@/app/shell/GlobalSidebar";
 import { ModuleWorkspace } from "@/app/shell/ModuleWorkspace";
 import { useViewportMode } from "@/app/shell/viewport";
+import { useDocumentTitle } from "@/app/useDocumentTitle";
 import { UnauthorizedPage } from "@/features/modules/RouteFallbackPage";
 
 export function AppShell() {
@@ -35,6 +36,7 @@ export function AppShell() {
   const forbidden =
     Boolean(required) && grantedCount > 0 && !canShowNavItem(required, grantedCount, hasPermission);
   const header = resolveShellHeader(location.pathname);
+  useDocumentTitle(header.pageTitle ? `${header.pageTitle} · ${header.moduleTitle}` : header.moduleTitle);
 
   const commandItems = useMemo(() => {
     const items: Array<{ id: string; label: string; group: string; onSelect: () => void }> = [];

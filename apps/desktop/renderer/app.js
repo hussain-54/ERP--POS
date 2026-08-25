@@ -52,7 +52,7 @@ $("btn-hw").addEventListener("click", async () => {
 
 $("btn-print").addEventListener("click", async () => {
   const result = await api.printReceipt({
-    payload: "Electronic ERP\\nTest receipt\\n",
+    payload: "ERP System\\nTest receipt\\n",
     copies: 1,
   });
   alert(JSON.stringify(result));

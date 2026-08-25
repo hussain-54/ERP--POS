@@ -249,12 +249,63 @@ export const ProductListQuerySchema = z.object({
   status: ProductStatusSchema.optional(),
   isActive: z.coerce.boolean().optional(),
   includeDeleted: z.coerce.boolean().optional(),
+  lowStock: z.coerce.boolean().optional(),
+  onPromotion: z.coerce.boolean().optional(),
   sortBy: z.enum(["name", "sku", "updatedAt", "retailPrice"]).default("name"),
   sortDir: z.enum(["asc", "desc"]).default("asc"),
   page: z.coerce.number().int().min(1).default(1),
   pageSize: z.coerce.number().int().min(1).max(100).default(20),
 });
 export type ProductListQuery = z.infer<typeof ProductListQuerySchema>;
+
+/** List row enrichment — barcodes, stock, taxonomy labels, primary image path. */
+export const ProductListItemSchema = ProductMasterSchema.extend({
+  primaryBarcode: z.string().nullable().optional(),
+  brandName: z.string().nullable().optional(),
+  companyName: z.string().nullable().optional(),
+  categoryName: z.string().nullable().optional(),
+  stockOnHand: z.number().optional(),
+  stockAvailable: z.number().optional(),
+  stockReserved: z.number().optional(),
+  primaryImagePath: z.string().nullable().optional(),
+});
+export type ProductListItem = z.infer<typeof ProductListItemSchema>;
+
+export const ProductStatsSchema = z.object({
+  totalProducts: z.number().int().min(0),
+  activeProducts: z.number().int().min(0),
+  inactiveProducts: z.number().int().min(0),
+  lowStockItems: z.number().int().min(0),
+  onPromotion: z.number().int().min(0),
+});
+export type ProductStats = z.infer<typeof ProductStatsSchema>;
+
+export const ProductStockSummarySchema = z.object({
+  stockOnHand: z.number(),
+  stockAvailable: z.number(),
+  stockReserved: z.number(),
+  reorderLevel: z.number(),
+});
+export type ProductStockSummary = z.infer<typeof ProductStockSummarySchema>;
+
+export const ProductSpecificationsSchema = z.object({
+  size: z.string().nullable().optional(),
+  color: z.string().nullable().optional(),
+  watt: z.string().nullable().optional(),
+  voltage: z.string().nullable().optional(),
+  ampere: z.string().nullable().optional(),
+  length: z.string().nullable().optional(),
+  width: z.string().nullable().optional(),
+  height: z.string().nullable().optional(),
+  material: z.string().nullable().optional(),
+  gauge: z.string().nullable().optional(),
+  phase: z.string().nullable().optional(),
+  frequency: z.string().nullable().optional(),
+  capacity: z.string().nullable().optional(),
+  modelLabel: z.string().nullable().optional(),
+  weight: z.string().nullable().optional(),
+});
+export type ProductSpecifications = z.infer<typeof ProductSpecificationsSchema>;
 
 export const BulkProductActionSchema = z.object({
   ids: z.array(UuidSchema).min(1),

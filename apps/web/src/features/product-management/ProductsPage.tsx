@@ -1,50 +1,109 @@
 import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
-import type { ProductMaster } from "@electronic-erp/contracts";
+import type { ProductListItem, ProductStats } from "@electronic-erp/contracts";
 import {
-  Badge,
+  Breadcrumb,
   Button,
   Card,
-  DataTable,
+  EmptyState,
   ErrorState,
   FilterBar,
+  KpiCard,
+  PageHeader,
   Pagination,
   SearchInput,
+  Select,
   useToast,
 } from "@electronic-erp/ui";
+import { useDocumentTitle } from "@/app/useDocumentTitle";
 import { useAuth } from "@/features/auth/AuthContext";
 import { catalogApi, CATALOG_CHANGED_EVENT } from "./catalog-api";
 import { ProductDeleteDialog } from "./ProductDeleteDialog";
-import { labelForOption } from "./product-form-state";
+import { ProductListDesktop, ProductListMobile } from "./ProductListViews";
+import { useDebouncedValue } from "./useDebouncedValue";
+import { useProductListImages } from "./useProductListImages";
 import { useProductTaxonomy } from "./useProductTaxonomy";
 
+type StatusFilter = "" | "active" | "inactive" | "draft";
+
+type ListFilters = {
+  categoryId: string;
+  brandId: string;
+  companyId: string;
+  status: StatusFilter;
+  lowStock: boolean;
+  onPromotion: boolean;
+};
+
+const EMPTY_FILTERS: ListFilters = {
+  categoryId: "",
+  brandId: "",
+  companyId: "",
+  status: "",
+  lowStock: false,
+  onPromotion: false,
+};
+
+const PAGE_SIZE = 20;
+
 export function ProductsPage() {
+  useDocumentTitle("All Products");
   const toast = useToast();
   const { hasPermission } = useAuth();
   const canWrite = hasPermission("products.write");
   const canDelete = hasPermission("products.delete");
+  const canImport = hasPermission("products.import");
   const taxonomy = useProductTaxonomy();
 
-  const [items, setItems] = useState<ProductMaster[]>([]);
+  const [items, setItems] = useState<ProductListItem[]>([]);
   const [total, setTotal] = useState(0);
   const [page, setPage] = useState(1);
   const [q, setQ] = useState("");
+  const debouncedQ = useDebouncedValue(q, 400);
+  const [filters, setFilters] = useState<ListFilters>(EMPTY_FILTERS);
+  const [showAdvanced, setShowAdvanced] = useState(false);
   const [loading, setLoading] = useState(true);
+  const [statsLoading, setStatsLoading] = useState(true);
+  const [stats, setStats] = useState<ProductStats | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [selected, setSelected] = useState<string[]>([]);
-  const [deleteTarget, setDeleteTarget] = useState<ProductMaster | null>(null);
+  const [deleteTarget, setDeleteTarget] = useState<ProductListItem | null>(null);
   const [deleting, setDeleting] = useState(false);
 
-  const companyLabel = (id?: string | null) => labelForOption(taxonomy.companies, id);
+  const imageUrls = useProductListImages(items.map((i) => i.primaryImagePath));
 
-  async function load(nextPage = page, query = q) {
+  async function loadStats() {
+    setStatsLoading(true);
+    try {
+      setStats(await catalogApi.getProductStats());
+    } catch {
+      setStats(null);
+    } finally {
+      setStatsLoading(false);
+    }
+  }
+
+  async function load(nextPage = page) {
     setLoading(true);
     setError(null);
     try {
-      const res = await catalogApi.listProducts({ page: nextPage, pageSize: 20, q: query || undefined });
+      const res = await catalogApi.listProducts({
+        page: nextPage,
+        pageSize: PAGE_SIZE,
+        q: debouncedQ.trim() || undefined,
+        categoryId: filters.categoryId || undefined,
+        brandId: filters.brandId || undefined,
+        companyId: filters.companyId || undefined,
+        status: filters.status || undefined,
+        lowStock: filters.lowStock || undefined,
+        onPromotion: filters.onPromotion || undefined,
+        sortBy: "name",
+        sortDir: "asc",
+      });
       setItems(res.items);
       setTotal(res.total);
       setPage(res.page);
+      setSelected([]);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to load products");
     } finally {
@@ -53,17 +112,23 @@ export function ProductsPage() {
   }
 
   useEffect(() => {
-    void load(1, "");
+    void loadStats();
   }, []);
 
   useEffect(() => {
+    void load(1);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [debouncedQ, filters]);
+
+  useEffect(() => {
     const onCatalogChanged = () => {
-      void load(page, q);
+      void load(page);
+      void loadStats();
     };
     window.addEventListener(CATALOG_CHANGED_EVENT, onCatalogChanged);
     return () => window.removeEventListener(CATALOG_CHANGED_EVENT, onCatalogChanged);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [page, q]);
+  }, [page, debouncedQ, filters]);
 
   async function bulk(action: "deactivate" | "activate" | "restore") {
     if (!selected.length) return;
@@ -72,6 +137,7 @@ export function ProductsPage() {
       toast.push({ title: `Updated ${res.affected} products`, tone: "success" });
       setSelected([]);
       await load();
+      await loadStats();
     } catch (err) {
       toast.push({
         title: "Bulk action failed",
@@ -89,6 +155,7 @@ export function ProductsPage() {
       toast.push({ title: "Product deactivated", tone: "success" });
       setDeleteTarget(null);
       await load();
+      await loadStats();
     } catch (err) {
       toast.push({
         title: "Deactivate failed",
@@ -100,56 +167,108 @@ export function ProductsPage() {
     }
   }
 
+  function toggleSelect(id: string, checked: boolean) {
+    setSelected((prev) => (checked ? [...prev, id] : prev.filter((x) => x !== id)));
+  }
+
+  function toggleAll(checked: boolean) {
+    setSelected(checked ? items.map((i) => i.id) : []);
+  }
+
+  const statValue = (n: number | undefined) =>
+    statsLoading ? "…" : (n ?? 0).toLocaleString();
+
   return (
     <div className="space-y-4">
-      <div className="erp-page-toolbar flex flex-wrap items-center justify-between gap-3">
-        <div className="min-w-0">
-          <h1 className="text-2xl font-semibold">Products</h1>
-          <p className="text-sm text-[var(--erp-muted)]">Product master, pricing, barcodes, and attributes.</p>
-        </div>
-        <div className="flex flex-wrap gap-2">
-          <Link className="inline-flex h-10 items-center rounded-xl border px-4 text-sm" to="/categories">
-            Taxonomy
-          </Link>
-          <Link className="inline-flex h-10 items-center rounded-xl border px-4 text-sm" to="/units">
-            Units
-          </Link>
-          <Link className="inline-flex h-10 items-center rounded-xl border px-4 text-sm" to="/import-export">
-            Import / Export
-          </Link>
-          {canWrite ? (
-            <Link
-              className="inline-flex h-10 items-center rounded-xl bg-[var(--erp-brand)] px-4 text-sm text-white"
-              to="/products/new"
-            >
-              New product
-            </Link>
-          ) : null}
-        </div>
+      <PageHeader
+        title="Products"
+        description="Manage product master data, pricing, inventory, and catalog information."
+        actions={
+          <>
+            {canImport ? (
+              <Link
+                className="inline-flex h-10 items-center rounded-xl border border-[var(--erp-border)] bg-[var(--erp-surface)] px-4 text-sm font-medium hover:bg-[var(--erp-surface-muted)]"
+                to="/import-export"
+              >
+                Import
+              </Link>
+            ) : null}
+            {canWrite ? (
+              <Link
+                className="inline-flex h-10 items-center rounded-xl bg-[var(--erp-brand)] px-4 text-sm font-medium text-white hover:opacity-95"
+                to="/products/new"
+              >
+                + Add New Product
+              </Link>
+            ) : null}
+          </>
+        }
+      />
+
+      <Breadcrumb
+        items={[
+          { label: "Home", href: "/" },
+          { label: "Products", href: "/products" },
+          { label: "All Products" },
+        ]}
+      />
+
+      <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-5">
+        <KpiCard label="Total Products" value={statValue(stats?.totalProducts)} tone="brand" />
+        <KpiCard label="Active Products" value={statValue(stats?.activeProducts)} tone="success" />
+        <KpiCard label="Low Stock Items" value={statValue(stats?.lowStockItems)} tone="warning" />
+        <KpiCard label="Inactive Products" value={statValue(stats?.inactiveProducts)} tone="neutral" />
+        <KpiCard label="On Promotion" value={statValue(stats?.onPromotion)} tone="brand" />
       </div>
 
       <Card>
-        <FilterBar className="mb-3">
-          <div className="min-w-0 flex-1 basis-full sm:basis-auto sm:min-w-[240px]">
+        <FilterBar className="mb-3 flex-wrap gap-2">
+          <div className="min-w-0 flex-1 basis-full sm:min-w-[220px] sm:basis-auto">
             <SearchInput
-              label="Search"
+              label="Search products"
+              placeholder="Name, SKU, barcode, code, brand…"
               value={q}
               onChange={(e) => setQ(e.target.value)}
-              onKeyDown={(e) => {
-                if (e.key === "Enter") void load(1, q);
-              }}
             />
           </div>
-          <Button variant="secondary" onClick={() => void load(1, q)}>
-            Search
+          <Select
+            label="Category"
+            value={filters.categoryId}
+            onChange={(e) => setFilters((f) => ({ ...f, categoryId: e.target.value }))}
+            options={[
+              { value: "", label: "All categories" },
+              ...taxonomy.categories.map((c) => ({ value: c.value, label: c.label })),
+            ]}
+          />
+          <Select
+            label="Brand"
+            value={filters.brandId}
+            onChange={(e) => setFilters((f) => ({ ...f, brandId: e.target.value }))}
+            options={[
+              { value: "", label: "All brands" },
+              ...taxonomy.brands.map((b) => ({ value: b.value, label: b.label })),
+            ]}
+          />
+          <Select
+            label="Status"
+            value={filters.status}
+            onChange={(e) =>
+              setFilters((f) => ({ ...f, status: e.target.value as StatusFilter }))
+            }
+            options={[
+              { value: "", label: "All statuses" },
+              { value: "active", label: "Active" },
+              { value: "inactive", label: "Inactive" },
+              { value: "draft", label: "Draft" },
+            ]}
+          />
+          <Button type="button" variant="secondary" onClick={() => setShowAdvanced((v) => !v)}>
+            {showAdvanced ? "Hide filters" : "Additional filters"}
           </Button>
           {canDelete ? (
             <>
               <Button variant="secondary" disabled={!selected.length} onClick={() => void bulk("deactivate")}>
                 Deactivate
-              </Button>
-              <Button variant="secondary" disabled={!selected.length} onClick={() => void bulk("activate")}>
-                Activate
               </Button>
               <Button variant="secondary" disabled={!selected.length} onClick={() => void bulk("restore")}>
                 Restore
@@ -158,112 +277,93 @@ export function ProductsPage() {
           ) : null}
         </FilterBar>
 
+        {showAdvanced ? (
+          <div className="mb-3 flex flex-wrap gap-3 rounded-[var(--erp-radius)] border border-[var(--erp-border)] bg-[var(--erp-surface-muted)]/40 p-3">
+            <Select
+              label="Company"
+              value={filters.companyId}
+              onChange={(e) => setFilters((f) => ({ ...f, companyId: e.target.value }))}
+              options={[
+                { value: "", label: "All companies" },
+                ...taxonomy.companies.map((c) => ({ value: c.value, label: c.label })),
+              ]}
+            />
+            <label className="inline-flex min-h-10 cursor-pointer items-center gap-2 text-sm">
+              <input
+                type="checkbox"
+                checked={filters.lowStock}
+                onChange={(e) => setFilters((f) => ({ ...f, lowStock: e.target.checked }))}
+              />
+              Low stock only
+            </label>
+            <label className="inline-flex min-h-10 cursor-pointer items-center gap-2 text-sm">
+              <input
+                type="checkbox"
+                checked={filters.onPromotion}
+                onChange={(e) => setFilters((f) => ({ ...f, onPromotion: e.target.checked }))}
+              />
+              On promotion only
+            </label>
+            <Button
+              type="button"
+              variant="secondary"
+              size="sm"
+              onClick={() => setFilters(EMPTY_FILTERS)}
+            >
+              Clear filters
+            </Button>
+          </div>
+        ) : null}
+
         {error ? (
           <ErrorState description={error} onRetry={() => void load()} />
-        ) : (
-          <DataTable
-            loading={loading}
-            rows={items}
-            rowKey={(r) => r.id}
-            emptyTitle="No products yet"
-            emptyDescription="Create your first product or import a CSV template."
-            columnVisibility
-            columns={[
-              {
-                key: "select",
-                header: "",
-                hideable: false,
-                cell: (r) => (
-                  <input
-                    type="checkbox"
-                    checked={selected.includes(r.id)}
-                    onChange={(e) => {
-                      setSelected((prev) =>
-                        e.target.checked ? [...prev, r.id] : prev.filter((id) => id !== r.id),
-                      );
-                    }}
-                  />
-                ),
-              },
-              {
-                key: "name",
-                header: "Product",
-                sortValue: (r) => r.name,
-                filterValue: (r) => `${r.name} ${r.nameUr ?? ""}`,
-                cell: (r) => (
-                  <div>
-                    <Link className="font-medium text-[var(--erp-brand)] underline" to={`/products/${r.id}`}>
-                      {r.name}
-                    </Link>
-                    <div className="text-xs text-[var(--erp-muted)]">{r.nameUr}</div>
-                  </div>
-                ),
-              },
-              {
-                key: "company",
-                header: "Company",
-                sortValue: (r) => companyLabel(r.companyId),
-                filterValue: (r) => companyLabel(r.companyId),
-                cell: (r) => companyLabel(r.companyId),
-              },
-              { key: "sku", header: "SKU", sortValue: (r) => r.sku, filterValue: (r) => r.sku, cell: (r) => r.sku },
-              {
-                key: "code",
-                header: "Code",
-                sortValue: (r) => r.productCode,
-                filterValue: (r) => r.productCode,
-                cell: (r) => r.productCode,
-              },
-              {
-                key: "price",
-                header: "Retail",
-                align: "right",
-                sortValue: (r) => r.retailPrice,
-                cell: (r) => r.retailPrice.toFixed(2),
-              },
-              {
-                key: "margin",
-                header: "Margin",
-                align: "right",
-                sortValue: (r) => r.profitMarginPercent ?? 0,
-                cell: (r) => `${r.profitMarginPercent ?? 0}%`,
-              },
-              {
-                key: "status",
-                header: "Status",
-                sortValue: (r) => r.status,
-                filterValue: (r) => r.status,
-                cell: (r) => <Badge tone={r.isActive ? "success" : "neutral"}>{r.status}</Badge>,
-              },
-              {
-                key: "actions",
-                header: "",
-                hideable: false,
-                cell: (r) => (
-                  <div className="flex flex-wrap justify-end gap-1">
-                    {canWrite ? (
-                      <Link
-                        className="inline-flex h-8 items-center rounded-lg border px-2 text-xs"
-                        to={`/products/${r.id}?edit=1`}
-                      >
-                        Edit
-                      </Link>
-                    ) : null}
-                    {canDelete && r.isActive ? (
-                      <Button type="button" size="sm" variant="danger" onClick={() => setDeleteTarget(r)}>
-                        Deactivate
-                      </Button>
-                    ) : null}
-                  </div>
-                ),
-              },
-            ]}
+        ) : !loading && !items.length ? (
+          <EmptyState
+            title="No products found"
+            description="Adjust your search or filters, or create a new product."
+            action={
+              canWrite ? (
+                <Link
+                  className="inline-flex h-10 items-center rounded-xl bg-[var(--erp-brand)] px-4 text-sm text-white"
+                  to="/products/new"
+                >
+                  Add New Product
+                </Link>
+              ) : undefined
+            }
           />
+        ) : (
+          <>
+            <ProductListDesktop
+              items={items}
+              imageUrls={imageUrls}
+              selected={selected}
+              onToggleSelect={toggleSelect}
+              onToggleAll={toggleAll}
+              canWrite={canWrite}
+              canDelete={canDelete}
+              onDelete={setDeleteTarget}
+              loading={loading}
+            />
+            <ProductListMobile
+              items={items}
+              imageUrls={imageUrls}
+              canWrite={canWrite}
+              canDelete={canDelete}
+              onDelete={setDeleteTarget}
+              loading={loading}
+            />
+          </>
         )}
 
-        <div className="mt-4">
-          <Pagination page={page} pageSize={20} total={total} onPageChange={(p) => void load(p)} />
-        </div>
+        {!error && total > 0 ? (
+          <div className="mt-4 flex flex-wrap items-center justify-between gap-2 border-t border-[var(--erp-border)] pt-4">
+            <p className="text-xs text-[var(--erp-muted)]">
+              Showing {items.length.toLocaleString()} of {total.toLocaleString()} products
+            </p>
+            <Pagination page={page} pageSize={PAGE_SIZE} total={total} onPageChange={(p) => void load(p)} />
+          </div>
+        ) : null}
       </Card>
 
       <ProductDeleteDialog

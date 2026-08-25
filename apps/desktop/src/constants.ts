@@ -1,5 +1,5 @@
 export const APP_ID = "com.electronicerp.pos";
-export const APP_NAME = "Electronic ERP POS";
+export const APP_NAME = "ERP System POS";
 export const APP_VERSION = "0.1.0";
 
 /** Typed IPC channel names — keep in sync with preload allowlist. */

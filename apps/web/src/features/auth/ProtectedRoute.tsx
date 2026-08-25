@@ -3,7 +3,7 @@ import { LoadingState } from "@electronic-erp/ui";
 import { useAuth } from "./AuthContext";
 
 export function ProtectedRoute() {
-  const { loading, session } = useAuth();
+  const { loading, session, sessionExpiredMessage } = useAuth();
   const location = useLocation();
 
   if (loading) {
@@ -15,7 +15,17 @@ export function ProtectedRoute() {
   }
 
   if (!session) {
-    return <Navigate to="/login" replace state={{ from: location.pathname }} />;
+    return (
+      <Navigate
+        to="/login"
+        replace
+        state={{
+          from: location.pathname,
+          sessionExpired: Boolean(sessionExpiredMessage),
+          sessionExpiredMessage: sessionExpiredMessage ?? undefined,
+        }}
+      />
+    );
   }
 
   return <Outlet />;

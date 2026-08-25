@@ -1358,7 +1358,7 @@ export function resolveShellHeader(pathname: string): { moduleTitle: string; pag
     return { moduleTitle: "PRODUCT & CATALOG", pageTitle: "Product" };
   }
   const section = findSectionForPath(pathname);
-  if (!section) return { moduleTitle: "Electronic ERP", pageTitle: null };
+  if (!section) return { moduleTitle: "ERP System", pageTitle: null };
   if (pathname === "/settings") {
     return { moduleTitle: section.name, pageTitle: "Overview" };
   }

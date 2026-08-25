@@ -11,8 +11,12 @@ import type {
   CreateUnitInput,
   CreateVariantInput,
   GenerateBarcodeInput,
+  ProductListItem,
   ProductListQuery,
   ProductMaster,
+  ProductSpecifications,
+  ProductStats,
+  ProductStockSummary,
   UpdateProductMasterInput,
 } from "@electronic-erp/contracts";
 import {
@@ -517,7 +521,79 @@ export class CatalogRepository {
 
     const { data, error } = await this.db.from("products").update(patch).eq("id", id).select("*").single();
     if (error) throw mapSupabaseError(error);
-    return mapProduct(data);
+    const product = mapProduct(data);
+
+    if (input.specifications) {
+      const s = input.specifications;
+      const orgId = String(product.organizationId);
+      const specPatch = {
+        size: s.size ?? null,
+        color: s.color ?? null,
+        watt: s.watt ?? null,
+        voltage: s.voltage ?? null,
+        ampere: s.ampere ?? null,
+        length: s.length ?? null,
+        width: s.width ?? null,
+        height: s.height ?? null,
+        material: s.material ?? null,
+        gauge: s.gauge ?? null,
+        phase: s.phase ?? null,
+        frequency: s.frequency ?? null,
+        capacity: s.capacity ?? null,
+        model_label: s.modelLabel ?? null,
+        weight: s.weight ?? null,
+        updated_at: new Date().toISOString(),
+      };
+      const { data: existing, error: existingErr } = await this.db
+        .from("product_specifications")
+        .select("id")
+        .eq("product_id", id)
+        .maybeSingle();
+      throwIfDbError(existingErr);
+      if (existing?.id) {
+        const { error: specErr } = await this.db
+          .from("product_specifications")
+          .update(specPatch)
+          .eq("product_id", id);
+        throwIfDbError(specErr);
+      } else {
+        const { error: specErr } = await this.db.from("product_specifications").insert({
+          organization_id: orgId,
+          product_id: id,
+          ...specPatch,
+        });
+        throwIfDbError(specErr);
+      }
+    }
+
+    if (input.primaryBarcode != null && String(input.primaryBarcode).trim()) {
+      const code = normalizeBarcode(String(input.primaryBarcode));
+      const { data: primary, error: barErr } = await this.db
+        .from("barcodes")
+        .select("id")
+        .eq("product_id", id)
+        .eq("is_primary", true)
+        .maybeSingle();
+      throwIfDbError(barErr);
+      if (primary?.id) {
+        const { error: updErr } = await this.db
+          .from("barcodes")
+          .update({ code, updated_at: new Date().toISOString() })
+          .eq("id", String(primary.id));
+        throwIfDbError(updErr);
+      } else {
+        const { error: insErr } = await this.db.from("barcodes").insert({
+          organization_id: product.organizationId,
+          product_id: id,
+          code,
+          code_type: "custom",
+          is_primary: true,
+        });
+        throwIfDbError(insErr);
+      }
+    }
+
+    return product;
   }
 
   async getProduct(id: string): Promise<ProductMaster | null> {
@@ -527,9 +603,43 @@ export class CatalogRepository {
   }
 
   async listProducts(organizationId: string, query: ProductListQuery) {
+    let productIdFilter: string[] | null = null;
+    if (query.lowStock) {
+      productIdFilter = await this.getLowStockProductIds(organizationId);
+      if (!productIdFilter.length) {
+        return { items: [] as ProductListItem[], total: 0, page: query.page, pageSize: query.pageSize };
+      }
+    }
+
     let q = this.db.from("products").select("*", { count: "exact" }).eq("organization_id", organizationId);
     if (!query.includeDeleted) q = q.is("deleted_at", null);
-    if (query.q) q = q.or(`name.ilike.%${query.q}%,sku.ilike.%${query.q}%,product_code.ilike.%${query.q}%`);
+    if (productIdFilter) q = q.in("id", productIdFilter);
+    if (query.onPromotion) q = q.not("special_price", "is", null).gt("special_price", 0);
+    if (query.q) {
+      const term = query.q.trim();
+      const [barcodeRes, brandRes] = await Promise.all([
+        this.db
+          .from("barcodes")
+          .select("product_id")
+          .eq("organization_id", organizationId)
+          .ilike("code", `%${term}%`)
+          .limit(100),
+        this.db
+          .from("brands")
+          .select("id")
+          .eq("organization_id", organizationId)
+          .ilike("name", `%${term}%`)
+          .limit(50),
+      ]);
+      if (barcodeRes.error) throw barcodeRes.error;
+      if (brandRes.error) throw brandRes.error;
+      const barcodeIds = [...new Set((barcodeRes.data ?? []).map((r) => String((r as Row).product_id)))];
+      const brandIds = [...new Set((brandRes.data ?? []).map((r) => String((r as Row).id)))];
+      const parts = [`name.ilike.%${term}%`, `sku.ilike.%${term}%`, `product_code.ilike.%${term}%`];
+      if (barcodeIds.length) parts.push(`id.in.(${barcodeIds.join(",")})`);
+      if (brandIds.length) parts.push(`brand_id.in.(${brandIds.join(",")})`);
+      q = q.or(parts.join(","));
+    }
     if (query.categoryId) q = q.eq("category_id", query.categoryId);
     if (query.brandId) q = q.eq("brand_id", query.brandId);
     if (query.companyId) q = q.eq("company_id", query.companyId);
@@ -548,12 +658,233 @@ export class CatalogRepository {
     const to = from + query.pageSize - 1;
     const { data, error, count } = await q.range(from, to);
     if (error) throw error;
+    const items = await this.enrichProductListItems(
+      organizationId,
+      (data ?? []).map(mapProduct),
+    );
     return {
-      items: (data ?? []).map(mapProduct),
+      items,
       total: count ?? 0,
       page: query.page,
       pageSize: query.pageSize,
     };
+  }
+
+  async getProductStats(organizationId: string): Promise<ProductStats> {
+    const base = () =>
+      this.db
+        .from("products")
+        .select("id", { count: "exact", head: true })
+        .eq("organization_id", organizationId)
+        .is("deleted_at", null);
+
+    const [totalRes, activeRes, inactiveRes, promoRes] = await Promise.all([
+      base(),
+      base().eq("is_active", true),
+      base().eq("is_active", false),
+      base().not("special_price", "is", null).gt("special_price", 0).eq("is_active", true),
+    ]);
+    for (const res of [totalRes, activeRes, inactiveRes, promoRes]) {
+      if (res.error) throw res.error;
+    }
+    const lowStockIds = await this.getLowStockProductIds(organizationId);
+    return {
+      totalProducts: totalRes.count ?? 0,
+      activeProducts: activeRes.count ?? 0,
+      inactiveProducts: inactiveRes.count ?? 0,
+      onPromotion: promoRes.count ?? 0,
+      lowStockItems: lowStockIds.length,
+    };
+  }
+
+  async getProductStockSummary(organizationId: string, productId: string): Promise<ProductStockSummary> {
+    const product = await this.getProduct(productId);
+    if (!product || product.organizationId !== organizationId) {
+      throw new Error("Product not found");
+    }
+    const { data, error } = await this.db
+      .from("stock_balances")
+      .select("qty_on_hand, qty_reserved")
+      .eq("organization_id", organizationId)
+      .eq("product_id", productId);
+    if (error) throw error;
+    let stockOnHand = 0;
+    let stockReserved = 0;
+    for (const row of data ?? []) {
+      stockOnHand += Number((row as Row).qty_on_hand ?? 0);
+      stockReserved += Number((row as Row).qty_reserved ?? 0);
+    }
+    return {
+      stockOnHand,
+      stockAvailable: stockOnHand - stockReserved,
+      stockReserved,
+      reorderLevel: Number(product.reorderLevel ?? 0),
+    };
+  }
+
+  async getProductSpecifications(productId: string): Promise<ProductSpecifications | null> {
+    const { data, error } = await this.db
+      .from("product_specifications")
+      .select("*")
+      .eq("product_id", productId)
+      .maybeSingle();
+    if (error) throw error;
+    if (!data) return null;
+    const row = data as Row;
+    return {
+      size: (row.size as string | null) ?? null,
+      color: (row.color as string | null) ?? null,
+      watt: row.watt == null ? null : String(row.watt),
+      voltage: row.voltage == null ? null : String(row.voltage),
+      ampere: row.ampere == null ? null : String(row.ampere),
+      length: row.length == null ? null : String(row.length),
+      width: row.width == null ? null : String(row.width),
+      height: row.height == null ? null : String(row.height),
+      material: (row.material as string | null) ?? null,
+      gauge: (row.gauge as string | null) ?? null,
+      phase: (row.phase as string | null) ?? null,
+      frequency: row.frequency == null ? null : String(row.frequency),
+      capacity: (row.capacity as string | null) ?? null,
+      modelLabel: (row.model_label as string | null) ?? null,
+      weight: row.weight == null ? null : String(row.weight),
+    };
+  }
+
+  private async getLowStockProductIds(organizationId: string): Promise<string[]> {
+    const { data: products, error: prodErr } = await this.db
+      .from("products")
+      .select("id, reorder_level")
+      .eq("organization_id", organizationId)
+      .eq("track_inventory", true)
+      .is("deleted_at", null);
+    if (prodErr) throw prodErr;
+    if (!products?.length) return [];
+
+    const ids = products.map((p) => String((p as Row).id));
+    const { data: balances, error: balErr } = await this.db
+      .from("stock_balances")
+      .select("product_id, qty_on_hand, qty_reserved")
+      .eq("organization_id", organizationId)
+      .in("product_id", ids);
+    if (balErr) throw balErr;
+
+    const stockByProduct = new Map<string, number>();
+    for (const b of balances ?? []) {
+      const pid = String((b as Row).product_id);
+      const avail = Number((b as Row).qty_on_hand ?? 0) - Number((b as Row).qty_reserved ?? 0);
+      stockByProduct.set(pid, (stockByProduct.get(pid) ?? 0) + avail);
+    }
+
+    return products
+      .filter((p) => {
+        const pid = String((p as Row).id);
+        const avail = stockByProduct.get(pid) ?? 0;
+        const reorder = Number((p as Row).reorder_level ?? 0);
+        return avail <= reorder;
+      })
+      .map((p) => String((p as Row).id));
+  }
+
+  private async enrichProductListItems(
+    organizationId: string,
+    products: ProductMaster[],
+  ): Promise<ProductListItem[]> {
+    if (!products.length) return [];
+    const productIds = products.map((p) => p.id);
+    const brandIds = [...new Set(products.map((p) => p.brandId).filter(Boolean))] as string[];
+    const companyIds = [...new Set(products.map((p) => p.companyId).filter(Boolean))] as string[];
+    const categoryIds = [...new Set(products.map((p) => p.categoryId).filter(Boolean))] as string[];
+
+    const [barcodesRes, brandsRes, companiesRes, categoriesRes, balancesRes, mediaRes] = await Promise.all([
+      this.db
+        .from("barcodes")
+        .select("product_id, code, is_primary")
+        .eq("organization_id", organizationId)
+        .in("product_id", productIds),
+      brandIds.length
+        ? this.db.from("brands").select("id, name").in("id", brandIds)
+        : Promise.resolve({ data: [] as Row[], error: null }),
+      companyIds.length
+        ? this.db.from("companies").select("id, name").in("id", companyIds)
+        : Promise.resolve({ data: [] as Row[], error: null }),
+      categoryIds.length
+        ? this.db.from("categories").select("id, name").in("id", categoryIds)
+        : Promise.resolve({ data: [] as Row[], error: null }),
+      this.db
+        .from("stock_balances")
+        .select("product_id, qty_on_hand, qty_reserved")
+        .eq("organization_id", organizationId)
+        .in("product_id", productIds),
+      this.db
+        .from("product_media")
+        .select("product_id, storage_path, is_primary, sort_order")
+        .eq("organization_id", organizationId)
+        .eq("media_type", "image")
+        .in("product_id", productIds)
+        .is("deleted_at", null),
+    ]);
+
+    for (const res of [barcodesRes, brandsRes, companiesRes, categoriesRes, balancesRes, mediaRes]) {
+      if (res.error) throw res.error;
+    }
+
+    const nameMap = (rows: Row[] | null) => {
+      const m = new Map<string, string>();
+      for (const r of rows ?? []) m.set(String(r.id), String(r.name));
+      return m;
+    };
+    const brandNames = nameMap(brandsRes.data as Row[] | null);
+    const companyNames = nameMap(companiesRes.data as Row[] | null);
+    const categoryNames = nameMap(categoriesRes.data as Row[] | null);
+
+    const barcodeByProduct = new Map<string, string>();
+    for (const b of barcodesRes.data ?? []) {
+      const row = b as Row;
+      const pid = String(row.product_id);
+      const code = String(row.code ?? "");
+      if (!code) continue;
+      if (row.is_primary || !barcodeByProduct.has(pid)) barcodeByProduct.set(pid, code);
+    }
+
+    const stockByProduct = new Map<string, { onHand: number; reserved: number }>();
+    for (const b of balancesRes.data ?? []) {
+      const row = b as Row;
+      const pid = String(row.product_id);
+      const prev = stockByProduct.get(pid) ?? { onHand: 0, reserved: 0 };
+      prev.onHand += Number(row.qty_on_hand ?? 0);
+      prev.reserved += Number(row.qty_reserved ?? 0);
+      stockByProduct.set(pid, prev);
+    }
+
+    const imageByProduct = new Map<string, string>();
+    const mediaRows = [...(mediaRes.data ?? [])].sort((a, b) => {
+      const ap = (a as Row).is_primary ? 0 : 1;
+      const bp = (b as Row).is_primary ? 0 : 1;
+      if (ap !== bp) return ap - bp;
+      return Number((a as Row).sort_order ?? 0) - Number((b as Row).sort_order ?? 0);
+    });
+    for (const m of mediaRows) {
+      const row = m as Row;
+      const pid = String(row.product_id);
+      if (!imageByProduct.has(pid) && row.storage_path) {
+        imageByProduct.set(pid, String(row.storage_path));
+      }
+    }
+
+    return products.map((p) => {
+      const stock = stockByProduct.get(p.id) ?? { onHand: 0, reserved: 0 };
+      return {
+        ...p,
+        primaryBarcode: barcodeByProduct.get(p.id) ?? null,
+        brandName: p.brandId ? (brandNames.get(p.brandId) ?? null) : null,
+        companyName: p.companyId ? (companyNames.get(p.companyId) ?? null) : null,
+        categoryName: p.categoryId ? (categoryNames.get(p.categoryId) ?? null) : null,
+        stockOnHand: stock.onHand,
+        stockAvailable: stock.onHand - stock.reserved,
+        stockReserved: stock.reserved,
+        primaryImagePath: imageByProduct.get(p.id) ?? null,
+      };
+    });
   }
 
   async bulkAction(ids: string[], action: "deactivate" | "activate" | "restore") {

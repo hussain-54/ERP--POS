@@ -1,8 +1,12 @@
 import type {
   CreateProductMasterInput,
   ImportResult,
+  ProductListItem,
   ProductListQuery,
   ProductMaster,
+  ProductSpecifications,
+  ProductStats,
+  ProductStockSummary,
 } from "@electronic-erp/contracts";
 import { apiFetch } from "@/lib/api";
 import { authStorage } from "@/features/auth/auth-service";
@@ -27,10 +31,23 @@ export const catalogApi = {
     Object.entries(query).forEach(([k, v]) => {
       if (v !== undefined && v !== null && v !== "") params.set(k, String(v));
     });
-    return apiFetch<{ items: ProductMaster[]; total: number; page: number; pageSize: number }>(
+    return apiFetch<{ items: ProductListItem[]; total: number; page: number; pageSize: number }>(
       `/api/v1/catalog/products?${params.toString()}`,
       { token: token() },
     );
+  },
+  getProductStats() {
+    return apiFetch<ProductStats>("/api/v1/catalog/products/stats", { token: token() });
+  },
+  getProductStock(productId: string) {
+    return apiFetch<ProductStockSummary>(`/api/v1/catalog/products/${productId}/stock`, {
+      token: token(),
+    });
+  },
+  getProductSpecifications(productId: string) {
+    return apiFetch<ProductSpecifications | null>(`/api/v1/catalog/products/${productId}/specifications`, {
+      token: token(),
+    });
   },
   getProduct(id: string) {
     return apiFetch<ProductMaster>(`/api/v1/catalog/products/${id}`, { token: token() });

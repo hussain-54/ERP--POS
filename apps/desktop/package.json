@@ -2,10 +2,10 @@
   "name": "@electronic-erp/desktop",
   "version": "0.1.0",
   "private": true,
-  "description": "Electronic ERP Windows POS — Electron online shell (Supabase via API)",
+  "description": "ERP System Windows POS — Electron online shell (Supabase via API)",
   "main": "dist/main.js",
   "type": "module",
-  "author": "Electronic ERP",
+  "author": "ERP System",
   "scripts": {
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "build": "tsc -p tsconfig.json && node ./scripts/copy-assets.cjs",
@@ -18,8 +18,8 @@
   },
   "build": {
     "appId": "com.electronicerp.pos",
-    "productName": "Electronic ERP POS",
-    "copyright": "Copyright © Electronic ERP",
+    "productName": "ERP System POS",
+    "copyright": "Copyright © ERP System",
     "electronVersion": "34.2.0",
     "directories": {
       "output": "release",
@@ -49,7 +49,7 @@
       "allowToChangeInstallationDirectory": true,
       "createDesktopShortcut": true,
       "createStartMenuShortcut": true,
-      "shortcutName": "Electronic ERP POS",
+      "shortcutName": "ERP System POS",
       "deleteAppDataOnUninstall": false,
       "installerLanguages": ["en_US"]
     },

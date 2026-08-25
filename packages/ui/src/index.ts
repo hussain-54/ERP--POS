@@ -25,3 +25,4 @@ export * from "./components/ErrorState.js";
 export * from "./components/ConfirmationDialog.js";
 export * from "./components/Toast.js";
 export * from "./components/CommandPalette.js";
+export * from "./components/PageChrome.js";

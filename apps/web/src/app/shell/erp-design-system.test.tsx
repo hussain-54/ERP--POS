@@ -14,7 +14,7 @@ describe("ERP design tokens", () => {
   it("locks the enterprise blue / white / navy palette and density tokens", () => {
     expect(tokens).toContain("--erp-brand: #1877f2");
     expect(tokens).toContain("--erp-surface: #ffffff");
-    expect(tokens).toContain("--erp-bg: #f4f6f9");
+    expect(tokens).toContain("--erp-bg: #f3f5f8");
     expect(tokens).toContain("--erp-ink: #1a2332");
     expect(tokens).toContain("--erp-navy: #0f1b33");
     expect(tokens).toContain("--erp-radius: 6px");
@@ -97,7 +97,7 @@ describe("shared chrome primitives", () => {
   it("renders breadcrumb and filter bar without decorative layout", () => {
     render(
       <>
-        <Breadcrumb items={[{ label: "Electronic ERP" }, { label: "INVENTORY" }, { label: "Balances" }]} />
+        <Breadcrumb items={[{ label: "ERP System" }, { label: "INVENTORY" }, { label: "Balances" }]} />
         <FilterBar>
           <Input aria-label="Warehouse" />
         </FilterBar>

@@ -181,6 +181,15 @@ catalogRouter.get("/attribute-definitions", async (req: AuthedRequest, res, next
 });
 
 // 02 Product Management — products
+catalogRouter.get("/products/stats", async (req: AuthedRequest, res, next) => {
+  try {
+    authz(req).assert("products.read");
+    res.json(await repo(req).getProductStats(orgId(req)));
+  } catch (err) {
+    next(err);
+  }
+});
+
 catalogRouter.get("/products", async (req: AuthedRequest, res, next) => {
   try {
     authz(req).assert("products.read");
@@ -196,6 +205,24 @@ catalogRouter.post("/products", async (req: AuthedRequest, res, next) => {
     authz(req).assert("products.write");
     const input = CreateProductMasterSchema.parse({ ...req.body, organizationId: orgId(req) });
     res.status(201).json(await repo(req).createProduct(input));
+  } catch (err) {
+    next(err);
+  }
+});
+
+catalogRouter.get("/products/:id/stock", async (req: AuthedRequest, res, next) => {
+  try {
+    authz(req).assert("products.read");
+    res.json(await repo(req).getProductStockSummary(orgId(req), req.params.id));
+  } catch (err) {
+    next(err);
+  }
+});
+
+catalogRouter.get("/products/:id/specifications", async (req: AuthedRequest, res, next) => {
+  try {
+    authz(req).assert("products.read");
+    res.json(await repo(req).getProductSpecifications(req.params.id));
   } catch (err) {
     next(err);
   }

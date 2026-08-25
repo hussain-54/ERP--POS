@@ -11,25 +11,66 @@ export class ApiError extends Error {
   }
 }
 
-export async function apiFetch<T>(
-  path: string,
-  options: RequestInit & { token?: string } = {},
-): Promise<T> {
-  const headers = new Headers(options.headers);
-  headers.set("Content-Type", "application/json");
-  if (options.token) headers.set("Authorization", `Bearer ${options.token}`);
+export type ApiFetchOptions = RequestInit & {
+  token?: string;
+  /** Skip proactive / 401 refresh (auth bootstrap paths). */
+  skipAuthRefresh?: boolean;
+};
 
-  let res: Response;
-  try {
-    res = await fetch(`${env.apiUrl}${path}`, {
-      ...options,
-      headers,
-    });
-  } catch (err) {
-    if (isNetworkFailure(err) || (typeof navigator !== "undefined" && !navigator.onLine)) {
-      throw new ApiError(INTERNET_REQUIRED_MESSAGE, 0);
+export async function apiFetch<T>(path: string, options: ApiFetchOptions = {}): Promise<T> {
+  const { token: initialToken, skipAuthRefresh, ...init } = options;
+
+  let token = initialToken;
+  if (!skipAuthRefresh && !token) {
+    try {
+      const { ensureFreshAccessToken, authStorage } = await import("@/features/auth/auth-service");
+      token = (await ensureFreshAccessToken()) ?? authStorage.getToken() ?? undefined;
+    } catch {
+      // Auth module may be unavailable during early bootstrap.
     }
-    throw err instanceof Error ? err : new Error(String(err));
+  } else if (!skipAuthRefresh && token) {
+    try {
+      const { ensureFreshAccessToken } = await import("@/features/auth/auth-service");
+      const fresh = await ensureFreshAccessToken();
+      if (fresh) token = fresh;
+    } catch {
+      // keep provided token
+    }
+  }
+
+  const doFetch = async (bearer?: string) => {
+    const headers = new Headers(init.headers);
+    headers.set("Content-Type", "application/json");
+    if (bearer) headers.set("Authorization", `Bearer ${bearer}`);
+
+    try {
+      return await fetch(`${env.apiUrl}${path}`, {
+        ...init,
+        headers,
+      });
+    } catch (err) {
+      if (isNetworkFailure(err) || (typeof navigator !== "undefined" && !navigator.onLine)) {
+        throw new ApiError(INTERNET_REQUIRED_MESSAGE, 0);
+      }
+      throw err instanceof Error ? err : new Error(String(err));
+    }
+  };
+
+  let res = await doFetch(token);
+
+  if (res.status === 401 && !skipAuthRefresh) {
+    try {
+      const { authService } = await import("@/features/auth/auth-service");
+      const next = await authService.handleUnauthorized();
+      if (next) {
+        res = await doFetch(next);
+        if (res.status === 401) {
+          authService.forceSessionExpired("invalid");
+        }
+      }
+    } catch {
+      // fall through with original 401
+    }
   }
 
   if (!res.ok) {
@@ -44,7 +85,6 @@ export async function apiFetch<T>(
         message = body.error.message;
       } else if (body.detail) message = body.detail;
     } catch {
-      // Non-JSON (often HTML SPA fallback when API is missing)
       if (res.status >= 500) message = "Internal server error";
     }
     throw new ApiError(message, res.status);

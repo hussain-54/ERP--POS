@@ -1,11 +1,19 @@
 import type { AuthSession, LoginInput, UserProfile } from "@electronic-erp/contracts";
-import { apiFetch } from "@/lib/api";
+import { DEFAULT_PASSWORD_POLICY } from "@electronic-erp/domain";
+import { apiFetch, ApiError } from "@/lib/api";
 import { getSupabase } from "@/lib/supabase";
 import { isSupabaseConfigured } from "@/lib/env";
+import { emitSessionExpired, emitSessionTokensUpdated } from "./session-events";
 
 const TOKEN_KEY = "erp.accessToken";
 const REFRESH_KEY = "erp.refreshToken";
 const BRANCH_KEY = "erp.branchId";
+const ACTIVITY_KEY = "erp.auth.lastActivityAt";
+
+/** Refresh when access JWT expires within this window. */
+const REFRESH_SKEW_MS = 90_000;
+/** Inactivity timeout — aligns with domain password/session policy (hours). */
+const INACTIVITY_MS = Math.max(1, DEFAULT_PASSWORD_POLICY.sessionTtlHours) * 60 * 60 * 1000;
 
 export const authStorage = {
   getToken(): string | null {
@@ -29,6 +37,18 @@ export const authStorage = {
     if (!branchId) localStorage.removeItem(BRANCH_KEY);
     else localStorage.setItem(BRANCH_KEY, branchId);
   },
+  getLastActivityAt(): number | null {
+    const raw = localStorage.getItem(ACTIVITY_KEY);
+    if (!raw) return null;
+    const n = Number(raw);
+    return Number.isFinite(n) ? n : null;
+  },
+  touchActivity(at = Date.now()) {
+    localStorage.setItem(ACTIVITY_KEY, String(at));
+  },
+  clearActivity() {
+    localStorage.removeItem(ACTIVITY_KEY);
+  },
 };
 
 function mapUserProfile(row: Record<string, unknown>): UserProfile {
@@ -51,17 +71,51 @@ function mapUserProfile(row: Record<string, unknown>): UserProfile {
   };
 }
 
-async function hydrateFromSupabase(accessToken: string): Promise<AuthSession> {
-  const sb = getSupabase();
+function jwtExpiresAtMs(token: string): number | null {
+  try {
+    const part = token.split(".")[1];
+    if (!part) return null;
+    const json = atob(part.replace(/-/g, "+").replace(/_/g, "/"));
+    const payload = JSON.parse(json) as { exp?: number };
+    return typeof payload.exp === "number" ? payload.exp * 1000 : null;
+  } catch {
+    return null;
+  }
+}
 
+function accessTokenNeedsRefresh(token: string | null, skewMs = REFRESH_SKEW_MS): boolean {
+  if (!token) return true;
+  const exp = jwtExpiresAtMs(token);
+  if (exp == null) return false;
+  return exp - Date.now() <= skewMs;
+}
+
+function syncTokensFromSupabaseSession(session: {
+  access_token: string;
+  refresh_token?: string | null;
+}): void {
+  authStorage.setToken(session.access_token);
+  if (session.refresh_token) authStorage.setRefreshToken(session.refresh_token);
+  emitSessionTokensUpdated();
+}
+
+function persistSession(session: AuthSession, refreshToken?: string | null) {
+  authStorage.setToken(session.accessToken);
+  const refresh = refreshToken ?? session.refreshToken ?? authStorage.getRefreshToken();
+  if (refresh) authStorage.setRefreshToken(refresh);
+  if (session.user.defaultBranchId) {
+    authStorage.setBranchId(session.user.defaultBranchId);
+  } else if (session.branches[0]) {
+    authStorage.setBranchId(session.branches[0]);
+  }
+  authStorage.touchActivity();
+}
+
+async function hydrateProfile(accessToken: string): Promise<AuthSession> {
+  const sb = getSupabase();
   const { data: userData, error: userErr } = await sb.auth.getUser(accessToken);
   if (userErr || !userData.user) {
     throw new Error(userErr?.message ?? "Invalid session");
-  }
-
-  const refresh = authStorage.getRefreshToken();
-  if (refresh) {
-    await sb.auth.setSession({ access_token: accessToken, refresh_token: refresh });
   }
 
   const { data: profileRow, error: profileErr } = await sb
@@ -78,11 +132,10 @@ async function hydrateFromSupabase(accessToken: string): Promise<AuthSession> {
 
   const profile = mapUserProfile(profileRow as Record<string, unknown>);
 
-  const [{ data: branches, error: branchErr }, { data: perms, error: permErr }] =
-    await Promise.all([
-      sb.from("branch_memberships").select("branch_id").eq("user_id", profile.id),
-      sb.rpc("get_user_permission_keys", { p_user_id: profile.id }),
-    ]);
+  const [{ data: branches, error: branchErr }, { data: perms, error: permErr }] = await Promise.all([
+    sb.from("branch_memberships").select("branch_id").eq("user_id", profile.id),
+    sb.rpc("get_user_permission_keys", { p_user_id: profile.id }),
+  ]);
 
   if (branchErr) throw new Error(branchErr.message);
   if (permErr && !String(permErr.message).includes("get_user_permission_keys")) {
@@ -91,26 +144,120 @@ async function hydrateFromSupabase(accessToken: string): Promise<AuthSession> {
 
   return {
     accessToken,
+    refreshToken: authStorage.getRefreshToken() ?? undefined,
     user: profile,
     permissions: (perms as string[] | null) ?? [],
     branches: (branches ?? []).map((b) => String(b.branch_id)),
   };
 }
 
-function persistSession(session: AuthSession, refreshToken?: string | null) {
-  authStorage.setToken(session.accessToken);
-  if (refreshToken) authStorage.setRefreshToken(refreshToken);
-  if (session.user.defaultBranchId) {
-    authStorage.setBranchId(session.user.defaultBranchId);
-  } else if (session.branches[0]) {
-    authStorage.setBranchId(session.branches[0]);
+let refreshInFlight: Promise<string | null> | null = null;
+let authListenerBound = false;
+
+/**
+ * Ensure `erp.accessToken` is valid for API Bearer calls.
+ * Uses Supabase session / refresh token — never clears POS cart state.
+ */
+export async function ensureFreshAccessToken(options?: {
+  force?: boolean;
+}): Promise<string | null> {
+  const current = authStorage.getToken();
+  if (!options?.force && current && !accessTokenNeedsRefresh(current)) {
+    return current;
   }
+
+  if (refreshInFlight) return refreshInFlight;
+
+  refreshInFlight = (async () => {
+    try {
+      if (isSupabaseConfigured()) {
+        const sb = getSupabase();
+        const { data: existing } = await sb.auth.getSession();
+        if (existing.session?.access_token) {
+          if (!options?.force && !accessTokenNeedsRefresh(existing.session.access_token)) {
+            syncTokensFromSupabaseSession(existing.session);
+            return existing.session.access_token;
+          }
+          const { data, error } = await sb.auth.refreshSession();
+          if (!error && data.session?.access_token) {
+            syncTokensFromSupabaseSession(data.session);
+            return data.session.access_token;
+          }
+        }
+
+        const refresh = authStorage.getRefreshToken();
+        if (refresh) {
+          const { data, error } = await sb.auth.refreshSession({ refresh_token: refresh });
+          if (!error && data.session?.access_token) {
+            syncTokensFromSupabaseSession(data.session);
+            return data.session.access_token;
+          }
+        }
+
+        // Access token may still be valid even if refresh path failed.
+        if (current && !accessTokenNeedsRefresh(current, 0)) {
+          return current;
+        }
+        return null;
+      }
+
+      return current;
+    } finally {
+      refreshInFlight = null;
+    }
+  })();
+
+  return refreshInFlight;
 }
+
+function clearLocalAuth() {
+  authStorage.setToken(null);
+  authStorage.setRefreshToken(null);
+  authStorage.clearActivity();
+}
+
+/** Bind once: keep erp.* tokens in sync with Supabase auto-refresh. */
+export function bindAuthLifecycle(): () => void {
+  if (!isSupabaseConfigured() || authListenerBound || typeof window === "undefined") {
+    return () => undefined;
+  }
+  authListenerBound = true;
+  const sb = getSupabase();
+  const { data } = sb.auth.onAuthStateChange((event, session) => {
+    if (event === "TOKEN_REFRESHED" || event === "SIGNED_IN") {
+      if (session?.access_token) {
+        syncTokensFromSupabaseSession(session);
+      }
+      return;
+    }
+    if (event === "SIGNED_OUT") {
+      // Explicit logout already clears; ignore if we still have tokens mid-refresh race.
+      if (!authStorage.getToken() && !authStorage.getRefreshToken()) return;
+    }
+  });
+
+  return () => {
+    data.subscription.unsubscribe();
+    authListenerBound = false;
+  };
+}
+
+export function isInactivityTimedOut(): boolean {
+  const last = authStorage.getLastActivityAt();
+  if (!last) return false;
+  return Date.now() - last > INACTIVITY_MS;
+}
+
+export function noteUserActivity(): void {
+  if (!authStorage.getToken()) return;
+  authStorage.touchActivity();
+}
+
+export const INACTIVITY_TIMEOUT_MS = INACTIVITY_MS;
 
 /** Auth orchestration lives outside React components. */
 export const authService = {
   async login(input: LoginInput): Promise<AuthSession> {
-    // Primary: browser → Supabase Auth (works when Vercel Express API is down)
     if (isSupabaseConfigured()) {
       const sb = getSupabase();
       const { data, error } = await sb.auth.signInWithPassword({
@@ -121,17 +268,18 @@ export const authService = {
         throw new Error(error?.message ?? "Login failed");
       }
 
-      authStorage.setRefreshToken(data.session.refresh_token);
+      syncTokensFromSupabaseSession(data.session);
 
       try {
         const session = await apiFetch<AuthSession>("/api/v1/auth/session", {
           token: data.session.access_token,
+          skipAuthRefresh: true,
         });
         persistSession(session, data.session.refresh_token);
-        return session;
+        return { ...session, refreshToken: data.session.refresh_token };
       } catch (apiErr) {
         void apiErr;
-        const session = await hydrateFromSupabase(data.session.access_token);
+        const session = await hydrateProfile(data.session.access_token);
         persistSession(session, data.session.refresh_token);
         return session;
       }
@@ -140,8 +288,9 @@ export const authService = {
     const session = await apiFetch<AuthSession>("/api/v1/auth/login", {
       method: "POST",
       body: JSON.stringify(input),
+      skipAuthRefresh: true,
     });
-    persistSession(session);
+    persistSession(session, session.refreshToken);
     return session;
   },
 
@@ -149,7 +298,11 @@ export const authService = {
     const token = authStorage.getToken();
     if (token) {
       try {
-        await apiFetch("/api/v1/auth/logout", { method: "POST", token });
+        await apiFetch("/api/v1/auth/logout", {
+          method: "POST",
+          token,
+          skipAuthRefresh: true,
+        });
       } catch {
         // still clear local session
       }
@@ -161,30 +314,69 @@ export const authService = {
         // ignore
       }
     }
-    authStorage.setToken(null);
-    authStorage.setRefreshToken(null);
+    clearLocalAuth();
   },
 
   async restore(): Promise<AuthSession | null> {
-    const token = authStorage.getToken();
+    if (isInactivityTimedOut()) {
+      clearLocalAuth();
+      emitSessionExpired("inactivity");
+      return null;
+    }
+
+    const fresh = await ensureFreshAccessToken();
+    const token = fresh ?? authStorage.getToken();
     if (!token) return null;
 
     try {
-      return await apiFetch<AuthSession>("/api/v1/auth/session", { token });
-    } catch {
+      const session = await apiFetch<AuthSession>("/api/v1/auth/session", {
+        token,
+        skipAuthRefresh: true,
+      });
+      persistSession(session);
+      return session;
+    } catch (err) {
       if (isSupabaseConfigured()) {
         try {
-          const session = await hydrateFromSupabase(token);
-          persistSession(session);
-          return session;
+          const retried = await ensureFreshAccessToken({ force: true });
+          if (retried) {
+            try {
+              const session = await apiFetch<AuthSession>("/api/v1/auth/session", {
+                token: retried,
+                skipAuthRefresh: true,
+              });
+              persistSession(session);
+              return session;
+            } catch {
+              const hydrated = await hydrateProfile(retried);
+              persistSession(hydrated);
+              return hydrated;
+            }
+          }
         } catch {
           // fall through
         }
       }
-      authStorage.setToken(null);
-      authStorage.setRefreshToken(null);
+
+      const unauthorized =
+        err instanceof ApiError ? err.status === 401 : true;
+      if (unauthorized) {
+        clearLocalAuth();
+      }
       return null;
     }
+  },
+
+  /**
+   * Called when an API request gets 401. Refreshes once; if still invalid, expires session.
+   * Returns a new access token or null.
+   */
+  async handleUnauthorized(): Promise<string | null> {
+    const next = await ensureFreshAccessToken({ force: true });
+    if (next) return next;
+    clearLocalAuth();
+    emitSessionExpired("expired");
+    return null;
   },
 
   async requestPasswordReset(email: string): Promise<void> {
@@ -198,6 +390,7 @@ export const authService = {
     await apiFetch("/api/v1/auth/password-reset", {
       method: "POST",
       body: JSON.stringify({ email }),
+      skipAuthRefresh: true,
     });
   },
 
@@ -208,6 +401,11 @@ export const authService = {
       branches: string[];
       organizationId: string;
       branchId: string | null;
-    }>("/api/v1/auth/me", { token });
+    }>("/api/v1/auth/me", { token, skipAuthRefresh: true });
+  },
+
+  forceSessionExpired(reason: "expired" | "invalid" | "inactivity" = "expired") {
+    clearLocalAuth();
+    emitSessionExpired(reason);
   },
 };

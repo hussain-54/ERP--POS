@@ -79,7 +79,7 @@ export function SidebarNav({
               data-touch-nav={touchTargets ? "true" : undefined}
               className={`flex min-h-11 min-w-0 items-center gap-2 rounded-lg px-2 py-2 text-[13px] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--erp-ring)] ${
                 parentActive
-                  ? "bg-[var(--erp-brand-soft)] font-semibold text-[var(--erp-brand)]"
+                  ? "bg-[var(--erp-brand-soft)] font-semibold text-[var(--erp-brand)] ring-1 ring-[var(--erp-brand)]/15"
                   : "font-medium text-[var(--erp-ink)] hover:bg-[var(--erp-bg)] active:bg-[var(--erp-bg)]"
               } ${collapsed ? "justify-center px-2" : ""}`}
             >
