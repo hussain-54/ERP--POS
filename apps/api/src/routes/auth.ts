@@ -1,7 +1,9 @@
 import { Router } from "express";
 import {
+  ChangePasswordSchema,
   LoginSchema,
   PasswordResetRequestSchema,
+  UpdateOwnProfileSchema,
 } from "@electronic-erp/contracts";
 import { AuthService } from "../services/auth-service.js";
 import { requireAuth, type AuthedRequest } from "../middleware/auth.js";
@@ -35,14 +37,44 @@ authRouter.post("/logout", requireAuth, async (req: AuthedRequest, res, next) =>
   }
 });
 
-authRouter.get("/me", requireAuth, async (req: AuthedRequest, res) => {
-  res.json({
-    user: req.profile,
-    permissions: req.authz?.permissions ?? [],
-    branches: req.authz?.branchIds ?? [],
-    organizationId: req.authz?.organizationId,
-    branchId: req.authz?.branchId,
-  });
+authRouter.get("/me", requireAuth, async (req: AuthedRequest, res, next) => {
+  try {
+    const extras = await authService.getOwnProfileExtras(
+      req.accessToken!,
+      req.profile!,
+      req.authz?.branchId ?? null,
+    );
+    res.json({
+      user: req.profile,
+      permissions: req.authz?.permissions ?? [],
+      branches: req.authz?.branchIds ?? [],
+      organizationId: req.authz?.organizationId,
+      branchId: req.authz?.branchId,
+      ...extras,
+    });
+  } catch (err) {
+    next(err);
+  }
+});
+
+authRouter.patch("/me", requireAuth, async (req: AuthedRequest, res, next) => {
+  try {
+    const input = UpdateOwnProfileSchema.parse(req.body);
+    const user = await authService.updateOwnProfile(req.accessToken!, req.profile!, input);
+    res.json({ user });
+  } catch (err) {
+    next(err);
+  }
+});
+
+authRouter.post("/change-password", requireAuth, async (req: AuthedRequest, res, next) => {
+  try {
+    const input = ChangePasswordSchema.parse(req.body);
+    await authService.changePassword(req.accessToken!, req.profile!, input);
+    res.json({ ok: true });
+  } catch (err) {
+    next(err);
+  }
 });
 
 authRouter.post("/password-reset", async (req, res, next) => {

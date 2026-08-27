@@ -40,6 +40,8 @@ interface AuthContextValue {
   logout: () => Promise<void>;
   setBranchId: (branchId: string) => void;
   hasPermission: (key: string) => boolean;
+  /** Merge updated profile into the current session (after self-service edits). */
+  refreshUser: (user: UserProfile) => void;
 }
 
 const AuthContext = createContext<AuthContextValue | null>(null);
@@ -173,6 +175,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setSessionExpiredMessage(null);
   }, []);
 
+  const refreshUser = useCallback((nextUser: UserProfile) => {
+    setSession((prev) => (prev ? { ...prev, user: nextUser } : prev));
+  }, []);
+
   const setBranchId = useCallback((id: string) => {
     setBranchIdState(id);
     authStorage.setBranchId(id);
@@ -209,6 +215,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       logout,
       setBranchId,
       hasPermission: (key: string) => authz?.can(key) ?? false,
+      refreshUser,
     }),
     [
       loading,
@@ -220,6 +227,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       login,
       logout,
       setBranchId,
+      refreshUser,
     ],
   );
 

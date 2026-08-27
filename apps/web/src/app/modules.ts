@@ -1305,7 +1305,7 @@ export const ERP_SIDEBAR_SECTIONS: ErpNavSection[] = ERP_NAV_SECTIONS.map((secti
   children: [],
 }));
 
-export const EXTRA_APP_PATHS = ["/products/new"] as const;
+export const EXTRA_APP_PATHS = ["/products/new", "/profile"] as const;
 
 /**
  * Feature-folder ownership derived from the 39-module registry.
@@ -1351,6 +1351,9 @@ export function isNavChildActive(child: Pick<ErpNavChild, "path">, pathname: str
 
 /** Header labels for the single ERP chrome. */
 export function resolveShellHeader(pathname: string): { moduleTitle: string; pageTitle: string | null } {
+  if (pathname === "/profile") {
+    return { moduleTitle: "Account", pageTitle: "Profile" };
+  }
   if (pathname === "/products/new") {
     return { moduleTitle: "PRODUCT & CATALOG", pageTitle: "New Product" };
   }

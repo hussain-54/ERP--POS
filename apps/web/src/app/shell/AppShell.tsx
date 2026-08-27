@@ -159,9 +159,11 @@ export function AppShell() {
           branches={branches}
           onBranchChange={setBranchId}
           userName={user?.fullName ?? "User"}
+          userEmail={user?.email}
+          userAvatarUrl={user?.avatarUrl}
           showAudit={hasPermission("audit.view")}
-          onLogout={() => {
-            void logout();
+          onLogout={async () => {
+            await logout();
           }}
         />
         )}

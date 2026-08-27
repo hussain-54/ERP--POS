@@ -1,6 +1,9 @@
+import { useEffect, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
-import { Button, Dropdown, Select } from "@electronic-erp/ui";
+import { Button, ConfirmationDialog, Dropdown, Select } from "@electronic-erp/ui";
 import { Breadcrumbs } from "@/app/shell/Breadcrumbs";
+import { UserAvatar } from "@/features/auth/UserAvatar";
+import { profileApi } from "@/features/auth/profile-api";
 
 export function GlobalHeader({
   compact,
@@ -13,6 +16,8 @@ export function GlobalHeader({
   branches,
   onBranchChange,
   userName,
+  userEmail,
+  userAvatarUrl,
   showAudit,
   onLogout,
 }: {
@@ -26,10 +31,44 @@ export function GlobalHeader({
   branches: string[];
   onBranchChange: (id: string) => void;
   userName: string;
+  userEmail?: string | null;
+  userAvatarUrl?: string | null;
   showAudit: boolean;
-  onLogout: () => void;
+  onLogout: () => Promise<void> | void;
 }) {
   const navigate = useNavigate();
+  const [logoutOpen, setLogoutOpen] = useState(false);
+  const [loggingOut, setLoggingOut] = useState(false);
+  const [roleLabel, setRoleLabel] = useState<string>("User");
+
+  useEffect(() => {
+    let cancelled = false;
+    void profileApi
+      .me()
+      .then((me) => {
+        if (cancelled) return;
+        const roles = me.roleNames?.filter(Boolean) ?? [];
+        setRoleLabel(roles.length ? roles.join(", ") : "User");
+      })
+      .catch(() => {
+        if (!cancelled) setRoleLabel("User");
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [userEmail, userName]);
+
+  async function confirmLogout() {
+    if (loggingOut) return;
+    setLoggingOut(true);
+    try {
+      await onLogout();
+      navigate("/login", { replace: true });
+    } finally {
+      setLoggingOut(false);
+      setLogoutOpen(false);
+    }
+  }
 
   return (
     <header
@@ -92,25 +131,76 @@ export function GlobalHeader({
           Audit
         </Link>
       ) : null}
+
       <Dropdown
+        align="right"
+        menuClassName="min-w-[16rem]"
         trigger={
-          <Button variant="secondary" size="sm" className="min-h-11 max-w-[9rem] truncate lg:min-h-9" aria-label="User">
-            {userName}
-          </Button>
+          <button
+            type="button"
+            aria-label="User menu"
+            className="inline-flex min-h-11 max-w-[12rem] items-center gap-2 rounded-lg border border-[var(--erp-border)] bg-white px-2 py-1 text-left hover:bg-[var(--erp-bg)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--erp-ring)] lg:min-h-9"
+          >
+            <UserAvatar name={userName} email={userEmail} avatarUrl={userAvatarUrl} size="sm" />
+            <span className="hidden min-w-0 truncate text-sm font-medium text-[var(--erp-ink)] sm:inline">
+              {userName}
+            </span>
+          </button>
+        }
+        header={
+          <div className="flex items-start gap-2.5">
+            <UserAvatar name={userName} email={userEmail} avatarUrl={userAvatarUrl} size="md" />
+            <div className="min-w-0">
+              <p className="truncate text-sm font-semibold text-[var(--erp-ink)]">{userName}</p>
+              <p className="truncate text-xs text-[var(--erp-muted)]">{roleLabel}</p>
+              {userEmail ? (
+                <p className="mt-0.5 truncate text-xs text-[var(--erp-muted)]">{userEmail}</p>
+              ) : null}
+            </div>
+          </div>
         }
         items={[
           {
             id: "profile",
             label: "Profile",
-            onSelect: () => navigate("/settings"),
+            onSelect: () => navigate("/profile"),
+          },
+          {
+            id: "account",
+            label: "Account Settings",
+            onSelect: () => navigate("/profile"),
+          },
+          {
+            id: "password",
+            label: "Change Password",
+            onSelect: () => navigate("/profile?section=password"),
+          },
+          {
+            id: "notifications",
+            label: "Notifications",
+            onSelect: () => navigate("/notifications"),
           },
           {
             id: "logout",
-            label: "Sign out",
+            label: "Logout",
             danger: true,
-            onSelect: onLogout,
+            onSelect: () => setLogoutOpen(true),
           },
         ]}
+      />
+
+      <ConfirmationDialog
+        open={logoutOpen}
+        title="Sign out?"
+        description="You will be signed out of ERP System on this device. Unsaved work on this page may be lost."
+        confirmLabel="Logout"
+        cancelLabel="Stay signed in"
+        danger
+        loading={loggingOut}
+        onCancel={() => {
+          if (!loggingOut) setLogoutOpen(false);
+        }}
+        onConfirm={() => void confirmLogout()}
       />
     </header>
   );

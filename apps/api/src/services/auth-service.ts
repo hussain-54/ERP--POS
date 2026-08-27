@@ -1,11 +1,14 @@
 import {
   LoginSchema,
   PasswordResetRequestSchema,
+  type ChangePasswordInput,
   type LoginInput,
   type PasswordResetRequestInput,
+  type UpdateOwnProfileInput,
+  type UserProfile,
 } from "@electronic-erp/contracts";
 import { InfrastructureRepository, UserRepository } from "@electronic-erp/db";
-import { DEFAULT_PASSWORD_POLICY, DomainError } from "@electronic-erp/domain";
+import { DEFAULT_PASSWORD_POLICY, DomainError, validatePasswordAgainstPolicy } from "@electronic-erp/domain";
 import {
   createAnonClient,
   createServiceClient,
@@ -248,5 +251,73 @@ export class AuthService {
       permissions,
       branches,
     };
+  }
+
+  async getOwnProfileExtras(
+    accessToken: string,
+    profile: UserProfile,
+    activeBranchId?: string | null,
+  ) {
+    const userClient = createUserClient(accessToken);
+    const repo = new UserRepository(userClient);
+    const serviceClient = createServiceClient();
+    const authzRepo = serviceClient ? new UserRepository(serviceClient) : repo;
+    const branchId = activeBranchId ?? profile.defaultBranchId;
+    const [roleNames, lastLoginAt, branchName] = await Promise.all([
+      authzRepo.listRoleNames(profile.id).catch(() => [] as string[]),
+      authzRepo.getLastSuccessfulLoginAt(profile.organizationId, profile.email).catch(() => null),
+      authzRepo.getBranchName(branchId).catch(() => null),
+    ]);
+    return { roleNames, lastLoginAt, branchName };
+  }
+
+  async updateOwnProfile(accessToken: string, profile: UserProfile, input: UpdateOwnProfileInput) {
+    if (!supabaseConfigured()) {
+      throw new DomainError("Supabase is not configured", "UNAUTHORIZED");
+    }
+    const userClient = createUserClient(accessToken);
+    const repo = new UserRepository(userClient);
+    return repo.updateOwnProfile(profile.id, input);
+  }
+
+  async changePassword(accessToken: string, profile: UserProfile, input: ChangePasswordInput) {
+    if (!supabaseConfigured()) {
+      throw new DomainError("Supabase is not configured", "UNAUTHORIZED");
+    }
+
+    let policy = DEFAULT_PASSWORD_POLICY;
+    const infra = this.infraRepo();
+    if (infra) {
+      try {
+        const settings = await infra.getSecuritySettings(profile.organizationId);
+        policy = settings.password_policy ?? DEFAULT_PASSWORD_POLICY;
+      } catch {
+        /* use default */
+      }
+    }
+    const check = validatePasswordAgainstPolicy(input.newPassword, policy);
+    if (!check.ok) {
+      throw new DomainError(check.errors.join("; "), "VALIDATION_ERROR");
+    }
+
+    const anon = createAnonClient();
+    const verify = await anon.auth.signInWithPassword({
+      email: profile.email,
+      password: input.currentPassword,
+    });
+    if (verify.error || !verify.data.session) {
+      throw new DomainError("Current password is incorrect", "UNAUTHORIZED");
+    }
+
+    const userClient = createUserClient(accessToken);
+    const { error } = await userClient.auth.updateUser({ password: input.newPassword });
+    if (error) throw new DomainError(error.message, "VALIDATION_ERROR");
+
+    // Invalidate the temporary verify session
+    try {
+      await createUserClient(verify.data.session.access_token).auth.signOut();
+    } catch {
+      /* ignore */
+    }
   }
 }

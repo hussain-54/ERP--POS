@@ -60,6 +60,7 @@ import { IntegrationsPage } from "@/features/system/IntegrationsPage";
 import { OnlineStorePage } from "@/features/system/OnlineStorePage";
 import { SystemAdminHome } from "@/features/system/SystemAdminHome";
 import { buildPosImplementedRoutes } from "@/features/pos/posRoutes";
+import { ProfilePage } from "@/features/auth/ProfilePage";
 import { SystemComingSoonPage } from "@/features/system/SystemComingSoonPage";
 
 /**
@@ -249,6 +250,9 @@ const implemented: Record<string, ReactNode> = {
 
   // 39 System Administration — canonical /settings
   "/settings": <SystemAdminHome />,
+
+  // Account — shell user menu (not one of the 39 modules)
+  "/profile": <ProfilePage />,
 };
 
 /** Canonical + alias path → existing page element. Used to lock duplicate ownership. */
@@ -284,6 +288,7 @@ export const router = createBrowserRouter([
             element: elementForModulePath(path),
           })),
           { path: "products/:id", element: <ProductDetailPage /> },
+          { path: "profile", element: <ProfilePage /> },
           { path: "*", element: <NotFoundPage /> },
         ],
       },

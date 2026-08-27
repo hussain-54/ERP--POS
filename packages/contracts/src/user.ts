@@ -84,3 +84,36 @@ export const PasswordResetConfirmSchema = z.object({
 });
 
 export type PasswordResetConfirmInput = z.infer<typeof PasswordResetConfirmSchema>;
+
+export const UpdateOwnProfileSchema = z.object({
+  fullName: z.string().trim().min(1).max(200).optional(),
+  phone: z
+    .preprocess(
+      (value) => (typeof value === "string" && value.trim() === "" ? null : value),
+      z.string().trim().max(50).nullable().optional(),
+    ),
+  defaultBranchId: z
+    .preprocess(
+      (value) => (value === "" || value === null ? null : value),
+      UuidSchema.nullable().optional(),
+    ),
+  avatarUrl: z
+    .preprocess(
+      (value) => (typeof value === "string" && value.trim() === "" ? null : value),
+      z.string().url().nullable().optional(),
+    ),
+});
+export type UpdateOwnProfileInput = z.infer<typeof UpdateOwnProfileSchema>;
+
+export const ChangePasswordSchema = z.object({
+  currentPassword: z.string().min(1).max(128),
+  newPassword: z.string().min(8).max(128),
+});
+export type ChangePasswordInput = z.infer<typeof ChangePasswordSchema>;
+
+export const OwnProfileExtrasSchema = z.object({
+  roleNames: z.array(z.string()).default([]),
+  lastLoginAt: z.string().nullable().optional(),
+  branchName: z.string().nullable().optional(),
+});
+export type OwnProfileExtras = z.infer<typeof OwnProfileExtrasSchema>;

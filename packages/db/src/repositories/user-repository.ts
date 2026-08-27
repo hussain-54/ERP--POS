@@ -40,6 +40,78 @@ export class UserRepository {
     }
     return (data as string[] | null) ?? [];
   }
+
+  async listRoleNames(userId: string): Promise<string[]> {
+    const { data, error } = await this.db
+      .from("user_roles")
+      .select("roles(name,code)")
+      .eq("user_id", userId);
+    if (error) {
+      if (String(error.message).includes("user_roles") || String(error.message).includes("roles")) {
+        return [];
+      }
+      throw error;
+    }
+    const names: string[] = [];
+    for (const row of data ?? []) {
+      const roles = (row as { roles?: { name?: string; code?: string } | null }).roles;
+      if (roles?.name) names.push(String(roles.name));
+      else if (roles?.code) names.push(String(roles.code));
+    }
+    return [...new Set(names)];
+  }
+
+  async updateOwnProfile(
+    userId: string,
+    input: {
+      fullName?: string;
+      phone?: string | null;
+      defaultBranchId?: string | null;
+      avatarUrl?: string | null;
+    },
+  ): Promise<UserProfile> {
+    const patch: Record<string, unknown> = {
+      updated_at: new Date().toISOString(),
+    };
+    if (input.fullName !== undefined) patch.full_name = input.fullName;
+    if (input.phone !== undefined) patch.phone = input.phone;
+    if (input.defaultBranchId !== undefined) patch.default_branch_id = input.defaultBranchId;
+    if (input.avatarUrl !== undefined) patch.avatar_url = input.avatarUrl;
+
+    const { data, error } = await this.db
+      .from("user_profiles")
+      .update(patch)
+      .eq("id", userId)
+      .is("deleted_at", null)
+      .select("*")
+      .single();
+    if (error) throw error;
+    return mapUserProfile(data as Record<string, unknown>);
+  }
+
+  async getLastSuccessfulLoginAt(organizationId: string, email: string): Promise<string | null> {
+    const { data, error } = await this.db
+      .from("login_history")
+      .select("created_at")
+      .eq("organization_id", organizationId)
+      .eq("email", email)
+      .eq("success", true)
+      .order("created_at", { ascending: false })
+      .limit(1)
+      .maybeSingle();
+    if (error) {
+      if (String(error.message).includes("login_history")) return null;
+      throw error;
+    }
+    return data?.created_at ? String(data.created_at) : null;
+  }
+
+  async getBranchName(branchId: string | null | undefined): Promise<string | null> {
+    if (!branchId) return null;
+    const { data, error } = await this.db.from("branches").select("name,code").eq("id", branchId).maybeSingle();
+    if (error || !data) return null;
+    return String((data as { name?: string; code?: string }).name ?? (data as { code?: string }).code ?? branchId);
+  }
 }
 
 function mapUserProfile(row: Record<string, unknown>): UserProfile {
