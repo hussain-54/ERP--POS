@@ -2,6 +2,9 @@ import { canActOnApproval, requiredRoleAtStep, type ApprovalWorkflowType } from 
 
 /** Map session permissions to system role codes for approval API — server validates via canActOnApproval. */
 export function approvalActorRolesFromPermissions(permissions: string[]): string[] {
+  if (permissions.includes("*")) {
+    return ["owner", "super_admin", "manager", "supervisor", "storekeeper", "salesman", "cashier", "admin"];
+  }
   const roles: string[] = [];
   if (permissions.includes("roles.manage") || permissions.includes("approvals.manage")) {
     roles.push("owner", "super_admin");

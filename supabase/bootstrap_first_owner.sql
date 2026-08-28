@@ -173,42 +173,62 @@ begin
   execute $fn$
     create or replace function public.get_user_permission_keys(p_user_id uuid)
     returns text[]
-    language sql
+    language plpgsql
     stable
     security definer
     set search_path = public
     as $body$
-      with role_keys as (
-        select distinct p.key
+    declare
+      v_is_full_access boolean;
+    begin
+      select exists (
+        select 1
         from public.user_roles ur
-        join public.role_permissions rp on rp.role_id = ur.role_id
-        join public.permissions p on p.id = rp.permission_id
+        join public.roles r on r.id = ur.role_id
         where ur.user_id = p_user_id
-      ),
-      grants as (
-        select distinct p.key
-        from public.user_permissions up
-        join public.permissions p on p.id = up.permission_id
-        where up.user_id = p_user_id and up.effect = 'grant'
-      ),
-      denies as (
-        select distinct p.key
-        from public.user_permissions up
-        join public.permissions p on p.id = up.permission_id
-        where up.user_id = p_user_id and up.effect = 'deny'
-      )
-      select coalesce(
+          and r.code in ('super_admin', 'owner')
+          and r.deleted_at is null
+      ) into v_is_full_access;
+
+      if v_is_full_access then
+        return coalesce(
+          array(
+            select key from (
+              select p.key from public.permissions p
+              union
+              select '*'::text
+            ) k
+            order by 1
+          ),
+          array['*']::text[]
+        );
+      end if;
+
+      return coalesce(
         array(
           select key from (
-            select key from role_keys
+            select distinct p.key
+            from public.user_roles ur
+            join public.role_permissions rp on rp.role_id = ur.role_id
+            join public.permissions p on p.id = rp.permission_id
+            where ur.user_id = p_user_id
             union
-            select key from grants
+            select distinct p.key
+            from public.user_permissions up
+            join public.permissions p on p.id = up.permission_id
+            where up.user_id = p_user_id and up.effect = 'grant'
           ) u
-          where key not in (select key from denies)
+          where key not in (
+            select p.key
+            from public.user_permissions up
+            join public.permissions p on p.id = up.permission_id
+            where up.user_id = p_user_id and up.effect = 'deny'
+          )
           order by 1
         ),
         '{}'::text[]
       );
+    end;
     $body$;
   $fn$;
 
@@ -249,20 +269,34 @@ begin
     where auth_user_id = v_auth_id;
   end if;
 
-  -- ========== E) Owner role + ALL permissions ==========
-  insert into public.roles (organization_id, code, name, description, is_system)
-  values (v_org_id, 'owner', 'Owner', 'Organization owner — full access', true)
-  on conflict (organization_id, code) do update
-    set name = excluded.name, is_system = true, deleted_at = null;
+  -- ========== E) Super Admin + Owner roles + ALL permissions ==========
+  insert into public.permissions (key, module, action, description)
+  values ('*', '*', '*', 'Wildcard — full ERP access for Super Admin / Owner')
+  on conflict (key) do nothing;
 
+  insert into public.roles (organization_id, code, name, description, is_system)
+  values
+    (v_org_id, 'super_admin', 'Super Admin', 'Platform-level full access', true),
+    (v_org_id, 'owner', 'Owner', 'Organization owner — full access', true)
+  on conflict (organization_id, code) do update
+    set name = excluded.name,
+        description = excluded.description,
+        is_system = true,
+        deleted_at = null;
+
+  -- Attach every permission to Super Admin and Owner
+  insert into public.role_permissions (role_id, permission_id)
+  select r.id, p.id
+  from public.roles r
+  cross join public.permissions p
+  where r.organization_id = v_org_id
+    and r.code in ('super_admin', 'owner')
+  on conflict (role_id, permission_id) do nothing;
+
+  -- Assign Super Admin (preferred full-access role)
   select id into v_role_id
   from public.roles
-  where organization_id = v_org_id and code = 'owner';
-
-  insert into public.role_permissions (role_id, permission_id)
-  select v_role_id, p.id
-  from public.permissions p
-  on conflict (role_id, permission_id) do nothing;
+  where organization_id = v_org_id and code = 'super_admin';
 
   insert into public.user_roles (organization_id, user_id, role_id, branch_id)
   select v_org_id, v_profile_id, v_role_id, null
@@ -274,11 +308,30 @@ begin
       and ur.branch_id is null
   );
 
+  -- Also assign Owner (legacy bootstrap role; does not remove other users' roles)
+  select id into v_role_id
+  from public.roles
+  where organization_id = v_org_id and code = 'owner';
+
+  insert into public.user_roles (organization_id, user_id, role_id, branch_id)
+  select v_org_id, v_profile_id, v_role_id, null
+  where not exists (
+    select 1
+    from public.user_roles ur
+    where ur.user_id = v_profile_id
+      and ur.role_id = v_role_id
+      and ur.branch_id is null
+  );
+
+  delete from public.user_permissions
+  where user_id = v_profile_id
+    and effect = 'deny';
+
   insert into public.branch_memberships (organization_id, user_id, branch_id)
   values (v_org_id, v_profile_id, v_branch_id)
   on conflict (user_id, branch_id) do nothing;
 
-  raise notice 'DONE profile_id=% role_id=%', v_profile_id, v_role_id;
+  raise notice 'DONE profile_id=% super_admin+owner granted', v_profile_id;
 end $$;
 
 -- Verify

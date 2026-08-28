@@ -108,6 +108,7 @@ export function workflowSteps(mode: ReturnWorkspaceMode): ReturnWorkflowStep[] {
 }
 
 export function canApproveReturn(permissions: string[]): boolean {
+  if (permissions.includes("*")) return true;
   return (
     permissions.includes("approvals.act") ||
     permissions.includes("approvals.manage") ||

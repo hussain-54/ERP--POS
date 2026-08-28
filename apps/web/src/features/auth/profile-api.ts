@@ -24,8 +24,10 @@ export type OwnProfileResponse = {
 };
 
 export const profileApi = {
-  me() {
-    return apiFetch<OwnProfileResponse>("/api/v1/auth/me", { token: token() });
+  me(): Promise<OwnProfileResponse> {
+    const t = authStorage.getToken();
+    if (!t) return Promise.reject(new Error("Not authenticated"));
+    return apiFetch<OwnProfileResponse>("/api/v1/auth/me", { token: t });
   },
   update(input: UpdateOwnProfileInput) {
     return apiFetch<{ user: UserProfile }>("/api/v1/auth/me", {

@@ -17,7 +17,7 @@ import { posApi } from "../api";
 import { uuid } from "../format";
 import { usePosSale } from "../hooks/usePosSale";
 import type { PosCustomerView } from "../types";
-import type { ProductSearchResult } from "@electronic-erp/contracts";
+import type { InvoiceView, ProductSearchResult } from "@electronic-erp/contracts";
 import type { DiscountSection } from "../pricing/discount-utils";
 import { PaymentDrawer } from "../payments/PaymentDrawer";
 import { validatePosPayment } from "../payments/payment-utils";
@@ -26,6 +26,7 @@ import { CartZone } from "./CartZone";
 import { CheckoutZone } from "./CheckoutZone";
 import { CustomerDialog } from "./CustomerDialog";
 import { DiscountDialog } from "./DiscountDialog";
+import { PostSaleDialog } from "./PostSaleDialog";
 import "./terminal-layout.css";
 
 type MobilePane = "products" | "cart" | "checkout";
@@ -40,7 +41,7 @@ export function PosTerminalPage() {
   const searchRef = useRef<HTMLInputElement>(null);
 
   const [busy, setBusy] = useState(false);
-  const [limit, setLimit] = useState(24);
+  const [limit, setLimit] = useState(30);
   const [loadingProducts, setLoadingProducts] = useState(false);
   const [mobilePane, setMobilePane] = useState<MobilePane>("products");
   const [selectedLineId, setSelectedLineId] = useState<string | null>(null);
@@ -53,6 +54,13 @@ export function PosTerminalPage() {
   const [paymentOpen, setPaymentOpen] = useState(false);
   const [installmentPlan, setInstallmentPlan] = useState({ downPayment: "0", installmentCount: 3 });
   const [methodsByKind, setMethodsByKind] = useState<Record<string, string>>({});
+  const [cashReceived, setCashReceived] = useState<number | undefined>(undefined);
+
+  // Post-sale completion state
+  const [completedInvoice, setCompletedInvoice] = useState<InvoiceView | null>(null);
+  const [postSaleOpen, setPostSaleOpen] = useState(false);
+  const [lastPaid, setLastPaid] = useState<number>(0);
+  const [lastChange, setLastChange] = useState<number>(0);
 
   const actingRole = actingDiscountRole(permissions);
   const allowPriceOverride = canOverridePrice(permissions);
@@ -139,7 +147,7 @@ export function PosTerminalPage() {
   }, [branchId, search, limit, customer.id, setProducts]);
 
   useEffect(() => {
-    const id = window.setTimeout(() => void loadProducts(), 280);
+    const id = window.setTimeout(() => void loadProducts(), 250);
     return () => window.clearTimeout(id);
   }, [loadProducts]);
 
@@ -249,7 +257,8 @@ export function PosTerminalPage() {
       if (detail === "clear-cart") clearCart();
       if (detail === "cancel-sale") newSale();
       if (detail === "focus-search") {
-        window.dispatchEvent(new Event("pos:focus-search"));
+        searchRef.current?.focus();
+        searchRef.current?.select();
       }
       if (detail === "discount") {
         setDiscountScope("invoice");
@@ -257,7 +266,7 @@ export function PosTerminalPage() {
         setDiscountOpen(true);
       }
       if (detail === "hold") void onHold();
-      if (detail === "pay") setPaymentOpen(true);
+      if (detail === "pay") void completeSale();
       if (detail === "customers") {
         setCustomerMode("select");
         setCustomerOpen(true);
@@ -265,8 +274,8 @@ export function PosTerminalPage() {
     }
     window.addEventListener("pos:shortcut", onShortcut);
     return () => window.removeEventListener("pos:shortcut", onShortcut);
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- onHold defined below
-  }, [newSale, clearCart]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [newSale, clearCart, lines, totals, customer, paymentKind]);
 
   async function onHold() {
     if (!branchId || !organizationId || lines.length === 0) return;
@@ -336,7 +345,7 @@ export function PosTerminalPage() {
       {
         paymentMethodId: id,
         amount: totals.grand,
-        amountReceived: totals.grand,
+        amountReceived: paymentKind === "cash" && cashReceived != null ? cashReceived : totals.grand,
         methodKind: kind,
       },
     ];
@@ -361,6 +370,10 @@ export function PosTerminalPage() {
       return;
     }
 
+    const currentTenderReceived =
+      paymentKind === "cash" && cashReceived != null ? cashReceived : totals.grand;
+    const currentChange = Math.max(0, currentTenderReceived - totals.grand);
+
     setBusy(true);
     try {
       const discounts =
@@ -377,7 +390,7 @@ export function PosTerminalPage() {
             ]
           : [];
 
-      await posApi.postSale({
+      const postRes = (await posApi.postSale({
         branchId,
         warehouseId: branchId,
         customerId: customer.id ?? undefined,
@@ -406,10 +419,62 @@ export function PosTerminalPage() {
                 frequency: "monthly" as const,
               }
             : undefined,
-      });
-      push({ title: "Sale completed", tone: "success" });
+      })) as { id?: string; invoiceNumber?: string } | undefined;
+
+      const invoiceNum = postRes?.invoiceNumber ?? `INV-${Date.now().toString().slice(-6)}`;
+
+      // Build invoice preview object for instant receipt printing
+      const invView: InvoiceView = {
+        invoiceNumber: invoiceNum,
+        customerName: customer.label,
+        dateTime: new Date().toISOString(),
+        sale: {
+          id: postRes?.id ?? uuid(),
+          organizationId: organizationId ?? uuid(),
+          branchId: branchId ?? uuid(),
+          warehouseId: branchId ?? uuid(),
+          invoiceNumber: invoiceNum,
+          subtotal: totals.subtotal,
+          discountTotal: totals.totalDiscount,
+          taxTotal: totals.tax,
+          grandTotal: totals.grand,
+          paidTotal: currentTenderReceived,
+          remainingTotal: Math.max(0, totals.grand - currentTenderReceived),
+          posMode: "easy",
+          localeMode: "en",
+          status: "posted",
+          paymentStatus: paymentKind === "credit" ? "unpaid" : "paid",
+          idempotencyKey: uuid(),
+          createdAt: new Date().toISOString(),
+          updatedAt: new Date().toISOString(),
+          version: 1,
+        },
+        items: lines.map((l) => ({
+          name: l.name,
+          unit: l.unitLabel,
+          qty: l.qty,
+          rate: l.rate,
+          discount: l.discount,
+          tax: l.tax * l.qty,
+          total: (l.rate * l.qty) - l.discount,
+        })),
+        payments: payments.map((p) => ({
+          method: p.methodKind,
+          amount: p.amount,
+          reference: "reference" in p ? (p.reference ?? null) : null,
+        })),
+      };
+
+      setCompletedInvoice(invView);
+      setLastPaid(currentTenderReceived);
+      setLastChange(currentChange);
+      setPostSaleOpen(true);
+
+      // Reset cart and tender
       newSale();
+      setCashReceived(undefined);
       setMobilePane("products");
+      push({ title: `Sale Completed #${invoiceNum}`, tone: "success" });
     } catch (err) {
       push({
         title: "Checkout failed",
@@ -460,28 +525,30 @@ export function PosTerminalPage() {
   }
 
   return (
-    <div className="pos-terminal-root flex min-h-0 flex-1 flex-col overflow-hidden">
+    <div className="pos-terminal-root flex h-full min-h-0 flex-1 flex-col overflow-hidden">
+      {/* Sub-Header bar inside POS */}
       <div className="flex shrink-0 items-center justify-between gap-2 border-b border-slate-200 bg-white px-3 py-1.5 sm:px-4">
         <Link to="/pos" className="pos-back-link">
           <i className="fa-solid fa-arrow-left text-[11px]" aria-hidden />
           Back to POS Command Center
         </Link>
-        <div className="flex items-center gap-2 text-[11px] text-slate-500">
-          <span className="hidden sm:inline">{isQuick ? "Quick Sale" : "New Sale"}</span>
+        <div className="flex items-center gap-3 text-xs text-slate-500">
+          <span className="font-bold text-slate-800">{isQuick ? "Quick Counter" : "Sale Register"}</span>
           {hasPermission("products.write") ? (
             <Link
               to={`/products/new?returnTo=${encodeURIComponent(location.pathname)}`}
-              className="font-semibold text-slate-700 hover:underline"
+              className="font-bold text-blue-600 hover:underline"
             >
               + New Product
             </Link>
           ) : null}
-          <Link to="/pos/sales/held" className="font-semibold text-[var(--pos-primary)] hover:underline">
+          <Link to="/pos/sales/held" className="font-bold text-amber-700 hover:underline">
             Held Sales
           </Link>
         </div>
       </div>
 
+      {/* Mobile Tab Switcher */}
       <div className="flex shrink-0 gap-1 border-b border-slate-200 bg-slate-50 p-1 lg:hidden">
         {(
           [
@@ -494,8 +561,8 @@ export function PosTerminalPage() {
             key={id}
             type="button"
             onClick={() => setMobilePane(id)}
-            className={`flex-1 rounded-lg py-2 text-xs font-bold ${
-              mobilePane === id ? "bg-white text-[var(--pos-primary)] shadow-sm" : "text-slate-500"
+            className={`flex-1 rounded-lg py-1.5 text-xs font-bold transition ${
+              mobilePane === id ? "bg-white text-blue-600 shadow-xs" : "text-slate-500 hover:text-slate-900"
             }`}
           >
             {label}
@@ -504,7 +571,9 @@ export function PosTerminalPage() {
         ))}
       </div>
 
+      {/* Main 3-Zone Desktop Grid */}
       <div className="pos-terminal-grid min-h-0 flex-1 overflow-hidden">
+        {/* Zone 1: Product Discovery */}
         <div className={`min-h-0 min-w-0 ${mobilePane === "products" ? "flex" : "hidden"} lg:flex`}>
           <ProductDiscovery
             search={search}
@@ -518,16 +587,16 @@ export function PosTerminalPage() {
             favoriteIds={favoriteIds}
             onAdd={(p) => {
               addProduct(p);
-              setMobilePane("cart");
             }}
             onToggleFavorite={toggleFavorite}
-            onLoadMore={() => setLimit((l) => l + 24)}
+            onLoadMore={() => setLimit((l) => l + 30)}
             loading={loadingProducts}
             hasMore={products.length >= limit}
             searchRef={searchRef}
           />
         </div>
 
+        {/* Zone 2: Cart Ledger */}
         <div className={`min-h-0 min-w-0 ${mobilePane === "cart" ? "flex" : "hidden"} lg:flex`}>
           <CartZone
             lines={lines}
@@ -542,12 +611,15 @@ export function PosTerminalPage() {
           />
         </div>
 
+        {/* Zone 3: Checkout & Pay */}
         <div className={`min-h-0 min-w-0 ${mobilePane === "checkout" ? "flex" : "hidden"} lg:flex`}>
           <CheckoutZone
             customer={customer}
             totals={totals}
             paymentKind={paymentKind}
             onPaymentKind={setPaymentKind}
+            cashReceived={cashReceived}
+            onCashReceived={setCashReceived}
             couponCode={couponCode}
             notes={notes}
             onNotes={setNotes}
@@ -577,6 +649,7 @@ export function PosTerminalPage() {
         </div>
       </div>
 
+      {/* Customer Dialog Modal */}
       <CustomerDialog
         open={customerOpen}
         mode={customerMode}
@@ -584,6 +657,7 @@ export function PosTerminalPage() {
         onSelect={setCustomer}
       />
 
+      {/* Discount Dialog Modal */}
       <DiscountDialog
         open={discountOpen}
         scope={discountScope}
@@ -630,6 +704,7 @@ export function PosTerminalPage() {
         }}
       />
 
+      {/* Payment Drawer Modal */}
       <PaymentDrawer
         open={paymentOpen}
         grandTotal={totals.grand}
@@ -653,6 +728,20 @@ export function PosTerminalPage() {
             description: "Cart preserved — tap Complete Sale when ready.",
             tone: "success",
           });
+        }}
+      />
+
+      {/* Post-Sale Completion & Instant Thermal Receipt Modal */}
+      <PostSaleDialog
+        open={postSaleOpen}
+        invoice={completedInvoice}
+        paidAmount={lastPaid}
+        changeAmount={lastChange}
+        customerMobile={customer.mobile}
+        onClose={() => setPostSaleOpen(false)}
+        onNewSale={() => {
+          setPostSaleOpen(false);
+          searchRef.current?.focus();
         }}
       />
     </div>

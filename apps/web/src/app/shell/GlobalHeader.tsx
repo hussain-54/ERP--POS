@@ -138,7 +138,7 @@ export function GlobalHeader({
         trigger={
           <button
             type="button"
-            aria-label="User menu"
+            aria-label="User"
             className="inline-flex min-h-11 max-w-[12rem] items-center gap-2 rounded-lg border border-[var(--erp-border)] bg-white px-2 py-1 text-left hover:bg-[var(--erp-bg)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--erp-ring)] lg:min-h-9"
           >
             <UserAvatar name={userName} email={userEmail} avatarUrl={userAvatarUrl} size="sm" />

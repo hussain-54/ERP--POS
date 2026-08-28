@@ -151,7 +151,7 @@ export function hasPermission(
   ctx: AuthorizationContext,
   permission: string,
 ): boolean {
-  return ctx.permissions.includes(permission);
+  return ctx.permissions.includes("*") || ctx.permissions.includes(permission);
 }
 
 export function requirePermission(

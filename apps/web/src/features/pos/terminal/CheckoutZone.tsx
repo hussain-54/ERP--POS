@@ -7,6 +7,8 @@ export function CheckoutZone({
   totals,
   paymentKind,
   onPaymentKind,
+  cashReceived,
+  onCashReceived,
   couponCode,
   notes,
   onNotes,
@@ -37,6 +39,8 @@ export function CheckoutZone({
   };
   paymentKind: PosPaymentKind;
   onPaymentKind: (k: PosPaymentKind) => void;
+  cashReceived?: number;
+  onCashReceived?: (amt: number) => void;
   couponCode: string;
   notes: string;
   onNotes: (v: string) => void;
@@ -45,7 +49,7 @@ export function CheckoutZone({
   onNewCustomer: () => void;
   onDiscount: () => void;
   onHold: () => void;
-  onSaveDraft: () => void;
+  onSaveDraft?: () => void;
   onPayment: () => void;
   onComplete: () => void;
   busy?: boolean;
@@ -58,196 +62,300 @@ export function CheckoutZone({
   } | null;
 }) {
   const empty = totals.itemCount === 0;
+  const currentCash = cashReceived != null ? cashReceived : totals.grand;
+  const changeToReturn = Math.max(0, currentCash - totals.grand);
+
+  const quickAmounts = [
+    { label: "Exact", value: totals.grand },
+    { label: "500", value: 500 },
+    { label: "1,000", value: 1000 },
+    { label: "2,000", value: 2000 },
+    { label: "5,000", value: 5000 },
+  ];
 
   return (
-    <section className="pos-zone pos-zone-checkout" aria-label="Checkout summary">
+    <section className="pos-zone pos-zone-checkout flex h-full flex-col" aria-label="Checkout summary">
+      {/* Zone Header */}
       <div className="pos-zone-header">
-        <h2 className="pos-zone-title">Checkout</h2>
+        <h2 className="pos-zone-title flex items-center gap-1.5">
+          <i className="fa-solid fa-cash-register text-xs text-blue-600" aria-hidden />
+          Checkout & Payment
+        </h2>
+        <span className="text-[10px] font-bold text-slate-400">
+          {totals.totalQty} {totals.totalQty === 1 ? "unit" : "units"}
+        </span>
       </div>
 
-      <div className="pos-zone-scroll min-h-0 flex-1 space-y-3 overflow-y-auto overflow-x-hidden px-3 pb-3">
-        <div className="rounded-xl border border-slate-200 bg-slate-50 p-3">
-          <div className="flex items-start justify-between gap-2">
-            <button type="button" onClick={onSelectCustomer} className="min-w-0 flex-1 text-left">
-              <p className="text-[10px] font-semibold uppercase tracking-wide text-slate-400">Customer</p>
-              <p className="truncate text-sm font-bold text-slate-900">
-                {customer.label}{" "}
-                <i className="fa-solid fa-chevron-down text-[10px] text-slate-400" aria-hidden />
-              </p>
-              {customer.mobile ? <p className="text-[10px] text-slate-500">{customer.mobile}</p> : null}
+      {/* Scrollable Middle Area */}
+      <div className="pos-zone-scroll min-h-0 flex-1 space-y-2 p-2.5">
+        {/* Customer Mini-Card */}
+        <div className="rounded-lg border border-slate-200/90 bg-slate-50/70 p-2">
+          <div className="flex items-center justify-between gap-1.5">
+            <button
+              type="button"
+              onClick={onSelectCustomer}
+              className="flex min-w-0 flex-1 items-center gap-1.5 text-left group"
+            >
+              <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-blue-100 text-blue-600 text-xs">
+                <i className="fa-solid fa-user" />
+              </div>
+              <div className="min-w-0 flex-1">
+                <p className="text-[9px] font-bold uppercase tracking-wider text-slate-400">Customer</p>
+                <p className="truncate text-xs font-black text-slate-900 group-hover:text-blue-600">
+                  {customer.label}
+                </p>
+              </div>
             </button>
-            <div className="flex shrink-0 flex-col gap-1">
-              <button
-                type="button"
-                onClick={onWalkIn}
-                className="rounded-lg border border-slate-200 bg-white px-2 py-1 text-[10px] font-semibold text-slate-600"
-              >
-                Walk-in
-              </button>
+            <div className="flex shrink-0 items-center gap-1">
+              {customer.id ? (
+                <button
+                  type="button"
+                  onClick={onWalkIn}
+                  className="rounded border border-slate-200 bg-white px-1.5 py-0.5 text-[10px] font-bold text-slate-600 transition hover:bg-slate-100"
+                >
+                  Walk-in
+                </button>
+              ) : null}
               <button
                 type="button"
                 onClick={onNewCustomer}
-                className="rounded-lg bg-[var(--pos-primary)] px-2 py-1 text-[10px] font-bold text-white"
+                className="rounded bg-blue-600 px-2 py-0.5 text-[10px] font-bold text-white transition hover:bg-blue-700"
               >
                 + New
               </button>
             </div>
           </div>
-          <div className="mt-2 grid grid-cols-3 gap-1 text-center text-[10px]">
+
+          {/* Customer Meta Pill */}
+          <div className="mt-1.5 grid grid-cols-3 gap-1 rounded bg-white p-1 text-center text-[9px] border border-slate-100">
             <div>
-              <p className="text-slate-400">Tier</p>
-              <p className="font-bold text-slate-800">{customer.priceTier}</p>
+              <span className="text-slate-400">Tier: </span>
+              <span className="font-bold text-slate-700 uppercase">{customer.priceTier}</span>
             </div>
             <div>
-              <p className="text-slate-400">Credit</p>
-              <p className="font-bold text-slate-800">{money(customer.creditLimit)}</p>
+              <span className="text-slate-400">Credit: </span>
+              <span className="font-bold text-slate-700">{money(customer.creditLimit)}</span>
             </div>
             <div>
-              <p className="text-slate-400">Loyalty</p>
-              <p className="font-bold text-slate-800">{customer.loyaltyPoints}</p>
+              <span className="text-slate-400">Points: </span>
+              <span className="font-bold text-blue-600">{customer.loyaltyPoints}</span>
             </div>
           </div>
+
           {customer.id && customer.outstanding > 0 ? (
-            <p className="mt-1 text-[10px] font-semibold text-amber-700">
-              Udhar outstanding {money(customer.outstanding)}
+            <p className="mt-1 rounded bg-amber-50 px-1.5 py-0.5 text-[10px] font-bold text-amber-800">
+              Udhaar Balance: {money(customer.outstanding)}
             </p>
           ) : null}
         </div>
 
-        <dl className="space-y-1.5 text-xs">
-          <div className="flex justify-between text-slate-500">
-            <dt>Subtotal</dt>
-            <dd className="font-semibold text-slate-800">{money(totals.subtotal)}</dd>
+        {/* Order Breakdown */}
+        <div className="rounded-lg border border-slate-200/80 bg-white p-2 text-[11px] space-y-1">
+          <div className="flex justify-between text-slate-600">
+            <span>Subtotal</span>
+            <span className="font-bold text-slate-900">{money(totals.subtotal)}</span>
           </div>
-          <div className="flex justify-between text-slate-500">
-            <dt>Item discounts</dt>
-            <dd className="font-semibold text-red-600">−{money(totals.itemDiscount)}</dd>
-          </div>
-          <div className="flex justify-between text-slate-500">
-            <dt>
-              Invoice discount
-              <button type="button" onClick={onDiscount} className="ml-1 text-[var(--pos-primary)] hover:underline">
-                Edit
+          {totals.itemDiscount > 0 ? (
+            <div className="flex justify-between text-red-600 font-semibold">
+              <span>Item Discounts</span>
+              <span>−{money(totals.itemDiscount)}</span>
+            </div>
+          ) : null}
+          <div className="flex justify-between text-slate-600">
+            <span className="flex items-center gap-1">
+              Invoice Discount
+              <button
+                type="button"
+                onClick={onDiscount}
+                className="text-[10px] font-bold text-blue-600 hover:underline"
+              >
+                ({totals.invoiceDiscount > 0 ? "Edit" : "+ Add"})
               </button>
-            </dt>
-            <dd className="font-semibold text-red-600">−{money(totals.invoiceDiscount)}</dd>
+            </span>
+            <span className={totals.invoiceDiscount > 0 ? "font-bold text-red-600" : "font-medium text-slate-400"}>
+              {totals.invoiceDiscount > 0 ? `−${money(totals.invoiceDiscount)}` : "0.00"}
+            </span>
           </div>
           {couponCode ? (
-            <div className="flex justify-between text-slate-500">
-              <dt>Coupon</dt>
-              <dd className="font-semibold text-slate-800">{couponCode}</dd>
+            <div className="flex justify-between text-blue-700 font-semibold">
+              <span>Coupon Applied</span>
+              <span>{couponCode}</span>
             </div>
           ) : null}
-          <div className="flex justify-between text-slate-500">
-            <dt>Tax</dt>
-            <dd className="font-semibold text-slate-800">{money(totals.tax)}</dd>
+          <div className="flex justify-between text-slate-600">
+            <span>GST / Tax (17%)</span>
+            <span className="font-medium text-slate-800">{money(totals.tax)}</span>
           </div>
-          {totals.expectedProfit != null ? (
-            <div className="flex justify-between text-slate-500">
-              <dt>Expected profit</dt>
-              <dd className="font-semibold text-emerald-700">{money(totals.expectedProfit)}</dd>
-            </div>
-          ) : null}
-          <div className="flex justify-between border-t border-slate-200 pt-2 text-sm font-bold text-slate-900">
-            <dt>Total</dt>
-            <dd className="text-lg text-[var(--pos-primary)]">{money(totals.grand)}</dd>
-          </div>
-        </dl>
+        </div>
 
-        {paymentRecorded ? (
-          <div className="grid grid-cols-2 gap-2 text-xs sm:grid-cols-4">
-            <div className="rounded-xl bg-emerald-50 p-2.5">
-              <p className="text-[10px] font-bold uppercase text-emerald-700">Paid</p>
-              <p className="mt-0.5 text-sm font-bold text-emerald-900">{money(paymentRecorded.paid)}</p>
+        {/* GRAND TOTAL BOX */}
+        <div className="pos-grand-box flex items-center justify-between">
+          <div>
+            <p className="text-[10px] font-bold uppercase tracking-widest text-slate-400">Total Payable</p>
+            <p className="text-xl font-black tracking-tight text-white">{money(totals.grand)}</p>
+          </div>
+          <div className="text-right">
+            <span className="rounded bg-blue-500/30 px-2 py-0.5 text-[10px] font-bold text-blue-200 uppercase">
+              {paymentKind}
+            </span>
+          </div>
+        </div>
+
+        {/* Inline Cash Tender & Change (when Cash tender is active) */}
+        {paymentKind === "cash" ? (
+          <div className="rounded-lg border border-emerald-200 bg-emerald-50/50 p-2 space-y-1.5">
+            <div className="flex items-center justify-between gap-2">
+              <label htmlFor="pos-cash-received" className="text-[10px] font-bold uppercase text-emerald-900">
+                Cash Received
+              </label>
+              <div className="relative w-28">
+                <span className="absolute left-2 top-1/2 -translate-y-1/2 text-xs font-bold text-emerald-700">
+                  Rs.
+                </span>
+                <input
+                  id="pos-cash-received"
+                  type="number"
+                  min={0}
+                  value={currentCash || ""}
+                  onChange={(e) => onCashReceived?.(Number(e.target.value) || 0)}
+                  className="w-full rounded border border-emerald-300 bg-white py-1 pl-7 pr-2 text-right text-xs font-black text-slate-900 focus:border-emerald-500 focus:outline-none"
+                  aria-label="Cash received amount"
+                />
+              </div>
             </div>
-            <div className="rounded-xl bg-amber-50 p-2.5">
-              <p className="text-[10px] font-bold uppercase text-amber-700">Remaining</p>
-              <p className="mt-0.5 text-sm font-bold text-amber-900">{money(paymentRecorded.remaining)}</p>
+
+            {/* Quick Cash Presets */}
+            <div className="flex flex-wrap gap-1">
+              {quickAmounts.map((q) => (
+                <button
+                  key={q.label}
+                  type="button"
+                  onClick={() => onCashReceived?.(q.value)}
+                  className="pos-quick-cash-chip"
+                >
+                  {q.label === "Exact" ? "Exact" : `Rs. ${q.label}`}
+                </button>
+              ))}
             </div>
-            <div className="rounded-xl bg-slate-100 p-2.5">
-              <p className="text-[10px] font-bold uppercase text-slate-600">Change</p>
-              <p className="mt-0.5 text-sm font-bold text-slate-900">{money(paymentRecorded.change)}</p>
-            </div>
-            <div className="rounded-xl bg-blue-50 p-2.5">
-              <p className="text-[10px] font-bold uppercase text-blue-700">Tenders</p>
-              <p className="mt-0.5 text-sm font-bold text-blue-900">{paymentRecorded.lineCount}</p>
+
+            {/* Change to Return Display */}
+            <div className="flex items-center justify-between border-t border-emerald-200/70 pt-1 text-xs font-black">
+              <span className="text-emerald-900">Change to Return:</span>
+              <span className="text-sm font-black text-emerald-700">{money(changeToReturn)}</span>
             </div>
           </div>
         ) : null}
 
+        {/* Multi-Tender Status if recorded */}
+        {paymentRecorded && paymentKind !== "cash" ? (
+          <div className="grid grid-cols-3 gap-1 rounded bg-slate-100 p-1.5 text-center text-[10px]">
+            <div>
+              <span className="text-slate-500">Paid: </span>
+              <span className="font-bold text-emerald-700">{money(paymentRecorded.paid)}</span>
+            </div>
+            <div>
+              <span className="text-slate-500">Remain: </span>
+              <span className="font-bold text-amber-700">{money(paymentRecorded.remaining)}</span>
+            </div>
+            <div>
+              <span className="text-slate-500">Change: </span>
+              <span className="font-bold text-slate-800">{money(paymentRecorded.change)}</span>
+            </div>
+          </div>
+        ) : null}
+
+        {/* Payment Methods Grid */}
         <div>
-          <p className="mb-1.5 text-[10px] font-bold uppercase tracking-wide text-slate-500">Payment method</p>
-          <div className="grid grid-cols-3 gap-1.5">
-            {PAYMENT_METHODS.map((m) => (
+          <div className="mb-1 flex items-center justify-between">
+            <span className="text-[10px] font-bold uppercase tracking-wider text-slate-500">Payment Tender</span>
+            <button
+              type="button"
+              onClick={onPayment}
+              className="text-[10px] font-bold text-blue-600 hover:underline"
+            >
+              Split / More
+            </button>
+          </div>
+          <div className="grid grid-cols-4 gap-1">
+            {PAYMENT_METHODS.slice(0, 8).map((m) => (
               <button
                 key={m.id}
                 type="button"
                 onClick={() => onPaymentKind(m.id)}
-                className={`flex flex-col items-center gap-1 rounded-lg p-2 text-[9px] font-bold ${
+                className={`flex flex-col items-center justify-center rounded-md p-1.5 text-[9px] font-bold transition ${
                   paymentKind === m.id
-                    ? "border-2 border-[var(--pos-primary)] bg-blue-50 text-slate-800"
-                    : "border border-slate-200 bg-white text-slate-600"
+                    ? "border-2 border-blue-600 bg-blue-50 text-blue-900 shadow-xs"
+                    : "border border-slate-200 bg-white text-slate-600 hover:bg-slate-50"
                 }`}
               >
-                <i className={`fa-solid ${m.icon} text-sm ${m.color}`} aria-hidden />
-                {m.label}
+                <i className={`fa-solid ${m.icon} mb-0.5 text-xs ${m.color}`} aria-hidden />
+                <span className="truncate">{m.label}</span>
               </button>
             ))}
           </div>
           {recordOnlyHint ? (
-            <p className="mt-1.5 text-[10px] leading-snug text-slate-400">
-              Wallet/card tenders are recorded in POS — no live PSP charge in this build.
+            <p className="mt-1 text-[9px] text-slate-400">
+              * Wallet/Card recorded in POS without live PSP terminal
             </p>
           ) : null}
         </div>
 
-        <label className="block">
-          <span className="text-[10px] font-semibold uppercase text-slate-400">Sale notes</span>
+        {/* Sale Notes Input */}
+        <div>
           <textarea
             value={notes}
             onChange={(e) => onNotes(e.target.value)}
-            rows={2}
-            className="mt-1 w-full resize-none rounded-lg border border-slate-200 px-2 py-1.5 text-xs focus:border-[var(--pos-primary)] focus:outline-none"
-            placeholder="Optional note / salesman reference"
+            rows={1}
+            placeholder="Sale note / salesman reference (optional)…"
+            className="w-full resize-none rounded border border-slate-200 bg-white p-1.5 text-[11px] text-slate-800 placeholder-slate-400 focus:border-blue-500 focus:outline-none"
           />
-        </label>
+        </div>
       </div>
 
-      <div className="shrink-0 space-y-2 border-t border-slate-200 bg-white p-3">
-        <div className="grid grid-cols-2 gap-2">
+      {/* Pinned Action Footer (Always 100% visible on screen!) */}
+      <div className="shrink-0 space-y-1.5 border-t border-slate-200 bg-slate-50 p-2.5">
+        <div className="grid grid-cols-3 gap-1">
           <button
             type="button"
             disabled={busy || empty}
             onClick={onHold}
-            className="rounded-xl bg-amber-100 py-2.5 text-xs font-bold text-amber-900 disabled:opacity-40"
+            className="flex items-center justify-center gap-1 rounded-lg border border-amber-300 bg-amber-50 py-1.5 text-xs font-bold text-amber-900 transition hover:bg-amber-100 disabled:opacity-40"
           >
-            Hold
+            <i className="fa-solid fa-pause text-[10px]" />
+            Hold (F6)
           </button>
           <button
             type="button"
             disabled={busy || empty}
             onClick={onSaveDraft}
-            className="rounded-xl bg-slate-100 py-2.5 text-xs font-bold text-slate-700 disabled:opacity-40"
+            className="flex items-center justify-center gap-1 rounded-lg border border-slate-300 bg-white py-1.5 text-xs font-bold text-slate-700 transition hover:bg-slate-100 disabled:opacity-40"
           >
-            Save Draft
+            <i className="fa-regular fa-floppy-disk text-[10px]" />
+            Draft
+          </button>
+          <button
+            type="button"
+            disabled={busy || empty}
+            onClick={onPayment}
+            className="flex items-center justify-center gap-1 rounded-lg border border-slate-300 bg-white py-1.5 text-xs font-bold text-slate-700 transition hover:bg-slate-100 disabled:opacity-40"
+          >
+            <i className="fa-solid fa-receipt text-[10px]" />
+            Split
           </button>
         </div>
-        <button
-          type="button"
-          disabled={busy || empty}
-          onClick={onPayment}
-          className="w-full rounded-xl border border-[var(--pos-primary)] bg-white py-2.5 text-xs font-bold text-[var(--pos-primary)] disabled:opacity-40"
-        >
-          Payment
-        </button>
+
+        {/* Primary Complete Sale Button */}
         <button
           type="button"
           disabled={busy || empty}
           onClick={onComplete}
-          className="flex w-full items-center justify-between rounded-xl bg-[var(--pos-primary)] px-4 py-3 text-sm font-bold text-white shadow-sm disabled:opacity-40"
+          className="flex w-full items-center justify-between rounded-lg bg-emerald-600 px-3.5 py-2.5 text-sm font-black text-white shadow-sm transition hover:bg-emerald-700 active:scale-99 disabled:cursor-not-allowed disabled:bg-slate-300"
         >
-          <span>Complete Sale</span>
-          <span>{money(totals.grand)}</span>
+          <span className="flex items-center gap-1.5">
+            <i className="fa-solid fa-circle-check text-base" />
+            {busy ? "Processing…" : "COMPLETE SALE (F8)"}
+          </span>
+          <span className="text-base font-black">{money(totals.grand)}</span>
         </button>
       </div>
     </section>
