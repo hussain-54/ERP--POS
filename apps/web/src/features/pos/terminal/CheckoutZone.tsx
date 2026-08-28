@@ -20,6 +20,7 @@ export function CheckoutZone({
   onSaveDraft,
   onPayment,
   onComplete,
+  onProceedToCheckout,
   busy,
   recordOnlyHint,
   paymentRecorded,
@@ -52,6 +53,7 @@ export function CheckoutZone({
   onSaveDraft?: () => void;
   onPayment: () => void;
   onComplete: () => void;
+  onProceedToCheckout?: () => void;
   busy?: boolean;
   recordOnlyHint?: boolean;
   paymentRecorded?: {
@@ -343,6 +345,22 @@ export function CheckoutZone({
             Split
           </button>
         </div>
+
+        {/* Full Checkout Desk Transition Button */}
+        {onProceedToCheckout ? (
+          <button
+            type="button"
+            disabled={busy || empty}
+            onClick={onProceedToCheckout}
+            className="flex w-full items-center justify-between rounded-lg bg-blue-600 px-3.5 py-2 text-xs font-black text-white shadow-xs transition hover:bg-blue-700 active:scale-99 disabled:cursor-not-allowed disabled:bg-slate-300"
+          >
+            <span className="flex items-center gap-1.5">
+              <i className="fa-solid fa-cash-register text-sm" />
+              FULL CHECKOUT DESK →
+            </span>
+            <span>Review & Settle</span>
+          </button>
+        ) : null}
 
         {/* Primary Complete Sale Button */}
         <button

@@ -43,7 +43,9 @@ function lineTax(rate: number, qty: number, discount: number): number {
 }
 
 function toCartLine(p: ProductSearchResult, qty = 1): CartLine {
-  const rate = Number(p.retailPrice ?? 0);
+  const retail = Number(p.retailPrice ?? 0);
+  const rate = Number(p.customerPrice ?? p.promotionPrice ?? p.retailPrice ?? 0);
+  const listPrice = retail > 0 ? retail : rate;
   return {
     id: uuid(),
     productId: p.productId,
@@ -53,7 +55,7 @@ function toCartLine(p: ProductSearchResult, qty = 1): CartLine {
     unitLabel: p.unitName ?? "Pcs",
     qty,
     rate,
-    listPrice: rate,
+    listPrice,
     discount: 0,
     discountPercent: 0,
     tax: lineTax(rate, qty, 0) / Math.max(qty, 1),

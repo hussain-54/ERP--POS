@@ -14,6 +14,7 @@ export function mapCustomerToPos(c: Customer, loyaltyPoints = 0): PosCustomerVie
     outstanding: Number(c.outstanding ?? 0),
     loyaltyPoints,
     mobile: c.mobile ?? null,
+    email: c.email ?? null,
   };
 }
 

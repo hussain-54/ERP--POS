@@ -8,6 +8,7 @@ import { money } from "../format";
 import { resolveSalesDateRange, SALES_DATE_PRESETS, type SalesDatePreset } from "./dateRanges";
 import { SalesPageShell } from "./SalesPageShell";
 import { SaleDetailDrawer, SaleStatusBadge } from "./SaleDetailDrawer";
+import { printInvoiceReceipt } from "../invoices/invoice-utils";
 import "./sales-register.css";
 
 export type SalesRegisterVariant = "all" | "completed" | "void" | "draft";
@@ -166,27 +167,9 @@ export function SalesRegister({
 
   function reprint() {
     if (!invoice) return;
-    const w = window.open("", "_blank", "noopener,noreferrer,width=420,height=720");
-    if (!w) {
+    if (!printInvoiceReceipt(invoice, "thermal", undefined, true)) {
       push({ title: "Popup blocked", description: "Allow popups to reprint.", tone: "danger" });
-      return;
     }
-    const lines = (invoice.items ?? [])
-      .map(
-        (i) =>
-          `<tr><td>${i.name}</td><td style="text-align:right">${i.qty}</td><td style="text-align:right">${Number(i.total).toFixed(2)}</td></tr>`,
-      )
-      .join("");
-    w.document.write(`<!doctype html><html><head><title>${invoice.invoiceNumber ?? "Receipt"}</title>
-      <style>body{font-family:ui-monospace,monospace;font-size:12px;padding:16px} table{width:100%;border-collapse:collapse} td{padding:2px 0}</style>
-      </head><body>
-      <h2>${invoice.invoiceNumber ?? ""}</h2>
-      <p>${invoice.customerName ?? "Walk-in"} · ${invoice.dateTime ? new Date(invoice.dateTime).toLocaleString() : ""}</p>
-      <table>${lines}</table>
-      <p><strong>Total ${Number(invoice.sale?.grandTotal ?? 0).toFixed(2)}</strong></p>
-      <script>window.print()</script>
-      </body></html>`);
-    w.document.close();
   }
 
   function goReturn(refund: boolean) {

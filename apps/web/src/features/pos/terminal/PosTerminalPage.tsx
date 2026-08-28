@@ -27,9 +27,11 @@ import { CheckoutZone } from "./CheckoutZone";
 import { CustomerDialog } from "./CustomerDialog";
 import { DiscountDialog } from "./DiscountDialog";
 import { PostSaleDialog } from "./PostSaleDialog";
+import { CheckoutStage } from "./CheckoutStage";
 import "./terminal-layout.css";
 
 type MobilePane = "products" | "cart" | "checkout";
+type PosStage = "terminal" | "checkout";
 
 export function PosTerminalPage() {
   const { branchId, organizationId, permissions, hasPermission } = useAuth();
@@ -40,6 +42,7 @@ export function PosTerminalPage() {
   const sale = usePosSale();
   const searchRef = useRef<HTMLInputElement>(null);
 
+  const [stage, setStage] = useState<PosStage>("terminal");
   const [busy, setBusy] = useState(false);
   const [limit, setLimit] = useState(30);
   const [loadingProducts, setLoadingProducts] = useState(false);
@@ -261,12 +264,29 @@ export function PosTerminalPage() {
         searchRef.current?.select();
       }
       if (detail === "discount") {
-        setDiscountScope("invoice");
-        setDiscountLine(null);
-        setDiscountOpen(true);
+        const line = lines.find((l) => l.id === selectedLineId) ?? null;
+        if (line) {
+          openItemDiscount(line);
+        } else {
+          setDiscountScope("invoice");
+          setDiscountLine(null);
+          setDiscountOpen(true);
+        }
+      }
+      if (detail === "price-override") {
+        const line = lines.find((l) => l.id === selectedLineId) ?? lines[0] ?? null;
+        if (line) {
+          openPriceEdit(line);
+        }
       }
       if (detail === "hold") void onHold();
-      if (detail === "pay") void completeSale();
+      if (detail === "pay") {
+        if (stage === "terminal" && lines.length > 0) {
+          setStage("checkout");
+        } else {
+          void completeSale();
+        }
+      }
       if (detail === "customers") {
         setCustomerMode("select");
         setCustomerOpen(true);
@@ -275,7 +295,19 @@ export function PosTerminalPage() {
     window.addEventListener("pos:shortcut", onShortcut);
     return () => window.removeEventListener("pos:shortcut", onShortcut);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [newSale, clearCart, lines, totals, customer, paymentKind]);
+  }, [newSale, clearCart, lines, totals, customer, paymentKind, stage]);
+
+  useEffect(() => {
+    if (stage !== "checkout") return;
+    function onKeyDown(e: KeyboardEvent) {
+      if (e.key === "Escape" && !customerOpen && !discountOpen && !paymentOpen && !postSaleOpen) {
+        e.preventDefault();
+        setStage("terminal");
+      }
+    }
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, [stage, customerOpen, discountOpen, paymentOpen, postSaleOpen]);
 
   async function onHold() {
     if (!branchId || !organizationId || lines.length === 0) return;
@@ -423,55 +455,110 @@ export function PosTerminalPage() {
 
       const invoiceNum = postRes?.invoiceNumber ?? `INV-${Date.now().toString().slice(-6)}`;
 
-      // Build invoice preview object for instant receipt printing
-      const invView: InvoiceView = {
-        invoiceNumber: invoiceNum,
-        customerName: customer.label,
-        dateTime: new Date().toISOString(),
-        sale: {
-          id: postRes?.id ?? uuid(),
-          organizationId: organizationId ?? uuid(),
-          branchId: branchId ?? uuid(),
-          warehouseId: branchId ?? uuid(),
+      // Build authoritative invoice object
+      let invView: InvoiceView;
+      if (postRes?.id) {
+        try {
+          invView = await posApi.getInvoice(postRes.id);
+        } catch {
+          invView = {
+            invoiceNumber: invoiceNum,
+            customerName: customer.label,
+            customerMobile: customer.mobile ?? null,
+            customerEmail: customer.email ?? null,
+            branchName: "Main Branch",
+            dateTime: new Date().toISOString(),
+            sale: {
+              id: postRes.id,
+              organizationId: organizationId ?? uuid(),
+              branchId: branchId ?? uuid(),
+              warehouseId: branchId ?? uuid(),
+              invoiceNumber: invoiceNum,
+              subtotal: totals.subtotal,
+              discountTotal: totals.totalDiscount,
+              taxTotal: totals.tax,
+              grandTotal: totals.grand,
+              paidTotal: currentTenderReceived,
+              remainingTotal: Math.max(0, totals.grand - currentTenderReceived),
+              posMode: "easy",
+              localeMode: "en",
+              status: "posted",
+              paymentStatus: paymentKind === "credit" ? "unpaid" : "paid",
+              idempotencyKey: uuid(),
+              createdAt: new Date().toISOString(),
+              updatedAt: new Date().toISOString(),
+              version: 1,
+            },
+            items: lines.map((l) => ({
+              name: l.name,
+              unit: l.unitLabel,
+              qty: l.qty,
+              rate: l.rate,
+              discount: l.discount,
+              tax: l.tax * l.qty,
+              total: (l.rate * l.qty) - l.discount,
+            })),
+            payments: payments.map((p) => ({
+              method: p.methodKind,
+              amount: p.amount,
+              reference: "reference" in p ? (p.reference ?? null) : null,
+            })),
+          };
+        }
+      } else {
+        invView = {
           invoiceNumber: invoiceNum,
-          subtotal: totals.subtotal,
-          discountTotal: totals.totalDiscount,
-          taxTotal: totals.tax,
-          grandTotal: totals.grand,
-          paidTotal: currentTenderReceived,
-          remainingTotal: Math.max(0, totals.grand - currentTenderReceived),
-          posMode: "easy",
-          localeMode: "en",
-          status: "posted",
-          paymentStatus: paymentKind === "credit" ? "unpaid" : "paid",
-          idempotencyKey: uuid(),
-          createdAt: new Date().toISOString(),
-          updatedAt: new Date().toISOString(),
-          version: 1,
-        },
-        items: lines.map((l) => ({
-          name: l.name,
-          unit: l.unitLabel,
-          qty: l.qty,
-          rate: l.rate,
-          discount: l.discount,
-          tax: l.tax * l.qty,
-          total: (l.rate * l.qty) - l.discount,
-        })),
-        payments: payments.map((p) => ({
-          method: p.methodKind,
-          amount: p.amount,
-          reference: "reference" in p ? (p.reference ?? null) : null,
-        })),
-      };
+          customerName: customer.label,
+          customerMobile: customer.mobile ?? null,
+          customerEmail: customer.email ?? null,
+          branchName: "Main Branch",
+          dateTime: new Date().toISOString(),
+          sale: {
+            id: uuid(),
+            organizationId: organizationId ?? uuid(),
+            branchId: branchId ?? uuid(),
+            warehouseId: branchId ?? uuid(),
+            invoiceNumber: invoiceNum,
+            subtotal: totals.subtotal,
+            discountTotal: totals.totalDiscount,
+            taxTotal: totals.tax,
+            grandTotal: totals.grand,
+            paidTotal: currentTenderReceived,
+            remainingTotal: Math.max(0, totals.grand - currentTenderReceived),
+            posMode: "easy",
+            localeMode: "en",
+            status: "posted",
+            paymentStatus: paymentKind === "credit" ? "unpaid" : "paid",
+            idempotencyKey: uuid(),
+            createdAt: new Date().toISOString(),
+            updatedAt: new Date().toISOString(),
+            version: 1,
+          },
+          items: lines.map((l) => ({
+            name: l.name,
+            unit: l.unitLabel,
+            qty: l.qty,
+            rate: l.rate,
+            discount: l.discount,
+            tax: l.tax * l.qty,
+            total: (l.rate * l.qty) - l.discount,
+          })),
+          payments: payments.map((p) => ({
+            method: p.methodKind,
+            amount: p.amount,
+            reference: "reference" in p ? (p.reference ?? null) : null,
+          })),
+        };
+      }
 
       setCompletedInvoice(invView);
       setLastPaid(currentTenderReceived);
       setLastChange(currentChange);
       setPostSaleOpen(true);
 
-      // Reset cart and tender
+      // Reset cart, stage, and tender
       newSale();
+      setStage("terminal");
       setCashReceived(undefined);
       setMobilePane("products");
       push({ title: `Sale Completed #${invoiceNum}`, tone: "success" });
@@ -526,128 +613,167 @@ export function PosTerminalPage() {
 
   return (
     <div className="pos-terminal-root flex h-full min-h-0 flex-1 flex-col overflow-hidden">
-      {/* Sub-Header bar inside POS */}
-      <div className="flex shrink-0 items-center justify-between gap-2 border-b border-slate-200 bg-white px-3 py-1.5 sm:px-4">
-        <Link to="/pos" className="pos-back-link">
-          <i className="fa-solid fa-arrow-left text-[11px]" aria-hidden />
-          Back to POS Command Center
-        </Link>
-        <div className="flex items-center gap-3 text-xs text-slate-500">
-          <span className="font-bold text-slate-800">{isQuick ? "Quick Counter" : "Sale Register"}</span>
-          {hasPermission("products.write") ? (
-            <Link
-              to={`/products/new?returnTo=${encodeURIComponent(location.pathname)}`}
-              className="font-bold text-blue-600 hover:underline"
-            >
-              + New Product
+      {stage === "checkout" ? (
+        <CheckoutStage
+          lines={lines}
+          customer={customer}
+          totals={totals}
+          paymentKind={paymentKind}
+          onPaymentKind={setPaymentKind}
+          cashReceived={cashReceived}
+          onCashReceived={setCashReceived}
+          couponCode={couponCode}
+          notes={notes}
+          onNotes={setNotes}
+          onSelectCustomer={() => {
+            setCustomerMode("select");
+            setCustomerOpen(true);
+          }}
+          onWalkIn={() => setCustomer(emptyCustomer())}
+          onNewCustomer={() => {
+            setCustomerMode("create");
+            setCustomerOpen(true);
+          }}
+          onDiscount={() => {
+            setDiscountScope("invoice");
+            setDiscountSection("invoice");
+            setDiscountLine(null);
+            setDiscountOpen(true);
+          }}
+          onHold={() => void onHold()}
+          onBackToCart={() => setStage("terminal")}
+          onComplete={(overridePayments) => void completeSale(overridePayments)}
+          methodsByKind={methodsByKind}
+          busy={busy}
+        />
+      ) : (
+        <>
+          {/* Sub-Header bar inside POS */}
+          <div className="flex shrink-0 items-center justify-between gap-2 border-b border-slate-200 bg-white px-3 py-1.5 sm:px-4">
+            <Link to="/pos" className="pos-back-link">
+              <i className="fa-solid fa-arrow-left text-[11px]" aria-hidden />
+              Back to POS Command Center
             </Link>
-          ) : null}
-          <Link to="/pos/sales/held" className="font-bold text-amber-700 hover:underline">
-            Held Sales
-          </Link>
-        </div>
-      </div>
+            <div className="flex items-center gap-3 text-xs text-slate-500">
+              <span className="font-bold text-slate-800">{isQuick ? "Quick Counter" : "Sale Register"}</span>
+              {hasPermission("products.write") ? (
+                <Link
+                  to={`/products/new?returnTo=${encodeURIComponent(location.pathname)}`}
+                  className="font-bold text-blue-600 hover:underline"
+                >
+                  + New Product
+                </Link>
+              ) : null}
+              <Link to="/pos/sales/held" className="font-bold text-amber-700 hover:underline">
+                Held Sales
+              </Link>
+            </div>
+          </div>
 
-      {/* Mobile Tab Switcher */}
-      <div className="flex shrink-0 gap-1 border-b border-slate-200 bg-slate-50 p-1 lg:hidden">
-        {(
-          [
-            ["products", "Products"],
-            ["cart", "Cart"],
-            ["checkout", "Pay"],
-          ] as const
-        ).map(([id, label]) => (
-          <button
-            key={id}
-            type="button"
-            onClick={() => setMobilePane(id)}
-            className={`flex-1 rounded-lg py-1.5 text-xs font-bold transition ${
-              mobilePane === id ? "bg-white text-blue-600 shadow-xs" : "text-slate-500 hover:text-slate-900"
-            }`}
-          >
-            {label}
-            {id === "cart" && lines.length ? ` (${lines.length})` : ""}
-          </button>
-        ))}
-      </div>
+          {/* Mobile Tab Switcher */}
+          <div className="flex shrink-0 gap-1 border-b border-slate-200 bg-slate-50 p-1 lg:hidden">
+            {(
+              [
+                ["products", "Products"],
+                ["cart", "Cart"],
+                ["checkout", "Pay"],
+              ] as const
+            ).map(([id, label]) => (
+              <button
+                key={id}
+                type="button"
+                onClick={() => setMobilePane(id)}
+                className={`flex-1 rounded-lg py-1.5 text-xs font-bold transition ${
+                  mobilePane === id ? "bg-white text-blue-600 shadow-xs" : "text-slate-500 hover:text-slate-900"
+                }`}
+              >
+                {label}
+                {id === "cart" && lines.length ? ` (${lines.length})` : ""}
+              </button>
+            ))}
+          </div>
 
-      {/* Main 3-Zone Desktop Grid */}
-      <div className="pos-terminal-grid min-h-0 flex-1 overflow-hidden">
-        {/* Zone 1: Product Discovery */}
-        <div className={`min-h-0 min-w-0 ${mobilePane === "products" ? "flex" : "hidden"} lg:flex`}>
-          <ProductDiscovery
-            search={search}
-            onSearch={setSearch}
-            tab={tab}
-            onTab={setTab}
-            categoryFilter={categoryFilter}
-            onCategory={setCategoryFilter}
-            categories={categories}
-            products={visibleProducts}
-            favoriteIds={favoriteIds}
-            onAdd={(p) => {
-              addProduct(p);
-            }}
-            onToggleFavorite={toggleFavorite}
-            onLoadMore={() => setLimit((l) => l + 30)}
-            loading={loadingProducts}
-            hasMore={products.length >= limit}
-            searchRef={searchRef}
-          />
-        </div>
+          {/* Main 3-Zone Desktop Grid */}
+          <div className="pos-terminal-grid min-h-0 flex-1 overflow-hidden">
+            {/* Zone 1: Product Discovery */}
+            <div className={`min-h-0 min-w-0 ${mobilePane === "products" ? "flex" : "hidden"} lg:flex`}>
+              <ProductDiscovery
+                search={search}
+                onSearch={setSearch}
+                tab={tab}
+                onTab={setTab}
+                categoryFilter={categoryFilter}
+                onCategory={setCategoryFilter}
+                categories={categories}
+                products={visibleProducts}
+                favoriteIds={favoriteIds}
+                onAdd={(p) => {
+                  addProduct(p);
+                }}
+                onToggleFavorite={toggleFavorite}
+                onLoadMore={() => setLimit((l) => l + 30)}
+                loading={loadingProducts}
+                hasMore={products.length >= limit}
+                searchRef={searchRef}
+              />
+            </div>
 
-        {/* Zone 2: Cart Ledger */}
-        <div className={`min-h-0 min-w-0 ${mobilePane === "cart" ? "flex" : "hidden"} lg:flex`}>
-          <CartZone
-            lines={lines}
-            onQty={updateQty}
-            onRemove={removeLine}
-            onClear={clearCart}
-            onEditDiscount={openItemDiscount}
-            onEditPrice={openPriceEdit}
-            canOverridePrice={allowPriceOverride}
-            selectedLineId={selectedLineId}
-            onSelectLine={setSelectedLineId}
-          />
-        </div>
+            {/* Zone 2: Cart Ledger */}
+            <div className={`min-h-0 min-w-0 ${mobilePane === "cart" ? "flex" : "hidden"} lg:flex`}>
+              <CartZone
+                lines={lines}
+                onQty={updateQty}
+                onRemove={removeLine}
+                onClear={clearCart}
+                onEditDiscount={openItemDiscount}
+                onEditPrice={openPriceEdit}
+                canOverridePrice={allowPriceOverride}
+                selectedLineId={selectedLineId}
+                onSelectLine={setSelectedLineId}
+                onProceedToCheckout={() => setStage("checkout")}
+              />
+            </div>
 
-        {/* Zone 3: Checkout & Pay */}
-        <div className={`min-h-0 min-w-0 ${mobilePane === "checkout" ? "flex" : "hidden"} lg:flex`}>
-          <CheckoutZone
-            customer={customer}
-            totals={totals}
-            paymentKind={paymentKind}
-            onPaymentKind={setPaymentKind}
-            cashReceived={cashReceived}
-            onCashReceived={setCashReceived}
-            couponCode={couponCode}
-            notes={notes}
-            onNotes={setNotes}
-            onSelectCustomer={() => {
-              setCustomerMode("select");
-              setCustomerOpen(true);
-            }}
-            onWalkIn={() => setCustomer(emptyCustomer())}
-            onNewCustomer={() => {
-              setCustomerMode("create");
-              setCustomerOpen(true);
-            }}
-            onDiscount={() => {
-              setDiscountScope("invoice");
-              setDiscountSection("invoice");
-              setDiscountLine(null);
-              setDiscountOpen(true);
-            }}
-            onHold={() => void onHold()}
-            onSaveDraft={onSaveDraft}
-            onPayment={() => setPaymentOpen(true)}
-            onComplete={() => void completeSale()}
-            busy={busy}
-            recordOnlyHint={recordOnly}
-            paymentRecorded={paymentRecorded}
-          />
-        </div>
-      </div>
+            {/* Zone 3: Checkout & Pay */}
+            <div className={`min-h-0 min-w-0 ${mobilePane === "checkout" ? "flex" : "hidden"} lg:flex`}>
+              <CheckoutZone
+                customer={customer}
+                totals={totals}
+                paymentKind={paymentKind}
+                onPaymentKind={setPaymentKind}
+                cashReceived={cashReceived}
+                onCashReceived={setCashReceived}
+                couponCode={couponCode}
+                notes={notes}
+                onNotes={setNotes}
+                onSelectCustomer={() => {
+                  setCustomerMode("select");
+                  setCustomerOpen(true);
+                }}
+                onWalkIn={() => setCustomer(emptyCustomer())}
+                onNewCustomer={() => {
+                  setCustomerMode("create");
+                  setCustomerOpen(true);
+                }}
+                onDiscount={() => {
+                  setDiscountScope("invoice");
+                  setDiscountSection("invoice");
+                  setDiscountLine(null);
+                  setDiscountOpen(true);
+                }}
+                onHold={() => void onHold()}
+                onSaveDraft={onSaveDraft}
+                onPayment={() => setPaymentOpen(true)}
+                onComplete={() => void completeSale()}
+                onProceedToCheckout={() => setStage("checkout")}
+                busy={busy}
+                recordOnlyHint={recordOnly}
+                paymentRecorded={paymentRecorded}
+              />
+            </div>
+          </div>
+        </>
+      )}
 
       {/* Customer Dialog Modal */}
       <CustomerDialog
@@ -738,9 +864,12 @@ export function PosTerminalPage() {
         paidAmount={lastPaid}
         changeAmount={lastChange}
         customerMobile={customer.mobile}
+        customerEmail={customer.email}
+        paymentMethod={paymentKind}
         onClose={() => setPostSaleOpen(false)}
         onNewSale={() => {
           setPostSaleOpen(false);
+          setStage("terminal");
           searchRef.current?.focus();
         }}
       />

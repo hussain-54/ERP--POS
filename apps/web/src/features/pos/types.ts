@@ -51,6 +51,7 @@ export interface PosCustomerView {
   outstanding: number;
   loyaltyPoints: number;
   mobile?: string | null;
+  email?: string | null;
 }
 
 export interface PosDrawerSummary {
