@@ -1,5 +1,16 @@
-import { useEffect, useState, type FormEvent } from "react";
-import { Button, Card, Form, FormActions, Input, Select, useToast } from "@electronic-erp/ui";
+import { useEffect, useMemo, useState, type FormEvent } from "react";
+import {
+  Badge,
+  Breadcrumb,
+  Button,
+  Card,
+  Form,
+  FormActions,
+  Input,
+  PageHeader,
+  Select,
+  useToast,
+} from "@electronic-erp/ui";
 import { adminApi } from "@/features/users/admin-api";
 
 export function PermissionsPage() {
@@ -8,19 +19,15 @@ export function PermissionsPage() {
   const [perms, setPerms] = useState<Array<Record<string, unknown>>>([]);
   const [roleId, setRoleId] = useState("");
   const [rolePermKeys, setRolePermKeys] = useState<string[]>([]);
-  const [userOverride, setUserOverride] = useState({
-    userId: "",
-    permissionKey: "",
-    effect: "grant",
-    branchId: "",
-  });
+  const [searchFilter, setSearchFilter] = useState("");
+  const [saving, setSaving] = useState(false);
 
   useEffect(() => {
     void Promise.all([adminApi.listRoles(), adminApi.listPermissions()])
       .then(([r, p]) => {
-        setRoles(r.items);
-        setPerms(p.items);
-        if (r.items[0]) setRoleId(String(r.items[0].id));
+        setRoles(r.items ?? []);
+        setPerms(p.items ?? []);
+        if (r.items?.[0]) setRoleId(String(r.items[0].id));
       })
       .catch((err: unknown) =>
         toast.push({
@@ -37,7 +44,7 @@ export function PermissionsPage() {
     void adminApi
       .listRolePermissions(roleId)
       .then((res) => {
-        const keys = res.items.map((row) => {
+        const keys = (res.items ?? []).map((row) => {
           const p = row.permissions as { key?: string } | null;
           return String(p?.key ?? "");
         });
@@ -46,8 +53,40 @@ export function PermissionsPage() {
       .catch(() => undefined);
   }, [roleId]);
 
+  // Group permissions by module prefix (e.g. pos, products, inventory, customers, reports, settings)
+  const groupedPerms = useMemo(() => {
+    const map = new Map<string, Array<{ key: string; module: string; action: string; desc?: string }>>();
+
+    for (const p of perms) {
+      const key = String(p.key);
+      const parts = key.split(".");
+      const mod = String(p.module ?? parts[0] ?? "general");
+      const action = String(p.action ?? parts.slice(1).join(".") ?? key);
+
+      if (
+        searchFilter &&
+        !key.toLowerCase().includes(searchFilter.toLowerCase()) &&
+        !mod.toLowerCase().includes(searchFilter.toLowerCase())
+      ) {
+        continue;
+      }
+
+      if (!map.has(mod)) map.set(mod, []);
+      map.get(mod)!.push({
+        key,
+        module: mod,
+        action,
+        desc: p.description ? String(p.description) : undefined,
+      });
+    }
+
+    return Array.from(map.entries()).sort(([a], [b]) => a.localeCompare(b));
+  }, [perms, searchFilter]);
+
   async function saveRolePerms(e: FormEvent) {
     e.preventDefault();
+    if (!roleId) return;
+    setSaving(true);
     try {
       await adminApi.setRolePermissions(roleId, rolePermKeys);
       toast.push({ title: "Role permissions saved", tone: "success" });
@@ -57,25 +96,8 @@ export function PermissionsPage() {
         description: err instanceof Error ? err.message : "Error",
         tone: "danger",
       });
-    }
-  }
-
-  async function onUserOverride(e: FormEvent) {
-    e.preventDefault();
-    try {
-      await adminApi.setUserPermission({
-        userId: userOverride.userId,
-        permissionKey: userOverride.permissionKey,
-        effect: userOverride.effect,
-        branchId: userOverride.branchId || undefined,
-      });
-      toast.push({ title: "User permission saved", tone: "success" });
-    } catch (err) {
-      toast.push({
-        title: "Override failed",
-        description: err instanceof Error ? err.message : "Error",
-        tone: "danger",
-      });
+    } finally {
+      setSaving(false);
     }
   }
 
@@ -85,71 +107,152 @@ export function PermissionsPage() {
     );
   }
 
-  return (
-    <div className="space-y-4 p-4">
-      <h1 className="text-xl font-semibold">Permissions</h1>
+  function toggleModule(modKeys: string[]) {
+    const allSelected = modKeys.every((k) => rolePermKeys.includes(k));
+    if (allSelected) {
+      setRolePermKeys((prev) => prev.filter((k) => !modKeys.includes(k)));
+    } else {
+      setRolePermKeys((prev) => Array.from(new Set([...prev, ...modKeys])));
+    }
+  }
 
-      <Card title="Assign by role">
-        <Form onSubmit={saveRolePerms}>
-          <Select
-            label="Role"
-            value={roleId}
-            onChange={(e) => setRoleId(e.target.value)}
-            options={roles.map((r) => ({
-              value: String(r.id),
-              label: `${String(r.code)} — ${String(r.name)}`,
-            }))}
-          />
-          <div className="max-h-64 overflow-auto rounded border p-2 text-xs">
-            {perms.slice(0, 200).map((p) => {
-              const key = String(p.key);
+  function selectAll() {
+    setRolePermKeys(perms.map((p) => String(p.key)));
+  }
+
+  function clearAll() {
+    setRolePermKeys([]);
+  }
+
+  const selectedRole = roles.find((r) => String(r.id) === roleId);
+
+  return (
+    <div className="space-y-6 p-4 sm:p-6 lg:p-8">
+      <Breadcrumb
+        items={[
+          { label: "Dashboard", href: "/" },
+          { label: "System Administration", href: "/settings" },
+          { label: "Users & Roles", href: "/users" },
+          { label: "Permissions" },
+        ]}
+      />
+
+      <PageHeader
+        title="Role Permission Matrix"
+        description="Fine-grained granular access control mapping modules and actions to organizational roles."
+      />
+
+      <Card>
+        <Form onSubmit={saveRolePerms} className="space-y-6">
+          <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+            <div className="w-full sm:w-80">
+              <Select
+                label="Selected Role"
+                value={roleId}
+                onChange={(e) => setRoleId(e.target.value)}
+                options={roles.map((r) => ({
+                  value: String(r.id),
+                  label: `${String(r.name ?? r.code)} (${r.is_system ? "System" : "Custom"})`,
+                }))}
+              />
+            </div>
+
+            <div className="flex flex-wrap items-center gap-2 pt-2 sm:pt-6">
+              <Button type="button" variant="secondary" size="sm" onClick={selectAll}>
+                Select All ({perms.length})
+              </Button>
+              <Button type="button" variant="secondary" size="sm" onClick={clearAll}>
+                Clear All
+              </Button>
+              <Button type="submit" variant="primary" size="sm" disabled={saving}>
+                {saving ? "Saving…" : `Save (${rolePermKeys.length} Granted)`}
+              </Button>
+            </div>
+          </div>
+
+          <div className="flex items-center gap-3">
+            <Input
+              placeholder="Search permissions by keyword (e.g. pos, sale, discount, reports)…"
+              value={searchFilter}
+              onChange={(e) => setSearchFilter(e.target.value)}
+              className="w-full sm:max-w-md"
+            />
+            {selectedRole ? (
+              <Badge tone="brand">
+                Role: {String(selectedRole.code)}
+              </Badge>
+            ) : null}
+          </div>
+
+          <div className="grid grid-cols-1 gap-6 md:grid-cols-2 xl:grid-cols-3">
+            {groupedPerms.map(([mod, items]) => {
+              const modKeys = items.map((i) => i.key);
+              const grantedInMod = modKeys.filter((k) => rolePermKeys.includes(k)).length;
+              const isAllChecked = grantedInMod === modKeys.length && modKeys.length > 0;
+
               return (
-                <label key={key} className="flex items-center gap-2 py-0.5">
-                  <input
-                    type="checkbox"
-                    checked={rolePermKeys.includes(key)}
-                    onChange={() => toggleKey(key)}
-                  />
-                  <span>{key}</span>
-                </label>
+                <div
+                  key={mod}
+                  className="rounded-lg border border-[var(--erp-border)] bg-[var(--erp-surface)] p-4 shadow-sm"
+                >
+                  <div className="mb-3 flex items-center justify-between border-b border-[var(--erp-border)] pb-2">
+                    <div className="flex items-center gap-2">
+                      <span className="text-sm font-bold uppercase tracking-wider text-[var(--erp-ink)]">
+                        {mod}
+                      </span>
+                      <span className="text-xs text-[var(--erp-muted)]">
+                        ({grantedInMod}/{modKeys.length})
+                      </span>
+                    </div>
+
+                    <button
+                      type="button"
+                      onClick={() => toggleModule(modKeys)}
+                      className="text-xs font-medium text-[var(--erp-brand)] hover:underline"
+                    >
+                      {isAllChecked ? "Deselect" : "Select all"}
+                    </button>
+                  </div>
+
+                  <div className="space-y-2">
+                    {items.map((item) => {
+                      const checked = rolePermKeys.includes(item.key);
+                      return (
+                        <label
+                          key={item.key}
+                          className="flex items-start gap-2.5 rounded p-1 text-xs cursor-pointer hover:bg-[var(--erp-bg)] transition-colors"
+                        >
+                          <input
+                            type="checkbox"
+                            checked={checked}
+                            onChange={() => toggleKey(item.key)}
+                            className="mt-0.5 h-3.5 w-3.5 rounded border-slate-300 text-[var(--erp-brand)] focus:ring-[var(--erp-ring)]"
+                          />
+                          <div className="flex-1">
+                            <span
+                              className={`font-mono font-medium ${
+                                checked ? "text-[var(--erp-ink)]" : "text-[var(--erp-muted)]"
+                              }`}
+                            >
+                              {item.key}
+                            </span>
+                            {item.desc ? (
+                              <p className="text-[11px] text-[var(--erp-muted)] leading-tight">{item.desc}</p>
+                            ) : null}
+                          </div>
+                        </label>
+                      );
+                    })}
+                  </div>
+                </div>
               );
             })}
-            <p className="mt-2 opacity-70">Showing first 200 permissions ({perms.length} total).</p>
           </div>
-          <FormActions>
-            <Button type="submit">Save role permissions</Button>
-          </FormActions>
-        </Form>
-      </Card>
 
-      <Card title="Assign by user (grant/deny, optional branch)">
-        <Form onSubmit={onUserOverride}>
-          <Input
-            label="User ID"
-            value={userOverride.userId}
-            onChange={(e) => setUserOverride((p) => ({ ...p, userId: e.target.value }))}
-          />
-          <Input
-            label="Permission key"
-            value={userOverride.permissionKey}
-            onChange={(e) => setUserOverride((p) => ({ ...p, permissionKey: e.target.value }))}
-          />
-          <Select
-            label="Effect"
-            value={userOverride.effect}
-            onChange={(e) => setUserOverride((p) => ({ ...p, effect: e.target.value }))}
-            options={[
-              { value: "grant", label: "Grant" },
-              { value: "deny", label: "Deny" },
-            ]}
-          />
-          <Input
-            label="Branch ID (optional)"
-            value={userOverride.branchId}
-            onChange={(e) => setUserOverride((p) => ({ ...p, branchId: e.target.value }))}
-          />
           <FormActions>
-            <Button type="submit">Save user permission</Button>
+            <Button type="submit" variant="primary" disabled={saving}>
+              {saving ? "Saving Changes…" : `Save ${rolePermKeys.length} Permissions`}
+            </Button>
           </FormActions>
         </Form>
       </Card>

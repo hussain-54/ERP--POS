@@ -1,4 +1,4 @@
-import type { AuthSession, LoginInput, UserProfile } from "@electronic-erp/contracts";
+import type { AuthSession, LoginInput, SignupInput, UserProfile } from "@electronic-erp/contracts";
 import { DEFAULT_PASSWORD_POLICY } from "@electronic-erp/domain";
 import { apiFetch, ApiError } from "@/lib/api";
 import { getSupabase } from "@/lib/supabase";
@@ -257,6 +257,22 @@ export const INACTIVITY_TIMEOUT_MS = INACTIVITY_MS;
 
 /** Auth orchestration lives outside React components. */
 export const authService = {
+  async signup(input: SignupInput): Promise<AuthSession> {
+    const session = await apiFetch<AuthSession>("/api/v1/auth/signup", {
+      method: "POST",
+      body: JSON.stringify(input),
+      skipAuthRefresh: true,
+    });
+    if (isSupabaseConfigured() && session.accessToken) {
+      syncTokensFromSupabaseSession({
+        access_token: session.accessToken,
+        refresh_token: session.refreshToken,
+      });
+    }
+    persistSession(session, session.refreshToken);
+    return session;
+  },
+
   async login(input: LoginInput): Promise<AuthSession> {
     if (isSupabaseConfigured()) {
       const sb = getSupabase();

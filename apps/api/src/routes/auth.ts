@@ -3,17 +3,31 @@ import {
   ChangePasswordSchema,
   LoginSchema,
   PasswordResetRequestSchema,
+  SignupSchema,
   UpdateOwnProfileSchema,
 } from "@electronic-erp/contracts";
 import { AuthService } from "../services/auth-service.js";
 import { requireAuth, type AuthedRequest } from "../middleware/auth.js";
 
 /**
- * Auth router — outside the 39 product modules (login / password reset).
+ * Auth router — outside the 39 product modules (login / signup / password reset).
  * Mount: /api/v1/auth. Service: AuthService. Repository: UserRepository.
  */
 export const authRouter = Router();
 const authService = new AuthService();
+
+authRouter.post("/signup", async (req, res, next) => {
+  try {
+    const input = SignupSchema.parse(req.body);
+    const session = await authService.signup(input, {
+      ipAddress: String(req.headers["x-forwarded-for"] ?? req.socket.remoteAddress ?? ""),
+      userAgent: String(req.headers["user-agent"] ?? ""),
+    });
+    res.status(201).json(session);
+  } catch (err) {
+    next(err);
+  }
+});
 
 authRouter.post("/login", async (req, res, next) => {
   try {

@@ -85,12 +85,87 @@ export class AdminRepository {
   async listUsers(organizationId: string) {
     const { data, error } = await this.db
       .from("user_profiles")
-      .select("*")
+      .select("*, default_branch:branches(id,name,code)")
       .eq("organization_id", organizationId)
       .is("deleted_at", null)
       .order("full_name");
     if (error) throw error;
     return data ?? [];
+  }
+
+  async listDetailedUsers(organizationId: string) {
+    const { data: profiles, error: pErr } = await this.db
+      .from("user_profiles")
+      .select("*, default_branch:branches(id,name,code)")
+      .eq("organization_id", organizationId)
+      .is("deleted_at", null)
+      .order("created_at", { ascending: false });
+    if (pErr) throw pErr;
+
+    const userIds = (profiles ?? []).map((p) => String(p.id));
+    if (userIds.length === 0) return [];
+
+    const [{ data: userRoles }, { data: memberships }] = await Promise.all([
+      this.db
+        .from("user_roles")
+        .select("id, user_id, role_id, branch_id, roles(id,code,name)")
+        .in("user_id", userIds),
+      this.db
+        .from("branch_memberships")
+        .select("id, user_id, branch_id, branches(id,name,code)")
+        .in("user_id", userIds),
+    ]);
+
+    const rolesByUser = new Map<string, Array<Record<string, unknown>>>();
+    for (const r of userRoles ?? []) {
+      const uid = String(r.user_id);
+      if (!rolesByUser.has(uid)) rolesByUser.set(uid, []);
+      rolesByUser.get(uid)!.push(r as Record<string, unknown>);
+    }
+
+    const branchesByUser = new Map<string, Array<Record<string, unknown>>>();
+    for (const b of memberships ?? []) {
+      const uid = String(b.user_id);
+      if (!branchesByUser.has(uid)) branchesByUser.set(uid, []);
+      branchesByUser.get(uid)!.push(b as Record<string, unknown>);
+    }
+
+    return (profiles ?? []).map((p) => {
+      const uid = String(p.id);
+      return {
+        ...p,
+        roles: rolesByUser.get(uid) ?? [],
+        branches: branchesByUser.get(uid) ?? [],
+      };
+    });
+  }
+
+  async updateUser(input: {
+    organizationId: string;
+    userId: string;
+    fullName?: string;
+    phone?: string | null;
+    isActive?: boolean;
+    defaultBranchId?: string | null;
+  }) {
+    const patch: Record<string, unknown> = {
+      updated_at: new Date().toISOString(),
+    };
+    if (input.fullName !== undefined) patch.full_name = input.fullName;
+    if (input.phone !== undefined) patch.phone = input.phone;
+    if (input.isActive !== undefined) patch.is_active = input.isActive;
+    if (input.defaultBranchId !== undefined) patch.default_branch_id = input.defaultBranchId;
+
+    const { data, error } = await this.db
+      .from("user_profiles")
+      .update(patch)
+      .eq("id", input.userId)
+      .eq("organization_id", input.organizationId)
+      .is("deleted_at", null)
+      .select("*")
+      .single();
+    if (error) throw error;
+    return data;
   }
 
   async listUserRoles(userId: string) {

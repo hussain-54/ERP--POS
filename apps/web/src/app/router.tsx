@@ -2,6 +2,7 @@ import { createBrowserRouter } from "react-router-dom";
 import type { ReactNode } from "react";
 import { ProtectedRoute } from "@/features/auth/ProtectedRoute";
 import { LoginPage } from "@/features/auth/LoginPage";
+import { SignupPage } from "@/features/auth/SignupPage";
 import { ForgotPasswordPage } from "@/features/auth/ForgotPasswordPage";
 import { ResetPasswordPage } from "@/features/auth/ResetPasswordPage";
 import { AppShell } from "@/app/shell/AppShell";
@@ -270,6 +271,8 @@ export function elementForModulePath(path: string): ReactNode {
 
 export const router = createBrowserRouter([
   { path: "/login", element: <LoginPage /> },
+  { path: "/signup", element: <SignupPage /> },
+  { path: "/auth/signup", element: <SignupPage /> },
   { path: "/auth/forgot-password", element: <ForgotPasswordPage /> },
   { path: "/auth/reset", element: <ResetPasswordPage /> },
   {

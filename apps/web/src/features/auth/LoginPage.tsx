@@ -110,9 +110,15 @@ export function LoginPage() {
       title="Sign in"
       subtitle="Enter your credentials to access your organization workspace."
       footer={
-        <>
-          Need help? Contact your system administrator.
-        </>
+        <div className="flex flex-col items-center gap-2 sm:flex-row sm:justify-center">
+          <span>New to ERP System?</span>
+          <Link
+            to="/signup"
+            className="font-medium text-[var(--erp-brand)] hover:underline"
+          >
+            Create an organization account
+          </Link>
+        </div>
       }
     >
       <Form onSubmit={onSubmit} noValidate className="flex flex-col gap-4">

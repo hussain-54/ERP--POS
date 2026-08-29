@@ -41,6 +41,36 @@ export const adminApi = {
   listUsers() {
     return apiFetch<{ items: Array<Record<string, unknown>> }>(`${base}/users`, { token: token() });
   },
+  listDetailedUsers() {
+    return apiFetch<{ items: Array<Record<string, unknown>> }>(`${base}/users/detailed`, { token: token() });
+  },
+  createUser(body: Record<string, unknown>) {
+    return apiFetch<{ item: Record<string, unknown> }>(`${base}/users`, {
+      method: "POST",
+      token: token(),
+      body: JSON.stringify(body),
+    });
+  },
+  updateUser(userId: string, body: Record<string, unknown>) {
+    return apiFetch<{ item: Record<string, unknown> }>(`${base}/users/${userId}`, {
+      method: "PATCH",
+      token: token(),
+      body: JSON.stringify(body),
+    });
+  },
+  resetUserPassword(userId: string, newPassword: string) {
+    return apiFetch<{ ok: boolean; message: string }>(`${base}/users/${userId}/reset-password`, {
+      method: "POST",
+      token: token(),
+      body: JSON.stringify({ newPassword }),
+    });
+  },
+  removeUserRole(userRoleId: string) {
+    return apiFetch<{ ok: boolean }>(`${base}/users/roles/${userRoleId}`, {
+      method: "DELETE",
+      token: token(),
+    });
+  },
   assignRole(body: Record<string, unknown>) {
     return apiFetch(`${base}/users/roles`, {
       method: "POST",

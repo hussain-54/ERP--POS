@@ -25,6 +25,43 @@ export const AssignUserRoleSchema = z.object({
 });
 export type AssignUserRoleInput = z.input<typeof AssignUserRoleSchema>;
 
+export const CreateUserAdminSchema = z.object({
+  organizationId: UuidSchema,
+  email: z.string().trim().email("Enter a valid email address"),
+  password: z.string().min(8, "Password must be at least 8 characters").max(128),
+  fullName: z.string().trim().min(1, "Full name is required").max(200),
+  phone: z
+    .preprocess(
+      (value) => (typeof value === "string" && value.trim() === "" ? null : value),
+      z.string().trim().max(50).nullable().optional(),
+    ),
+  roleCode: SystemRoleCodeSchema.optional(),
+  branchId: UuidSchema.optional(),
+  isActive: z.boolean().default(true),
+});
+export type CreateUserAdminInput = z.input<typeof CreateUserAdminSchema>;
+
+export const UpdateUserAdminSchema = z.object({
+  organizationId: UuidSchema,
+  userId: UuidSchema,
+  fullName: z.string().trim().min(1, "Full name is required").max(200).optional(),
+  phone: z
+    .preprocess(
+      (value) => (typeof value === "string" && value.trim() === "" ? null : value),
+      z.string().trim().max(50).nullable().optional(),
+    ),
+  isActive: z.boolean().optional(),
+  defaultBranchId: UuidSchema.nullable().optional(),
+});
+export type UpdateUserAdminInput = z.input<typeof UpdateUserAdminSchema>;
+
+export const AdminResetPasswordSchema = z.object({
+  organizationId: UuidSchema,
+  userId: UuidSchema,
+  newPassword: z.string().min(8, "Password must be at least 8 characters").max(128),
+});
+export type AdminResetPasswordInput = z.input<typeof AdminResetPasswordSchema>;
+
 export const SetRolePermissionsSchema = z.object({
   organizationId: UuidSchema,
   roleId: UuidSchema,

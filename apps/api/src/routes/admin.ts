@@ -1,17 +1,20 @@
 import { Router } from "express";
 import {
+  AdminResetPasswordSchema,
   AssignUserRoleSchema,
   CreateApprovalRequestSchema,
   CreateAuditLogAdminSchema,
   CreateBranchAdminSchema,
+  CreateUserAdminSchema,
   DecideApprovalSchema,
   SetBranchMembershipSchema,
   SetRolePermissionsSchema,
   SetUserPermissionSchema,
+  UpdateUserAdminSchema,
 } from "@electronic-erp/contracts";
 import { AdminRepository } from "@electronic-erp/db";
-import { AuthorizationService } from "@electronic-erp/domain";
-import { createUserClient } from "../lib/supabase.js";
+import { AuthorizationService, DomainError } from "@electronic-erp/domain";
+import { createServiceClient, createUserClient } from "../lib/supabase.js";
 import { requireAuth, type AuthedRequest } from "../middleware/auth.js";
 
 /**
@@ -91,6 +94,134 @@ adminRouter.get("/users", async (req: AuthedRequest, res, next) => {
   try {
     authz(req).assert("users.manage");
     res.json({ items: await repo(req).listUsers(orgId(req)) });
+  } catch (err) {
+    next(err);
+  }
+});
+
+adminRouter.get("/users/detailed", async (req: AuthedRequest, res, next) => {
+  try {
+    authz(req).assert("users.manage");
+    res.json({ items: await repo(req).listDetailedUsers(orgId(req)) });
+  } catch (err) {
+    next(err);
+  }
+});
+
+adminRouter.post("/users", async (req: AuthedRequest, res, next) => {
+  try {
+    authz(req).assert("users.manage");
+    const input = CreateUserAdminSchema.parse({ ...req.body, organizationId: orgId(req) });
+    const serviceClient = createServiceClient();
+    if (!serviceClient) {
+      throw new DomainError("Service client not configured to create users", "UNAUTHORIZED");
+    }
+
+    const { data: authData, error: authErr } = await serviceClient.auth.admin.createUser({
+      email: input.email,
+      password: input.password,
+      email_confirm: true,
+      user_metadata: { full_name: input.fullName },
+    });
+
+    if (authErr || !authData.user) {
+      throw new DomainError(authErr?.message ?? "Failed to create user", "BAD_REQUEST");
+    }
+
+    const { data: profile, error: profErr } = await serviceClient
+      .from("user_profiles")
+      .insert({
+        auth_user_id: authData.user.id,
+        organization_id: input.organizationId,
+        email: input.email,
+        full_name: input.fullName,
+        phone: input.phone ?? null,
+        is_active: input.isActive ?? true,
+        default_branch_id: input.branchId ?? null,
+        created_by: userId(req),
+      })
+      .select("*")
+      .single();
+
+    if (profErr) {
+      await serviceClient.auth.admin.deleteUser(authData.user.id).catch(() => null);
+      throw new DomainError(profErr.message, "BAD_REQUEST");
+    }
+
+    if (input.roleCode) {
+      await repo(req).assignUserRole({
+        organizationId: input.organizationId,
+        userId: String(profile.id),
+        roleCode: input.roleCode,
+        branchId: input.branchId,
+      });
+    }
+
+    if (input.branchId) {
+      await repo(req).setBranchMembership({
+        organizationId: input.organizationId,
+        userId: String(profile.id),
+        branchId: input.branchId,
+        assign: true,
+      });
+    }
+
+    res.status(201).json({ item: profile });
+  } catch (err) {
+    next(err);
+  }
+});
+
+adminRouter.patch("/users/:userId", async (req: AuthedRequest, res, next) => {
+  try {
+    authz(req).assert("users.manage");
+    const input = UpdateUserAdminSchema.parse({
+      ...req.body,
+      organizationId: orgId(req),
+      userId: req.params.userId,
+    });
+    const updated = await repo(req).updateUser(input);
+    res.json({ item: updated });
+  } catch (err) {
+    next(err);
+  }
+});
+
+adminRouter.post("/users/:userId/reset-password", async (req: AuthedRequest, res, next) => {
+  try {
+    authz(req).assert("users.manage");
+    const input = AdminResetPasswordSchema.parse({
+      ...req.body,
+      organizationId: orgId(req),
+      userId: req.params.userId,
+    });
+
+    const serviceClient = createServiceClient();
+    if (!serviceClient) {
+      throw new DomainError("Service client not configured to reset passwords", "UNAUTHORIZED");
+    }
+
+    const { data: profile } = await serviceClient
+      .from("user_profiles")
+      .select("auth_user_id")
+      .eq("id", input.userId)
+      .eq("organization_id", input.organizationId)
+      .single();
+
+    if (!profile?.auth_user_id) {
+      throw new DomainError("User not found", "NOT_FOUND");
+    }
+
+    const { error: resetErr } = await serviceClient.auth.admin.updateUserById(
+      String(profile.auth_user_id),
+      { password: input.newPassword },
+    );
+
+    if (resetErr) {
+      throw new DomainError(resetErr.message, "BAD_REQUEST");
+    }
+
+    res.json({ ok: true, message: "Password reset successfully" });
   } catch (err) {
     next(err);
   }

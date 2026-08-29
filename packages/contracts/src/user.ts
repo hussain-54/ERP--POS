@@ -72,6 +72,26 @@ export const LoginSchema = z.object({
 
 export type LoginInput = z.infer<typeof LoginSchema>;
 
+export const SignupSchema = z.object({
+  fullName: z.string().trim().min(2, "Full name must be at least 2 characters").max(200),
+  email: z.string().trim().email("Enter a valid email address"),
+  phone: z
+    .preprocess(
+      (value) => (typeof value === "string" && value.trim() === "" ? null : value),
+      z.string().trim().max(50).nullable().optional(),
+    ),
+  password: z.string().min(8, "Password must be at least 8 characters").max(128),
+  confirmPassword: z.string().min(8).max(128).optional(),
+  companyName: z.string().trim().min(2, "Company name must be at least 2 characters").max(200),
+  avatarUrl: z
+    .preprocess(
+      (value) => (typeof value === "string" && value.trim() === "" ? null : value),
+      z.string().url().nullable().optional(),
+    ),
+});
+
+export type SignupInput = z.infer<typeof SignupSchema>;
+
 export const PasswordResetRequestSchema = z.object({
   email: z.string().email(),
 });

@@ -8,7 +8,7 @@ import {
   useState,
   type ReactNode,
 } from "react";
-import type { AuthSession, LoginInput, UserProfile } from "@electronic-erp/contracts";
+import type { AuthSession, LoginInput, SignupInput, UserProfile } from "@electronic-erp/contracts";
 import { AuthorizationService } from "@electronic-erp/domain";
 import {
   authService,
@@ -36,6 +36,7 @@ interface AuthContextValue {
   authz: AuthorizationService | null;
   sessionExpiredMessage: string | null;
   clearSessionExpiredMessage: () => void;
+  signup: (input: SignupInput) => Promise<void>;
   login: (input: LoginInput) => Promise<void>;
   logout: () => Promise<void>;
   setBranchId: (branchId: string) => void;
@@ -157,6 +158,17 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     };
   }, [session]);
 
+  const signup = useCallback(async (input: SignupInput) => {
+    const next = await authService.signup(input);
+    endingSessionRef.current = false;
+    setSessionExpiredMessage(null);
+    setSession(next);
+    const preferred =
+      authStorage.getBranchId() ?? next.user.defaultBranchId ?? next.branches[0] ?? null;
+    setBranchIdState(preferred);
+    noteUserActivity();
+  }, []);
+
   const login = useCallback(async (input: LoginInput) => {
     const next = await authService.login(input);
     endingSessionRef.current = false;
@@ -211,6 +223,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       authz,
       sessionExpiredMessage,
       clearSessionExpiredMessage,
+      signup,
       login,
       logout,
       setBranchId,
@@ -224,6 +237,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       authz,
       sessionExpiredMessage,
       clearSessionExpiredMessage,
+      signup,
       login,
       logout,
       setBranchId,

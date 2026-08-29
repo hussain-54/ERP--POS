@@ -1,13 +1,15 @@
 import {
   LoginSchema,
   PasswordResetRequestSchema,
+  SignupSchema,
   type ChangePasswordInput,
   type LoginInput,
   type PasswordResetRequestInput,
+  type SignupInput,
   type UpdateOwnProfileInput,
   type UserProfile,
 } from "@electronic-erp/contracts";
-import { InfrastructureRepository, UserRepository } from "@electronic-erp/db";
+import { AdminRepository, InfrastructureRepository, UserRepository } from "@electronic-erp/db";
 import { DEFAULT_PASSWORD_POLICY, DomainError, validatePasswordAgainstPolicy } from "@electronic-erp/domain";
 import {
   createAnonClient,
@@ -35,6 +37,162 @@ export class AuthService {
         err,
       });
     }
+  }
+
+  async signup(
+    raw: SignupInput,
+    meta?: { ipAddress?: string; userAgent?: string },
+  ) {
+    const input = SignupSchema.parse(raw);
+    if (!supabaseConfigured()) {
+      throw new DomainError(
+        "Supabase is not configured on the API (set SUPABASE_URL + anon/publishable key)",
+        "UNAUTHORIZED",
+      );
+    }
+
+    if (input.confirmPassword && input.password !== input.confirmPassword) {
+      throw new DomainError("Passwords do not match", "BAD_REQUEST");
+    }
+
+    const policyValidation = validatePasswordAgainstPolicy(input.password, DEFAULT_PASSWORD_POLICY);
+    if (!policyValidation.ok) {
+      throw new DomainError(policyValidation.errors[0] ?? "Password policy check failed", "BAD_REQUEST");
+    }
+
+    const serviceClient = createServiceClient();
+    const anonClient = createAnonClient();
+
+    let authUserId: string;
+
+    if (serviceClient) {
+      // Check existing profile by email
+      const { data: existingProfile } = await serviceClient
+        .from("user_profiles")
+        .select("id")
+        .eq("email", input.email)
+        .is("deleted_at", null)
+        .maybeSingle();
+
+      if (existingProfile) {
+        throw new DomainError("An account with this email already exists", "CONFLICT");
+      }
+
+      const { data: authData, error: authErr } = await serviceClient.auth.admin.createUser({
+        email: input.email,
+        password: input.password,
+        email_confirm: true,
+        user_metadata: { full_name: input.fullName },
+      });
+
+      if (authErr || !authData.user) {
+        throw new DomainError(authErr?.message ?? "Failed to create user account", "BAD_REQUEST");
+      }
+      authUserId = authData.user.id;
+    } else {
+      const { data: authData, error: authErr } = await anonClient.auth.signUp({
+        email: input.email,
+        password: input.password,
+        options: {
+          data: { full_name: input.fullName },
+        },
+      });
+      if (authErr || !authData.user) {
+        throw new DomainError(authErr?.message ?? "Failed to create user account", "BAD_REQUEST");
+      }
+      authUserId = authData.user.id;
+    }
+
+    const dbClient = serviceClient ?? anonClient;
+
+    // Create new organization
+    const { data: org, error: orgErr } = await dbClient
+      .from("organizations")
+      .insert({
+        name: input.companyName,
+        legal_name: input.companyName,
+      })
+      .select("*")
+      .single();
+
+    if (orgErr || !org) {
+      if (serviceClient) await serviceClient.auth.admin.deleteUser(authUserId).catch(() => null);
+      throw new DomainError(orgErr?.message ?? "Failed to create organization", "BAD_REQUEST");
+    }
+
+    const orgId = String(org.id);
+
+    // Create default main branch
+    const { data: branch, error: branchErr } = await dbClient
+      .from("branches")
+      .insert({
+        organization_id: orgId,
+        code: "MAIN",
+        name: "Main Branch",
+        settings: { is_main: true },
+      })
+      .select("*")
+      .single();
+
+    if (branchErr || !branch) {
+      throw new DomainError(branchErr?.message ?? "Failed to initialize main branch", "BAD_REQUEST");
+    }
+
+    const branchId = String(branch.id);
+
+    // Seed 12 system roles for this organization
+    const adminRepo = new AdminRepository(dbClient);
+    await adminRepo.seedSystemRoles(orgId).catch((err) => {
+      log.warn({ category: "api", message: "seedSystemRoles soft-fail during signup", err });
+    });
+
+    // Create user profile
+    const { data: profileRow, error: profileErr } = await dbClient
+      .from("user_profiles")
+      .insert({
+        auth_user_id: authUserId,
+        organization_id: orgId,
+        email: input.email,
+        full_name: input.fullName,
+        phone: input.phone ?? null,
+        avatar_url: input.avatarUrl ?? null,
+        default_branch_id: branchId,
+        is_active: true,
+      })
+      .select("*")
+      .single();
+
+    if (profileErr || !profileRow) {
+      throw new DomainError(profileErr?.message ?? "Failed to initialize user profile", "BAD_REQUEST");
+    }
+
+    const profileId = String(profileRow.id);
+
+    // Assign owner role to organization creator
+    try {
+      await adminRepo.assignUserRole({
+        organizationId: orgId,
+        userId: profileId,
+        roleCode: "owner",
+        branchId,
+      });
+    } catch (err) {
+      log.warn({ category: "api", message: "assignUserRole soft-fail during signup", err });
+    }
+
+    // Assign branch membership
+    try {
+      await dbClient.from("branch_memberships").insert({
+        organization_id: orgId,
+        user_id: profileId,
+        branch_id: branchId,
+      });
+    } catch (err) {
+      log.warn({ category: "api", message: "branch_memberships soft-fail during signup", err });
+    }
+
+    // Authenticate and return session
+    return this.login({ email: input.email, password: input.password }, meta);
   }
 
   async login(
