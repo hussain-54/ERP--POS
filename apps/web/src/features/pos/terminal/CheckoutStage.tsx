@@ -67,25 +67,57 @@ export function CheckoutStage({
   methodsByKind: Record<string, string>;
   busy?: boolean;
 }) {
+  // Digital / Card tender state
   const [reference, setReference] = useState("");
+  const [digitalConfirmed, setDigitalConfirmed] = useState(true);
+
+  // Partial payment state
   const [partialPaid, setPartialPaid] = useState<number>(() => roundMoney(totals.grand / 2));
+  const [partialKind, setPartialKind] = useState<PosPaymentKind>("cash");
+  const [partialRef, setPartialRef] = useState("");
+
+  // Credit / Udhaar state
+  const [creditDownPayment, setCreditDownPayment] = useState<number>(0);
+
+  // Installment plan state
   const [downPayment, setDownPayment] = useState<number>(() => roundMoney(totals.grand * 0.2));
   const [installmentMonths, setInstallmentMonths] = useState<number>(3);
+  const [downPaymentKind, setDownPaymentKind] = useState<PosPaymentKind>("cash");
+  const [downPaymentRef, setDownPaymentRef] = useState("");
+  const [firstDueDate, setFirstDueDate] = useState<string>(() => {
+    const d = new Date();
+    d.setDate(d.getDate() + 30);
+    return d.toISOString().slice(0, 10);
+  });
+
+  // Split payment rows
   const [splitRows, setSplitRows] = useState<SplitRow[]>(() => [
     newSplitRow("cash", String(roundMoney(totals.grand / 2))),
     newSplitRow("card", String(roundMoney(totals.grand - roundMoney(totals.grand / 2)))),
   ]);
 
+  // Cash calculations
   const currentCash = cashReceived != null ? cashReceived : totals.grand;
-  const changeToReturn = Math.max(0, currentCash - totals.grand);
+  const changeToReturn = Math.max(0, roundMoney(currentCash - totals.grand));
   const isCashShort = paymentKind === "cash" && currentCash + 1e-9 < totals.grand;
+  const isCashExact = paymentKind === "cash" && Math.abs(currentCash - totals.grand) < 0.01;
 
   // Split calculations
   const totalSplitAllocated = useMemo(() => {
-    return splitRows.reduce((acc, row) => acc + (Number(row.amount) || 0), 0);
+    return roundMoney(splitRows.reduce((acc, row) => acc + (Number(row.amount) || 0), 0));
   }, [splitRows]);
   const splitRemaining = roundMoney(totals.grand - totalSplitAllocated);
 
+  // Credit calculations
+  const newUdhaarBalance = roundMoney(customer.outstanding + totals.grand - creditDownPayment);
+  const isCreditOverLimit = customer.creditLimit > 0 && newUdhaarBalance > customer.creditLimit;
+  const creditHeadroom = Math.max(0, roundMoney(customer.creditLimit - (customer.outstanding + totals.grand)));
+
+  // Installment calculations
+  const remainingInstallmentPrincipal = Math.max(0, roundMoney(totals.grand - downPayment));
+  const monthlyInstallmentAmt = roundMoney(remainingInstallmentPrincipal / (installmentMonths || 1));
+
+  // Quick cash buttons
   const quickCashPresets = [
     { label: "Exact", value: totals.grand },
     { label: "500", value: 500 },
@@ -96,26 +128,55 @@ export function CheckoutStage({
   ];
 
   function resolveMethodId(kind: PosPaymentKind): string | null {
-    return methodsByKind[tenderToMethodKind(kind)] ?? methodsByKind.cash ?? null;
+    const mapped = tenderToMethodKind(kind);
+    return (
+      methodsByKind[mapped] ??
+      methodsByKind[kind] ??
+      methodsByKind.online ??
+      methodsByKind.bank ??
+      methodsByKind.cash ??
+      null
+    );
   }
 
   function handleCompleteClick() {
     if (busy || lines.length === 0) return;
 
+    // 1. Validate Cash
     if (paymentKind === "cash" && isCashShort) {
       alert(`Cash received is less than total payable (Short by Rs. ${money(totals.grand - currentCash)})`);
       return;
     }
 
-    if (paymentKind === "credit" && !customer.id) {
-      alert("Credit / Udhaar sales require a selected customer. Please attach a customer.");
-      onSelectCustomer();
+    // 2. Validate Credit / Udhaar
+    if (paymentKind === "credit") {
+      if (!customer.id) {
+        alert("Credit / Udhaar sales require an attached customer. Please select or add a customer.");
+        onSelectCustomer();
+        return;
+      }
+      if (creditDownPayment > 0) {
+        const cashId = resolveMethodId("cash");
+        const creditLines: PosPaymentLine[] = [
+          {
+            kind: "cash",
+            paymentMethodId: cashId,
+            amount: creditDownPayment,
+            amountReceived: creditDownPayment,
+            reference: reference || "Credit Down Payment",
+          },
+        ];
+        onComplete(creditLines);
+        return;
+      }
+      onComplete([]);
       return;
     }
 
+    // 3. Validate Split
     if (paymentKind === "split") {
       if (Math.abs(splitRemaining) > 0.05) {
-        alert(`Split tender sum (Rs. ${money(totalSplitAllocated)}) does not match Grand Total (Rs. ${money(totals.grand)})`);
+        alert(`Split tender sum (Rs. ${money(totalSplitAllocated)}) does not match Grand Total (Rs. ${money(totals.grand)}). Remaining: Rs. ${money(splitRemaining)}`);
         return;
       }
       const splitLines: PosPaymentLine[] = splitRows
@@ -123,35 +184,83 @@ export function CheckoutStage({
         .map((r) => ({
           kind: r.kind,
           paymentMethodId: resolveMethodId(r.kind),
-          amount: Number(r.amount),
-          amountReceived: r.kind === "cash" ? Number(r.amount) : undefined,
+          amount: roundMoney(Number(r.amount)),
+          amountReceived: r.kind === "cash" ? roundMoney(Number(r.amount)) : undefined,
           reference: r.reference || undefined,
         }));
       onComplete(splitLines);
       return;
     }
 
+    // 4. Validate Partial
     if (paymentKind === "partial") {
       if (!customer.id) {
-        alert("Partial payment requires an attached customer for the remaining credit balance.");
+        alert("Partial payment requires an attached customer for the remaining Udhaar balance.");
         onSelectCustomer();
         return;
       }
       const paid = roundMoney(Math.min(partialPaid, totals.grand));
-      const cashId = resolveMethodId("cash");
+      if (paid <= 0) {
+        alert("Partial payment amount paid today must be greater than 0.");
+        return;
+      }
+      const pMethodId = resolveMethodId(partialKind);
       const partialLines: PosPaymentLine[] = [
         {
-          kind: "cash",
-          paymentMethodId: cashId,
+          kind: partialKind,
+          paymentMethodId: pMethodId,
           amount: paid,
-          amountReceived: paid,
-          reference: reference || "Partial Cash Paid",
+          amountReceived: partialKind === "cash" ? paid : undefined,
+          reference: partialRef || reference || "Partial Payment",
         },
       ];
       onComplete(partialLines);
       return;
     }
 
+    // 5. Validate Installment
+    if (paymentKind === "installment") {
+      if (!customer.id) {
+        alert("Installment plan requires an attached customer.");
+        onSelectCustomer();
+        return;
+      }
+      const down = roundMoney(Math.min(downPayment, totals.grand));
+      if (down > 0) {
+        const dMethodId = resolveMethodId(downPaymentKind);
+        const installmentLines: PosPaymentLine[] = [
+          {
+            kind: downPaymentKind,
+            paymentMethodId: dMethodId,
+            amount: down,
+            amountReceived: downPaymentKind === "cash" ? down : undefined,
+            reference: downPaymentRef || reference || "Installment Down Payment",
+          },
+        ];
+        onComplete(installmentLines);
+        return;
+      }
+      onComplete([]);
+      return;
+    }
+
+    // 6. Single Digital / Card / Bank / Wallet / QR
+    if (["card", "bank", "qr", "jazzcash", "easypaisa", "sadapay", "wallet"].includes(paymentKind)) {
+      const pMethodId = resolveMethodId(paymentKind);
+      const digitalLines: PosPaymentLine[] = [
+        {
+          kind: paymentKind,
+          paymentMethodId: pMethodId,
+          amount: totals.grand,
+          amountReceived: totals.grand,
+          reference: reference || undefined,
+        },
+      ];
+      onComplete(digitalLines);
+      return;
+    }
+
+    // 7. Default Cash Full Payment
     onComplete();
   }
 
@@ -337,26 +446,22 @@ export function CheckoutStage({
               <span className="flex items-center gap-1">
                 Invoice Discount:
                 <button type="button" onClick={onDiscount} className="text-[10px] font-bold text-blue-600 hover:underline">
-                  ({totals.invoiceDiscount > 0 ? "Edit" : "+ Add"})
+                  {couponCode ? `Coupon (${couponCode})` : totals.invoiceDiscount > 0 ? "Edit" : "+ Add"}
                 </button>
               </span>
-              <span className={totals.invoiceDiscount > 0 ? "font-bold text-red-600" : "text-slate-400"}>
-                {totals.invoiceDiscount > 0 ? `−${money(totals.invoiceDiscount)}` : "0.00"}
+              <span className={totals.invoiceDiscount > 0 ? "text-red-600 font-bold" : ""}>
+                {totals.invoiceDiscount > 0 ? `−${money(totals.invoiceDiscount)}` : "Rs. 0.00"}
               </span>
             </div>
-            {couponCode ? (
-              <div className="flex justify-between text-blue-700 font-semibold">
-                <span>Coupon ({couponCode}):</span>
-                <span>Applied</span>
+            {totals.tax > 0 ? (
+              <div className="flex justify-between text-slate-600">
+                <span>GST / Tax:</span>
+                <span className="font-semibold text-slate-800">{money(totals.tax)}</span>
               </div>
             ) : null}
-            <div className="flex justify-between text-slate-600">
-              <span>GST / Tax (17%):</span>
-              <span className="font-semibold text-slate-800">{money(totals.tax)}</span>
-            </div>
-            <div className="flex justify-between border-t border-slate-300 pt-1.5 text-sm font-black text-slate-900">
-              <span>Grand Total Payable:</span>
-              <span className="text-base text-blue-700">{money(totals.grand)}</span>
+            <div className="flex justify-between border-t border-slate-300 pt-1 text-base font-black text-slate-900">
+              <span>GRAND TOTAL:</span>
+              <span className="text-blue-700">{money(totals.grand)}</span>
             </div>
           </div>
         </section>
@@ -375,8 +480,8 @@ export function CheckoutStage({
                 <p className="text-2xl font-black tracking-tight text-white">{money(totals.grand)}</p>
               </div>
               <div className="text-right">
-                <span className="rounded bg-blue-600 px-2.5 py-1 text-xs font-bold uppercase tracking-wider text-white">
-                  {paymentKind}
+                <span className="rounded-full bg-blue-600 px-3 py-1 text-xs font-bold uppercase tracking-wider text-white shadow-xs">
+                  {PAYMENT_METHODS.find((m) => m.id === paymentKind)?.label ?? paymentKind}
                 </span>
               </div>
             </div>
@@ -387,7 +492,7 @@ export function CheckoutStage({
             {/* Payment Method Selector Grid */}
             <div>
               <p className="mb-1.5 text-[10px] font-bold uppercase tracking-wider text-slate-500">
-                Select Payment Method
+                Select Payment Tender Method
               </p>
               <div className="grid grid-cols-4 gap-1.5 sm:grid-cols-6">
                 {PAYMENT_METHODS.map((m) => {
@@ -397,14 +502,22 @@ export function CheckoutStage({
                       key={m.id}
                       type="button"
                       onClick={() => onPaymentKind(m.id)}
-                      className={`flex flex-col items-center justify-center rounded-lg p-2 text-center transition ${
+                      className={`relative flex flex-col items-center justify-center rounded-lg p-2 text-center transition ${
                         active
-                          ? "border-2 border-blue-600 bg-blue-50/80 text-blue-900 shadow-xs"
-                          : "border border-slate-200 bg-white text-slate-600 hover:bg-slate-100 hover:text-slate-900"
+                          ? "border-2 border-blue-600 bg-blue-600 text-white shadow-xs"
+                          : "border border-slate-200 bg-white text-slate-700 hover:bg-slate-100 hover:text-slate-900"
                       }`}
                     >
-                      <i className={`fa-solid ${m.icon} mb-1 text-sm ${m.color}`} aria-hidden />
+                      <i
+                        className={`fa-solid ${m.icon} mb-1 text-sm ${active ? "text-white" : m.color}`}
+                        aria-hidden
+                      />
                       <span className="truncate text-[10px] font-bold">{m.label}</span>
+                      {active ? (
+                        <span className="absolute -top-1 -right-1 flex h-3.5 w-3.5 items-center justify-center rounded-full bg-emerald-500 text-[8px] font-black text-white shadow-xs">
+                          ✓
+                        </span>
+                      ) : null}
                     </button>
                   );
                 })}
@@ -419,9 +532,9 @@ export function CheckoutStage({
                 <div className="flex items-center justify-between">
                   <span className="text-xs font-bold uppercase text-emerald-900">
                     <i className="fa-solid fa-money-bill-wave mr-1 text-emerald-600" />
-                    Cash Tender Amount
+                    Cash Tender Received
                   </span>
-                  <div className="relative w-36">
+                  <div className="relative w-40">
                     <span className="absolute left-2.5 top-1/2 -translate-y-1/2 text-xs font-bold text-slate-400">
                       Rs.
                     </span>
@@ -432,7 +545,7 @@ export function CheckoutStage({
                       value={currentCash || ""}
                       onChange={(e) => onCashReceived?.(Number(e.target.value) || 0)}
                       onFocus={(e) => e.target.select()}
-                      className="w-full rounded-lg border border-emerald-400 py-1.5 pl-8 pr-2 text-right text-sm font-black text-slate-900 focus:border-emerald-600 focus:outline-none"
+                      className="w-full rounded-lg border-2 border-emerald-400 py-1.5 pl-8 pr-2 text-right text-base font-black text-slate-900 focus:border-emerald-600 focus:outline-none"
                       placeholder="0.00"
                     />
                   </div>
@@ -452,16 +565,64 @@ export function CheckoutStage({
                   ))}
                 </div>
 
+                {/* Quick Increment Row */}
+                <div className="flex flex-wrap items-center gap-1 border-t border-slate-100 pt-2 text-[10px] font-bold text-slate-500">
+                  <span>Quick Add:</span>
+                  <button
+                    type="button"
+                    onClick={() => onCashReceived?.(roundMoney(currentCash + 100))}
+                    className="rounded bg-slate-100 px-2 py-0.5 hover:bg-slate-200 text-slate-700"
+                  >
+                    +100
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => onCashReceived?.(roundMoney(currentCash + 500))}
+                    className="rounded bg-slate-100 px-2 py-0.5 hover:bg-slate-200 text-slate-700"
+                  >
+                    +500
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => onCashReceived?.(roundMoney(currentCash + 1000))}
+                    className="rounded bg-slate-100 px-2 py-0.5 hover:bg-slate-200 text-slate-700"
+                  >
+                    +1,000
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => onCashReceived?.(roundMoney(currentCash + 5000))}
+                    className="rounded bg-slate-100 px-2 py-0.5 hover:bg-slate-200 text-slate-700"
+                  >
+                    +5,000
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => onCashReceived?.(0)}
+                    className="ml-auto rounded bg-red-50 px-2 py-0.5 text-red-700 hover:bg-red-100"
+                  >
+                    Clear
+                  </button>
+                </div>
+
                 {/* Change or Shortage Display */}
                 {isCashShort ? (
-                  <div className="rounded-lg bg-red-50 p-2 text-xs font-bold text-red-700">
-                    <i className="fa-solid fa-triangle-exclamation mr-1" />
-                    Insufficient cash: Short by {money(totals.grand - currentCash)}
+                  <div className="rounded-lg bg-red-50 p-2.5 text-xs font-bold text-red-700 border border-red-200">
+                    <i className="fa-solid fa-triangle-exclamation mr-1.5" />
+                    Insufficient cash: Short by {money(totals.grand - currentCash)}. Please collect full amount or choose Partial/Credit.
+                  </div>
+                ) : isCashExact ? (
+                  <div className="flex items-center justify-between rounded-lg bg-emerald-50 p-2 text-xs font-bold text-emerald-800 border border-emerald-200">
+                    <span>Exact Amount Received:</span>
+                    <span>Rs. {money(currentCash)} (No change needed)</span>
                   </div>
                 ) : (
-                  <div className="flex items-center justify-between border-t border-slate-100 pt-2 text-xs font-black">
-                    <span className="text-emerald-900">Change to Return to Customer:</span>
-                    <span className="text-lg font-black text-emerald-600">{money(changeToReturn)}</span>
+                  <div className="flex items-center justify-between rounded-lg bg-emerald-50 p-2.5 border border-emerald-200">
+                    <div>
+                      <span className="text-[10px] font-bold uppercase text-emerald-800">Change to Return</span>
+                      <p className="text-xs text-emerald-700">Hand back to customer</p>
+                    </div>
+                    <span className="text-xl font-black text-emerald-700">{money(changeToReturn)}</span>
                   </div>
                 )}
               </div>
@@ -469,48 +630,73 @@ export function CheckoutStage({
 
             {/* 2. SPLIT PAYMENT */}
             {paymentKind === "split" && (
-              <div className="rounded-xl border border-blue-200 bg-white p-3 shadow-xs space-y-2">
+              <div className="rounded-xl border border-blue-200 bg-white p-3 shadow-xs space-y-2.5">
                 <div className="flex items-center justify-between">
                   <span className="text-xs font-bold uppercase text-blue-900">
+                    <i className="fa-solid fa-scissors mr-1 text-blue-600" />
                     Split Tender Allocation
                   </span>
                   <button
                     type="button"
-                    onClick={() => setSplitRows((prev) => [...prev, newSplitRow("cash", String(Math.max(0, splitRemaining)))])}
-                    className="rounded bg-blue-100 px-2 py-0.5 text-[10px] font-bold text-blue-700 hover:bg-blue-200"
+                    onClick={() =>
+                      setSplitRows((prev) => [
+                        ...prev,
+                        newSplitRow("cash", String(Math.max(0, splitRemaining))),
+                      ])
+                    }
+                    className="rounded-lg bg-blue-600 px-2.5 py-1 text-xs font-bold text-white shadow-xs hover:bg-blue-700"
                   >
-                    + Add Method
+                    + Add Payment
                   </button>
                 </div>
 
-                <div className="space-y-1.5">
+                <div className="space-y-2">
                   {splitRows.map((row, idx) => (
-                    <div key={row.id} className="flex items-center gap-2 rounded-lg border border-slate-200 bg-slate-50 p-2">
+                    <div key={row.id} className="flex items-center gap-1.5 rounded-lg border border-slate-200 bg-slate-50 p-2">
                       <select
                         value={row.kind}
                         onChange={(e) => {
                           const k = e.target.value as PosPaymentKind;
                           setSplitRows((prev) => prev.map((r, i) => (i === idx ? { ...r, kind: k } : r)));
                         }}
-                        className="rounded border border-slate-300 bg-white px-2 py-1 text-xs font-bold"
+                        className="rounded border border-slate-300 bg-white p-1 text-xs font-bold text-slate-800 focus:outline-none"
                       >
-                        {PAYMENT_METHODS.filter((m) => m.id !== "split" && m.id !== "partial").map((m) => (
+                        {PAYMENT_METHODS.filter((m) => m.id !== "split" && m.id !== "installment" && m.id !== "credit").map((m) => (
                           <option key={m.id} value={m.id}>
                             {m.label}
                           </option>
                         ))}
                       </select>
 
-                      <input
-                        type="number"
-                        value={row.amount}
-                        onChange={(e) => {
-                          const amt = e.target.value;
-                          setSplitRows((prev) => prev.map((r, i) => (i === idx ? { ...r, amount: amt } : r)));
+                      <div className="relative flex-1">
+                        <input
+                          type="number"
+                          value={row.amount}
+                          onChange={(e) => {
+                            const amt = e.target.value;
+                            setSplitRows((prev) => prev.map((r, i) => (i === idx ? { ...r, amount: amt } : r)));
+                          }}
+                          placeholder="Amount"
+                          className="w-full rounded border border-slate-300 bg-white px-2 py-1 text-right text-xs font-bold focus:outline-none"
+                        />
+                      </div>
+
+                      <button
+                        type="button"
+                        onClick={() => {
+                          const otherTotal = splitRows
+                            .filter((_, i) => i !== idx)
+                            .reduce((sum, r) => sum + (Number(r.amount) || 0), 0);
+                          const remainingForThis = Math.max(0, roundMoney(totals.grand - otherTotal));
+                          setSplitRows((prev) =>
+                            prev.map((r, i) => (i === idx ? { ...r, amount: String(remainingForThis) } : r))
+                          );
                         }}
-                        placeholder="Amount"
-                        className="w-28 rounded border border-slate-300 bg-white px-2 py-1 text-right text-xs font-bold"
-                      />
+                        className="rounded border border-slate-300 bg-white px-1.5 py-1 text-[10px] font-bold text-slate-600 hover:bg-slate-100"
+                        title="Fill remaining amount"
+                      >
+                        Fill
+                      </button>
 
                       <input
                         type="text"
@@ -519,17 +705,18 @@ export function CheckoutStage({
                           const ref = e.target.value;
                           setSplitRows((prev) => prev.map((r, i) => (i === idx ? { ...r, reference: ref } : r)));
                         }}
-                        placeholder="Ref / Auth (opt)"
-                        className="min-w-0 flex-1 rounded border border-slate-300 bg-white px-2 py-1 text-xs"
+                        placeholder="Ref (opt)"
+                        className="w-24 rounded border border-slate-300 bg-white px-1.5 py-1 text-xs focus:outline-none"
                       />
 
                       {splitRows.length > 1 && (
                         <button
                           type="button"
                           onClick={() => setSplitRows((prev) => prev.filter((_, i) => i !== idx))}
-                          className="text-slate-400 hover:text-red-600"
+                          className="rounded p-1 text-slate-400 hover:bg-red-50 hover:text-red-600"
+                          title="Remove row"
                         >
-                          <i className="fa-solid fa-xmark text-sm" />
+                          <i className="fa-solid fa-trash-can text-xs" />
                         </button>
                       )}
                     </div>
@@ -538,14 +725,23 @@ export function CheckoutStage({
 
                 <div className="flex items-center justify-between border-t border-slate-200 pt-2 text-xs">
                   <div>
-                    <span className="text-slate-500">Allocated: </span>
-                    <span className="font-bold text-slate-800">{money(totalSplitAllocated)}</span>
+                    <span className="text-slate-500">Total Allocated: </span>
+                    <span className="font-bold text-slate-900">{money(totalSplitAllocated)}</span>
                   </div>
                   <div>
-                    <span className="text-slate-500">Remaining: </span>
-                    <span className={`font-bold ${splitRemaining === 0 ? "text-emerald-600" : "text-amber-700"}`}>
-                      {money(splitRemaining)}
-                    </span>
+                    {Math.abs(splitRemaining) < 0.01 ? (
+                      <span className="rounded bg-emerald-100 px-2 py-0.5 text-[10px] font-black text-emerald-800">
+                        ✓ Exact Match (Rs. 0 Remaining)
+                      </span>
+                    ) : splitRemaining > 0 ? (
+                      <span className="rounded bg-amber-100 px-2 py-0.5 text-[10px] font-black text-amber-800">
+                        Remaining to Allocate: {money(splitRemaining)}
+                      </span>
+                    ) : (
+                      <span className="rounded bg-red-100 px-2 py-0.5 text-[10px] font-black text-red-800">
+                        Overallocated: {money(Math.abs(splitRemaining))}
+                      </span>
+                    )}
                   </div>
                 </div>
               </div>
@@ -553,38 +749,66 @@ export function CheckoutStage({
 
             {/* 3. CREDIT / UDHAAR */}
             {paymentKind === "credit" && (
-              <div className="rounded-xl border border-amber-300 bg-white p-3 shadow-xs space-y-2">
+              <div className="rounded-xl border border-amber-300 bg-white p-3 shadow-xs space-y-2.5">
                 <span className="text-xs font-bold uppercase text-amber-900">
                   <i className="fa-solid fa-hand-holding-dollar mr-1 text-amber-600" />
                   Credit / Udhaar Ledger Posting
                 </span>
 
                 {!customer.id ? (
-                  <div className="rounded-lg bg-amber-50 p-2 text-xs text-amber-800">
-                    <p className="font-bold">⚠️ Customer Required</p>
-                    <p className="mt-0.5 text-[11px]">Credit sales cannot be booked for Walk-in customers.</p>
+                  <div className="rounded-lg bg-amber-50 p-2.5 text-xs text-amber-800 border border-amber-200">
+                    <p className="font-bold">⚠️ Customer Account Required</p>
+                    <p className="mt-0.5 text-[11px]">
+                      Credit/Udhaar sales cannot be booked for anonymous Walk-in customers.
+                    </p>
                     <button
                       type="button"
                       onClick={onSelectCustomer}
-                      className="mt-2 rounded bg-amber-600 px-3 py-1 text-xs font-bold text-white hover:bg-amber-700"
+                      className="mt-2 rounded bg-amber-600 px-3 py-1.5 text-xs font-bold text-white hover:bg-amber-700"
                     >
-                      Attach Customer
+                      Attach or Select Customer
                     </button>
                   </div>
                 ) : (
-                  <div className="grid grid-cols-3 gap-2 rounded-lg bg-amber-50/50 p-2 text-center text-xs">
-                    <div>
-                      <span className="text-[10px] text-slate-500">Current Udhaar</span>
-                      <p className="font-bold text-slate-800">{money(customer.outstanding)}</p>
+                  <div className="space-y-2">
+                    <div className="grid grid-cols-3 gap-1.5 rounded-lg bg-amber-50/70 p-2.5 text-center text-xs border border-amber-200">
+                      <div>
+                        <span className="text-[10px] text-slate-500 font-medium">Previous Udhaar</span>
+                        <p className="font-bold text-slate-800">{money(customer.outstanding)}</p>
+                      </div>
+                      <div>
+                        <span className="text-[10px] text-slate-500 font-medium">New Bill</span>
+                        <p className="font-bold text-amber-700">+{money(totals.grand)}</p>
+                      </div>
+                      <div>
+                        <span className="text-[10px] text-slate-500 font-medium">New Balance</span>
+                        <p className="font-black text-red-700">{money(newUdhaarBalance)}</p>
+                      </div>
                     </div>
-                    <div>
-                      <span className="text-[10px] text-slate-500">New Bill</span>
-                      <p className="font-bold text-amber-700">+{money(totals.grand)}</p>
+
+                    <div className="flex items-center justify-between text-xs">
+                      <span className="text-slate-600 font-medium">Optional Down Payment Today:</span>
+                      <input
+                        type="number"
+                        min={0}
+                        max={totals.grand}
+                        value={creditDownPayment || ""}
+                        onChange={(e) => setCreditDownPayment(Number(e.target.value) || 0)}
+                        placeholder="0.00"
+                        className="w-28 rounded border border-slate-300 p-1 text-right text-xs font-bold focus:outline-none"
+                      />
                     </div>
-                    <div>
-                      <span className="text-[10px] text-slate-500">New Balance</span>
-                      <p className="font-black text-red-700">{money(customer.outstanding + totals.grand)}</p>
-                    </div>
+
+                    {isCreditOverLimit ? (
+                      <div className="rounded-lg bg-red-50 p-2 text-[11px] font-bold text-red-700 border border-red-200">
+                        <i className="fa-solid fa-triangle-exclamation mr-1" />
+                        Warning: New balance ({money(newUdhaarBalance)}) exceeds customer credit limit ({money(customer.creditLimit)}).
+                      </div>
+                    ) : customer.creditLimit > 0 ? (
+                      <div className="text-[10px] text-slate-500">
+                        Credit Limit: {money(customer.creditLimit)} · Headroom remaining: {money(creditHeadroom)}
+                      </div>
+                    ) : null}
                   </div>
                 )}
               </div>
@@ -592,78 +816,196 @@ export function CheckoutStage({
 
             {/* 4. PARTIAL PAYMENT */}
             {paymentKind === "partial" && (
-              <div className="rounded-xl border border-orange-300 bg-white p-3 shadow-xs space-y-2">
+              <div className="rounded-xl border border-orange-300 bg-white p-3 shadow-xs space-y-2.5">
                 <span className="text-xs font-bold uppercase text-orange-900">
-                  Partial Payment (Deposit + Remainder to Udhaar)
+                  <i className="fa-solid fa-chart-pie mr-1 text-orange-600" />
+                  Partial Payment (Deposit Now + Balance to Udhaar)
                 </span>
-                <div className="flex items-center justify-between">
-                  <span className="text-xs text-slate-600">Amount Paid Today:</span>
-                  <input
-                    type="number"
-                    value={partialPaid}
-                    onChange={(e) => setPartialPaid(Number(e.target.value) || 0)}
-                    className="w-32 rounded border border-slate-300 px-2 py-1 text-right text-xs font-bold"
-                  />
-                </div>
-                <div className="flex justify-between border-t border-slate-100 pt-1 text-xs font-bold">
-                  <span>Balance Added to Udhaar:</span>
-                  <span className="text-amber-700">{money(Math.max(0, totals.grand - partialPaid))}</span>
-                </div>
+
+                {!customer.id ? (
+                  <div className="rounded-lg bg-amber-50 p-2.5 text-xs text-amber-800 border border-amber-200">
+                    <p className="font-bold">⚠️ Customer Required for Balance</p>
+                    <p className="mt-0.5 text-[11px]">
+                      The remaining balance must be linked to a customer ledger.
+                    </p>
+                    <button
+                      type="button"
+                      onClick={onSelectCustomer}
+                      className="mt-2 rounded bg-orange-600 px-3 py-1.5 text-xs font-bold text-white hover:bg-orange-700"
+                    >
+                      Attach Customer
+                    </button>
+                  </div>
+                ) : (
+                  <div className="space-y-2">
+                    <div className="flex items-center justify-between">
+                      <span className="text-xs font-bold text-slate-700">Amount Paid Today:</span>
+                      <input
+                        type="number"
+                        min={0}
+                        max={totals.grand}
+                        value={partialPaid || ""}
+                        onChange={(e) => setPartialPaid(Number(e.target.value) || 0)}
+                        className="w-32 rounded border-2 border-orange-400 px-2 py-1 text-right text-sm font-black focus:outline-none"
+                      />
+                    </div>
+
+                    <div className="flex items-center gap-1.5">
+                      <span className="text-[10px] font-bold text-slate-500">Tender Method:</span>
+                      <select
+                        value={partialKind}
+                        onChange={(e) => setPartialKind(e.target.value as PosPaymentKind)}
+                        className="rounded border border-slate-300 bg-white p-1 text-xs font-bold"
+                      >
+                        <option value="cash">Cash</option>
+                        <option value="card">Card</option>
+                        <option value="bank">Bank Transfer</option>
+                        <option value="jazzcash">JazzCash</option>
+                        <option value="easypaisa">Easypaisa</option>
+                        <option value="sadapay">SadaPay</option>
+                      </select>
+                      <input
+                        type="text"
+                        value={partialRef}
+                        onChange={(e) => setPartialRef(e.target.value)}
+                        placeholder="Ref / Trx ID (opt)"
+                        className="flex-1 rounded border border-slate-300 p-1 text-xs"
+                      />
+                    </div>
+
+                    <div className="flex items-center justify-between border-t border-slate-200 pt-2 text-xs font-bold">
+                      <span className="text-slate-600">Remaining Balance Added to Udhaar:</span>
+                      <span className="text-amber-700 text-sm font-black">
+                        {money(Math.max(0, totals.grand - partialPaid))}
+                      </span>
+                    </div>
+                  </div>
+                )}
               </div>
             )}
 
             {/* 5. INSTALLMENT */}
             {paymentKind === "installment" && (
-              <div className="rounded-xl border border-slate-300 bg-white p-3 shadow-xs space-y-2">
+              <div className="rounded-xl border border-slate-300 bg-white p-3 shadow-xs space-y-2.5">
                 <span className="text-xs font-bold uppercase text-slate-900">
-                  Installment Plan
+                  <i className="fa-solid fa-calendar mr-1 text-blue-600" />
+                  Installment Financing Plan
                 </span>
-                <div className="grid grid-cols-2 gap-2 text-xs">
-                  <div>
-                    <label className="text-[10px] text-slate-500 font-semibold">Down Payment</label>
-                    <input
-                      type="number"
-                      value={downPayment}
-                      onChange={(e) => setDownPayment(Number(e.target.value) || 0)}
-                      className="w-full rounded border border-slate-300 p-1 font-bold text-right"
-                    />
-                  </div>
-                  <div>
-                    <label className="text-[10px] text-slate-500 font-semibold">Months</label>
-                    <select
-                      value={installmentMonths}
-                      onChange={(e) => setInstallmentMonths(Number(e.target.value) || 3)}
-                      className="w-full rounded border border-slate-300 p-1 font-bold"
+
+                {!customer.id ? (
+                  <div className="rounded-lg bg-amber-50 p-2.5 text-xs text-amber-800 border border-amber-200">
+                    <p className="font-bold">⚠️ Customer Required for Installment</p>
+                    <button
+                      type="button"
+                      onClick={onSelectCustomer}
+                      className="mt-2 rounded bg-blue-600 px-3 py-1.5 text-xs font-bold text-white hover:bg-blue-700"
                     >
-                      <option value={3}>3 Months</option>
-                      <option value={6}>6 Months</option>
-                      <option value={12}>12 Months</option>
-                      <option value={24}>24 Months</option>
-                    </select>
+                      Attach Customer
+                    </button>
                   </div>
-                </div>
-                <div className="flex justify-between border-t border-slate-100 pt-1 text-xs font-bold">
-                  <span>Monthly Due (approx):</span>
-                  <span className="text-blue-700">
-                    {money(Math.max(0, (totals.grand - downPayment) / installmentMonths))} / mo
-                  </span>
-                </div>
+                ) : (
+                  <div className="space-y-2">
+                    <div className="grid grid-cols-2 gap-2 text-xs">
+                      <div>
+                        <label className="text-[10px] text-slate-500 font-bold uppercase">Down Payment</label>
+                        <input
+                          type="number"
+                          value={downPayment || ""}
+                          onChange={(e) => setDownPayment(Number(e.target.value) || 0)}
+                          className="w-full rounded border border-slate-300 p-1.5 font-bold text-right text-xs"
+                        />
+                      </div>
+                      <div>
+                        <label className="text-[10px] text-slate-500 font-bold uppercase">Plan Duration</label>
+                        <select
+                          value={installmentMonths}
+                          onChange={(e) => setInstallmentMonths(Number(e.target.value) || 3)}
+                          className="w-full rounded border border-slate-300 p-1.5 font-bold text-xs"
+                        >
+                          <option value={3}>3 Months</option>
+                          <option value={6}>6 Months</option>
+                          <option value={12}>12 Months</option>
+                          <option value={18}>18 Months</option>
+                          <option value={24}>24 Months</option>
+                        </select>
+                      </div>
+                    </div>
+
+                    <div className="grid grid-cols-3 gap-2 text-xs">
+                      <div>
+                        <label className="text-[10px] text-slate-500 font-bold uppercase">Down Tender Method</label>
+                        <select
+                          value={downPaymentKind}
+                          onChange={(e) => setDownPaymentKind(e.target.value as PosPaymentKind)}
+                          className="w-full rounded border border-slate-300 p-1.5 font-bold text-xs"
+                        >
+                          <option value="cash">Cash</option>
+                          <option value="card">Card</option>
+                          <option value="bank">Bank Transfer</option>
+                          <option value="jazzcash">JazzCash</option>
+                          <option value="easypaisa">Easypaisa</option>
+                        </select>
+                      </div>
+                      <div>
+                        <label className="text-[10px] text-slate-500 font-bold uppercase">Down Payment Ref</label>
+                        <input
+                          type="text"
+                          value={downPaymentRef}
+                          onChange={(e) => setDownPaymentRef(e.target.value)}
+                          placeholder="Trx / Ref (opt)"
+                          className="w-full rounded border border-slate-300 p-1.5 text-xs font-bold"
+                        />
+                      </div>
+                      <div>
+                        <label className="text-[10px] text-slate-500 font-bold uppercase">First Due Date</label>
+                        <input
+                          type="date"
+                          value={firstDueDate}
+                          onChange={(e) => setFirstDueDate(e.target.value)}
+                          className="w-full rounded border border-slate-300 p-1.5 text-xs font-bold"
+                        />
+                      </div>
+                    </div>
+
+                    <div className="flex items-center justify-between rounded-lg bg-blue-50 p-2 text-xs font-bold text-blue-900 border border-blue-200">
+                      <span>Monthly Installment:</span>
+                      <span className="text-sm font-black text-blue-700">
+                        {money(monthlyInstallmentAmt)} / month ({installmentMonths}x)
+                      </span>
+                    </div>
+                  </div>
+                )}
               </div>
             )}
 
             {/* 6. REFERENCE FOR CARD/BANK/WALLET/QR */}
             {["card", "bank", "qr", "jazzcash", "easypaisa", "sadapay", "wallet"].includes(paymentKind) && (
-              <div className="rounded-xl border border-slate-200 bg-white p-3 shadow-xs space-y-1.5">
-                <label className="block text-[10px] font-bold uppercase text-slate-500">
-                  Transaction / Approval Reference (Optional)
-                </label>
+              <div className="rounded-xl border border-slate-200 bg-white p-3 shadow-xs space-y-2">
+                <div className="flex items-center justify-between">
+                  <span className="text-xs font-bold uppercase text-slate-800">
+                    Transaction & Reconciliation Reference
+                  </span>
+                  <span className="rounded bg-blue-50 px-2 py-0.5 text-[10px] font-bold text-blue-700">
+                    Amount: {money(totals.grand)}
+                  </span>
+                </div>
                 <input
                   type="text"
                   value={reference}
                   onChange={(e) => setReference(e.target.value)}
-                  placeholder="e.g. Card Auth ID, Trx ID, Slip #"
+                  placeholder="e.g. Card Auth ID, Bank Trx ID, JazzCash/Easypaisa TID, Slip #"
                   className="w-full rounded-lg border border-slate-300 p-2 text-xs focus:border-blue-500 focus:outline-none"
                 />
+
+                <label className="flex items-center gap-2 text-xs text-slate-600 cursor-pointer pt-1">
+                  <input
+                    type="checkbox"
+                    checked={digitalConfirmed}
+                    onChange={(e) => setDigitalConfirmed(e.target.checked)}
+                    className="rounded text-blue-600"
+                  />
+                  <span>I confirm this transaction has been authorized on the external terminal / app.</span>
+                </label>
               </div>
             )}
 
@@ -676,7 +1018,7 @@ export function CheckoutStage({
                 type="text"
                 value={notes}
                 onChange={(e) => onNotes(e.target.value)}
-                placeholder="Salesman reference, delivery details, special instructions…"
+                placeholder="Salesman reference, warranty instructions, delivery info…"
                 className="w-full rounded-lg border border-slate-300 p-1.5 text-xs focus:border-blue-500 focus:outline-none"
               />
             </div>

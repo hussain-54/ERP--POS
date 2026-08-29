@@ -171,6 +171,14 @@ posRouter.post("/sales", async (req: AuthedRequest, res, next) => {
     }
 
     const posted = await repo(req).postSale(input, userId(req));
+    try {
+      const openShift = await repo(req).getOpenShift(orgId(req), input.branchId);
+      if (openShift) {
+        await repo(req).refreshShiftTotals(String(openShift.id), orgId(req), input.branchId);
+      }
+    } catch {
+      /* shift totals refresh is a non-blocking background sync */
+    }
     if (couponEval) {
       const saleId =
         typeof posted === "object" && posted && "sale" in posted

@@ -78,10 +78,10 @@ export function CheckoutZone({
   return (
     <section className="pos-zone pos-zone-checkout flex h-full flex-col" aria-label="Checkout summary">
       {/* Zone Header */}
-      <div className="pos-zone-header">
+      <div className="pos-zone-header shrink-0">
         <h2 className="pos-zone-title flex items-center gap-1.5">
           <i className="fa-solid fa-cash-register text-xs text-blue-600" aria-hidden />
-          Checkout & Payment
+          Order Summary & Pay
         </h2>
         <span className="text-[10px] font-bold text-slate-400">
           {totals.totalQty} {totals.totalQty === 1 ? "unit" : "units"}
@@ -184,8 +184,14 @@ export function CheckoutZone({
               <span>{couponCode}</span>
             </div>
           ) : null}
+          {totals.taxable > 0 ? (
+            <div className="flex justify-between text-slate-500 text-[10px]">
+              <span>Taxable Base</span>
+              <span>{money(totals.taxable)}</span>
+            </div>
+          ) : null}
           <div className="flex justify-between text-slate-600">
-            <span>GST / Tax (17%)</span>
+            <span>GST / Tax</span>
             <span className="font-medium text-slate-800">{money(totals.tax)}</span>
           </div>
         </div>
@@ -346,34 +352,32 @@ export function CheckoutZone({
           </button>
         </div>
 
-        {/* Full Checkout Desk Transition Button */}
-        {onProceedToCheckout ? (
-          <button
-            type="button"
-            disabled={busy || empty}
-            onClick={onProceedToCheckout}
-            className="flex w-full items-center justify-between rounded-lg bg-blue-600 px-3.5 py-2 text-xs font-black text-white shadow-xs transition hover:bg-blue-700 active:scale-99 disabled:cursor-not-allowed disabled:bg-slate-300"
-          >
-            <span className="flex items-center gap-1.5">
-              <i className="fa-solid fa-cash-register text-sm" />
-              FULL CHECKOUT DESK →
-            </span>
-            <span>Review & Settle</span>
-          </button>
-        ) : null}
+        {/* PRIMARY PROCEED TO CHECKOUT ACTION */}
+        <button
+          type="button"
+          disabled={busy || empty}
+          onClick={onProceedToCheckout ?? onComplete}
+          className="flex w-full items-center justify-between rounded-xl bg-blue-600 px-3.5 py-2.5 text-sm font-black text-white shadow-md transition hover:bg-blue-700 active:scale-98 disabled:cursor-not-allowed disabled:bg-slate-300"
+        >
+          <span className="flex items-center gap-2">
+            <i className="fa-solid fa-arrow-right-to-bracket text-base" />
+            <span>PROCEED TO CHECKOUT →</span>
+          </span>
+          <span className="rounded-lg bg-blue-800/60 px-2 py-0.5 text-xs font-black">
+            {money(totals.grand)}
+          </span>
+        </button>
 
-        {/* Primary Complete Sale Button */}
+        {/* Quick Instant Cash Sale Button */}
         <button
           type="button"
           disabled={busy || empty}
           onClick={onComplete}
-          className="flex w-full items-center justify-between rounded-lg bg-emerald-600 px-3.5 py-2.5 text-sm font-black text-white shadow-sm transition hover:bg-emerald-700 active:scale-99 disabled:cursor-not-allowed disabled:bg-slate-300"
+          className="flex w-full items-center justify-center gap-1.5 rounded-lg border border-emerald-400 bg-emerald-50 py-1.5 text-xs font-bold text-emerald-800 transition hover:bg-emerald-100 active:scale-99 disabled:cursor-not-allowed disabled:opacity-40"
+          title="Instantly complete cash sale without opening checkout desk"
         >
-          <span className="flex items-center gap-1.5">
-            <i className="fa-solid fa-circle-check text-base" />
-            {busy ? "Processing…" : "COMPLETE SALE (F8)"}
-          </span>
-          <span className="text-base font-black">{money(totals.grand)}</span>
+          <i className="fa-solid fa-bolt text-emerald-600" />
+          <span>Quick Cash Sale (F8)</span>
         </button>
       </div>
     </section>

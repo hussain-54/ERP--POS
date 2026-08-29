@@ -357,10 +357,39 @@ export function PosTerminalPage() {
   }
 
   function buildPaymentsForPost(override?: PosPaymentLine[]) {
-    const linesPay = override ?? paymentLines;
-    if (paymentKind === "credit" || paymentKind === "installment") return [];
-    if (linesPay.length) {
-      return linesPay
+    if (override !== undefined) {
+      return override
+        .filter((p) => p.paymentMethodId && p.amount > 0)
+        .map((p) => ({
+          paymentMethodId: p.paymentMethodId!,
+          amount: p.amount,
+          amountReceived: p.amountReceived,
+          methodKind: tenderToMethodKind(p.kind),
+          reference: p.reference,
+        }));
+    }
+    if (paymentKind === "credit") return [];
+    if (paymentKind === "installment") {
+      const down = Number(installmentPlan.downPayment) || 0;
+      if (down > 0) {
+        const kind = tenderToMethodKind("cash");
+        const id = methodsByKind[kind] ?? methodsByKind.cash;
+        if (id) {
+          return [
+            {
+              paymentMethodId: id,
+              amount: down,
+              amountReceived: down,
+              methodKind: kind,
+              reference: "Installment Down Payment",
+            },
+          ];
+        }
+      }
+      return [];
+    }
+    if (paymentLines.length) {
+      return paymentLines
         .filter((p) => p.paymentMethodId && p.amount > 0)
         .map((p) => ({
           paymentMethodId: p.paymentMethodId!,
@@ -384,7 +413,7 @@ export function PosTerminalPage() {
   }
 
   async function completeSale(overridePayments?: PosPaymentLine[]) {
-    if (!branchId || !organizationId || lines.length === 0) return;
+    if (busy || !branchId || !organizationId || lines.length === 0) return;
     const payments = buildPaymentsForPost(overridePayments);
     if (!customer.id && payments.length === 0) {
       push({
@@ -395,15 +424,21 @@ export function PosTerminalPage() {
       setPaymentOpen(true);
       return;
     }
-    if ((paymentKind === "credit" || paymentKind === "installment") && !customer.id) {
-      push({ title: "Select a customer", description: "Credit and installment require a customer.", tone: "danger" });
+    if ((paymentKind === "credit" || paymentKind === "installment" || paymentKind === "partial") && !customer.id) {
+      push({ title: "Select a customer", description: "Credit, installment, and partial sales require an attached customer.", tone: "danger" });
       setCustomerMode("select");
       setCustomerOpen(true);
       return;
     }
 
     const currentTenderReceived =
-      paymentKind === "cash" && cashReceived != null ? cashReceived : totals.grand;
+      overridePayments && overridePayments.length > 0
+        ? overridePayments.reduce((acc, p) => acc + (p.amountReceived ?? p.amount), 0)
+        : paymentKind === "credit"
+          ? 0
+          : paymentKind === "cash" && cashReceived != null
+            ? cashReceived
+            : totals.grand;
     const currentChange = Math.max(0, currentTenderReceived - totals.grand);
 
     setBusy(true);
