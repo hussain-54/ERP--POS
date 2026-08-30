@@ -96,6 +96,15 @@ export function PostSaleDialog({
               </div>
             </div>
 
+            {/* Billed Items Count / Preview */}
+            <div className="flex items-center justify-between border-b border-slate-200/80 py-1.5 text-xs text-slate-600">
+              <span className="text-[10px] font-bold uppercase text-slate-400">Billed Items</span>
+              <span className="font-bold text-slate-800">
+                {enrichedInvoice.items?.length ?? 0} {enrichedInvoice.items?.length === 1 ? "Product" : "Products"} (
+                {enrichedInvoice.items?.reduce((acc, it) => acc + Number(it.qty || 0), 0) ?? 0} Units)
+              </span>
+            </div>
+
             <div className="mt-2 grid grid-cols-2 gap-2 text-xs">
               <div>
                 <span className="text-[10px] font-bold uppercase text-slate-400">Total Paid</span>

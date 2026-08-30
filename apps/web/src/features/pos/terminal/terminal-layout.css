@@ -17,7 +17,7 @@
 
 .pos-terminal-grid {
   display: grid;
-  grid-template-columns: minmax(0, 1.08fr) minmax(0, 1.28fr) minmax(320px, 0.98fr);
+  grid-template-columns: minmax(0, 1.35fr) minmax(380px, 1fr);
   gap: 0;
   min-height: 0;
   height: 100%;
@@ -274,7 +274,7 @@
    ========================================================================== */
 @media (max-width: 1180px) {
   .pos-terminal-grid {
-    grid-template-columns: minmax(0, 1fr) minmax(0, 1.2fr) minmax(300px, 0.95fr);
+    grid-template-columns: minmax(0, 1.2fr) minmax(350px, 1fr);
   }
 }
 

@@ -20,17 +20,15 @@ import type { PosCustomerView } from "../types";
 import type { InvoiceView, ProductSearchResult } from "@electronic-erp/contracts";
 import type { DiscountSection } from "../pricing/discount-utils";
 import { PaymentDrawer } from "../payments/PaymentDrawer";
-import { validatePosPayment } from "../payments/payment-utils";
 import { ProductDiscovery } from "./ProductDiscovery";
 import { CartZone } from "./CartZone";
-import { CheckoutZone } from "./CheckoutZone";
 import { CustomerDialog } from "./CustomerDialog";
 import { DiscountDialog } from "./DiscountDialog";
 import { PostSaleDialog } from "./PostSaleDialog";
 import { CheckoutStage } from "./CheckoutStage";
 import "./terminal-layout.css";
 
-type MobilePane = "products" | "cart" | "checkout";
+type MobilePane = "products" | "cart";
 type PosStage = "terminal" | "checkout";
 
 export function PosTerminalPage() {
@@ -336,26 +334,6 @@ export function PosTerminalPage() {
     }
   }
 
-  function onSaveDraft() {
-    if (lines.length === 0) return;
-    try {
-      const key = "erp-pos-drafts";
-      const raw = localStorage.getItem(key);
-      const drafts = raw ? (JSON.parse(raw) as unknown[]) : [];
-      const list = Array.isArray(drafts) ? drafts : [];
-      list.unshift({
-        id: uuid(),
-        savedAt: new Date().toISOString(),
-        snapshot: buildSnapshot(),
-        label: notes || customer.label,
-      });
-      localStorage.setItem(key, JSON.stringify(list.slice(0, 30)));
-      push({ title: "Draft saved locally", tone: "success" });
-    } catch {
-      push({ title: "Could not save draft", tone: "danger" });
-    }
-  }
-
   function buildPaymentsForPost(override?: PosPaymentLine[]) {
     if (override !== undefined) {
       return override
@@ -608,26 +586,6 @@ export function PosTerminalPage() {
     }
   }
 
-  const recordOnly =
-    ["card", "bank", "qr", "jazzcash", "easypaisa", "sadapay", "wallet"].includes(paymentKind);
-
-  const paymentRecorded = useMemo(() => {
-    if (!paymentLines.length) return null;
-    const prep = validatePosPayment({
-      grandTotal: totals.grand,
-      lines: paymentLines,
-      paymentKind,
-      walkIn: !customer.id,
-      hasCustomer: Boolean(customer.id),
-    });
-    return {
-      paid: prep.paidTowardBill,
-      remaining: prep.remaining,
-      change: prep.change,
-      lineCount: paymentLines.filter((l) => l.amount > 0).length,
-    };
-  }, [paymentLines, paymentKind, totals.grand, customer.id]);
-
   function openItemDiscount(line: CartLine) {
     setDiscountLine(line);
     setDiscountScope("item");
@@ -711,7 +669,6 @@ export function PosTerminalPage() {
               [
                 ["products", "Products"],
                 ["cart", "Cart"],
-                ["checkout", "Pay"],
               ] as const
             ).map(([id, label]) => (
               <button
@@ -728,7 +685,7 @@ export function PosTerminalPage() {
             ))}
           </div>
 
-          {/* Main 3-Zone Desktop Grid */}
+          {/* Main 2-Zone Desktop Grid */}
           <div className="pos-terminal-grid min-h-0 flex-1 overflow-hidden">
             {/* Zone 1: Product Discovery */}
             <div className={`min-h-0 min-w-0 ${mobilePane === "products" ? "flex" : "hidden"} lg:flex`}>
@@ -757,7 +714,7 @@ export function PosTerminalPage() {
               />
             </div>
 
-            {/* Zone 2: Cart Ledger */}
+            {/* Zone 2: Cart Ledger & Checkout CTA */}
             <div className={`min-h-0 min-w-0 ${mobilePane === "cart" ? "flex" : "hidden"} lg:flex`}>
               <CartZone
                 lines={lines}
@@ -785,44 +742,6 @@ export function PosTerminalPage() {
                 onSelectLine={setSelectedLineId}
                 onProceedToCheckout={() => setStage("checkout")}
                 busy={busy}
-              />
-            </div>
-
-            {/* Zone 3: Checkout & Pay */}
-            <div className={`min-h-0 min-w-0 ${mobilePane === "checkout" ? "flex" : "hidden"} lg:flex`}>
-              <CheckoutZone
-                customer={customer}
-                totals={totals}
-                paymentKind={paymentKind}
-                onPaymentKind={setPaymentKind}
-                cashReceived={cashReceived}
-                onCashReceived={setCashReceived}
-                couponCode={couponCode}
-                notes={notes}
-                onNotes={setNotes}
-                onSelectCustomer={() => {
-                  setCustomerMode("select");
-                  setCustomerOpen(true);
-                }}
-                onWalkIn={() => setCustomer(emptyCustomer())}
-                onNewCustomer={() => {
-                  setCustomerMode("create");
-                  setCustomerOpen(true);
-                }}
-                onDiscount={() => {
-                  setDiscountScope("invoice");
-                  setDiscountSection("invoice");
-                  setDiscountLine(null);
-                  setDiscountOpen(true);
-                }}
-                onHold={() => void onHold()}
-                onSaveDraft={onSaveDraft}
-                onPayment={() => setPaymentOpen(true)}
-                onComplete={() => void completeSale()}
-                onProceedToCheckout={() => setStage("checkout")}
-                busy={busy}
-                recordOnlyHint={recordOnly}
-                paymentRecorded={paymentRecorded}
               />
             </div>
           </div>

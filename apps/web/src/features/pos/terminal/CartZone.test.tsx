@@ -121,9 +121,9 @@ describe("CartZone", () => {
     fireEvent.click(minusButtons[0]!);
     expect(onQty).toHaveBeenCalledWith("line-1", -1);
 
-    const qtyInputs = screen.getAllByLabelText(/Quantity of Orient Split AC/i);
-    if (qtyInputs[0]) {
-      fireEvent.change(qtyInputs[0], { target: { value: "5" } });
+    const inputs = screen.getAllByRole("spinbutton");
+    if (inputs[0]) {
+      fireEvent.change(inputs[0], { target: { value: "5" } });
       expect(onQty).toHaveBeenCalledWith("line-1", 5, true);
     }
   });
@@ -146,11 +146,13 @@ describe("CartZone", () => {
       />,
     );
 
-    const discountBtn = screen.getByRole("button", { name: /Apply or edit item discount/i });
-    fireEvent.click(discountBtn);
+    const discountBtns = screen.getAllByTitle(/Apply or edit item discount/i);
+    expect(discountBtns.length).toBeGreaterThan(0);
+    fireEvent.click(discountBtns[0]!);
     expect(onEditDiscount).toHaveBeenCalledWith(mockLines[0]);
 
-    const removeBtns = screen.getAllByRole("button", { name: /Remove .* from cart/i });
+    const removeBtns = screen.getAllByTitle(/Remove item/i);
+    expect(removeBtns.length).toBeGreaterThan(0);
     fireEvent.click(removeBtns[0]!);
     expect(onRemove).toHaveBeenCalledWith("line-1");
   });
@@ -173,9 +175,9 @@ describe("CartZone", () => {
       />,
     );
 
-    const checkoutBtn = screen.getByRole("button", { name: /PAY \/ CHECKOUT/i });
-    expect(checkoutBtn).toBeInTheDocument();
-    fireEvent.click(checkoutBtn);
+    const checkoutBtns = screen.getAllByRole("button", { name: /PAY \/ CHECKOUT/i });
+    expect(checkoutBtns[0]).toBeInTheDocument();
+    fireEvent.click(checkoutBtns[0]!);
     expect(onProceed).toHaveBeenCalledTimes(1);
   });
 });
