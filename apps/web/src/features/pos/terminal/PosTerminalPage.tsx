@@ -744,6 +744,10 @@ export function PosTerminalPage() {
                 favoriteIds={favoriteIds}
                 onAdd={(p) => {
                   addProduct(p);
+                  push({
+                    title: `${p.name} added to cart`,
+                    tone: "info",
+                  });
                 }}
                 onToggleFavorite={toggleFavorite}
                 onLoadMore={() => setLimit((l) => l + 30)}
@@ -757,15 +761,30 @@ export function PosTerminalPage() {
             <div className={`min-h-0 min-w-0 ${mobilePane === "cart" ? "flex" : "hidden"} lg:flex`}>
               <CartZone
                 lines={lines}
+                customer={customer}
+                totals={totals}
                 onQty={updateQty}
                 onRemove={removeLine}
                 onClear={clearCart}
                 onEditDiscount={openItemDiscount}
                 onEditPrice={openPriceEdit}
+                onSelectCustomer={() => {
+                  setCustomerMode("select");
+                  setCustomerOpen(true);
+                }}
+                onInvoiceDiscount={() => {
+                  setDiscountScope("invoice");
+                  setDiscountSection("invoice");
+                  setDiscountLine(null);
+                  setDiscountOpen(true);
+                }}
+                onHold={() => void onHold()}
+                onQuickCashPay={() => void completeSale()}
                 canOverridePrice={allowPriceOverride}
                 selectedLineId={selectedLineId}
                 onSelectLine={setSelectedLineId}
                 onProceedToCheckout={() => setStage("checkout")}
+                busy={busy}
               />
             </div>
 
