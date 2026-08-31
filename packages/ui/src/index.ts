@@ -23,6 +23,7 @@ export * from "./components/EmptyState.js";
 export * from "./components/LoadingState.js";
 export * from "./components/ErrorState.js";
 export * from "./components/ConfirmationDialog.js";
+export * from "./components/Alert.js";
 export * from "./components/Toast.js";
 export * from "./components/CommandPalette.js";
 export * from "./components/PageChrome.js";

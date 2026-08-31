@@ -1,5 +1,5 @@
 import { useEffect, useState, type FormEvent } from "react";
-import { Button, Card, Form, FormActions, Input, Select, useToast } from "@electronic-erp/ui";
+import { Breadcrumb, Button, Card, DataTable, Form, FormActions, Input, KpiCard, PageHeader, Select, useToast } from "@electronic-erp/ui";
 import { useAuth } from "@/features/auth/AuthContext";
 import { inventoryApi } from "@/features/inventory/inventory-api";
 import { purchasesApi } from "./purchases-api";
@@ -14,6 +14,7 @@ export function PurchasesPage() {
   const [items, setItems] = useState<Array<Record<string, unknown>>>([]);
   const [prices, setPrices] = useState<Array<Record<string, unknown>>>([]);
   const [warehouses, setWarehouses] = useState<Array<Record<string, unknown>>>([]);
+  const [loading, setLoading] = useState(true);
   const [form, setForm] = useState({
     warehouseId: "",
     supplierId: "",
@@ -30,27 +31,32 @@ export function PurchasesPage() {
   });
 
   async function load() {
-    const [purchases, wh, priceRows] = await Promise.all([
-      purchasesApi.listPurchases(branchId ?? undefined),
-      inventoryApi.listWarehouses(),
-      purchasesApi.listSupplierPrices(),
-    ]);
-    setItems(purchases.items);
-    setWarehouses(wh.items);
-    setPrices(priceRows.items);
-    if (!form.warehouseId && wh.items[0]) {
-      setForm((p) => ({ ...p, warehouseId: String(wh.items[0]!.id) }));
-    }
-  }
-
-  useEffect(() => {
-    void load().catch((err: unknown) =>
+    setLoading(true);
+    try {
+      const [purchases, wh, priceRows] = await Promise.all([
+        purchasesApi.listPurchases(branchId ?? undefined),
+        inventoryApi.listWarehouses(),
+        purchasesApi.listSupplierPrices(),
+      ]);
+      setItems(purchases.items);
+      setWarehouses(wh.items);
+      setPrices(priceRows.items);
+      if (!form.warehouseId && wh.items[0]) {
+        setForm((p) => ({ ...p, warehouseId: String(wh.items[0]!.id) }));
+      }
+    } catch (err) {
       toast.push({
         title: "Load failed",
         description: err instanceof Error ? err.message : "Error",
         tone: "danger",
-      }),
-    );
+      });
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  useEffect(() => {
+    void load();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [branchId]);
 
@@ -83,10 +89,20 @@ export function PurchasesPage() {
         operationId: uuid(),
       });
       toast.push({
-        title: "Purchase posted",
-        description: `${result.invoiceNumber} · stock increased · payable ${result.remainingTotal}`,
+        title: "Purchase posted successfully",
+        description: `Invoice ${result.invoiceNumber} recorded. Stock increased & supplier payable updated.`,
         tone: "success",
       });
+      setForm((p) => ({
+        ...p,
+        invoiceNumber: "",
+        productId: "",
+        qty: "1",
+        unitCost: "0",
+        discount: "0",
+        tax: "0",
+        paidTotal: "0",
+      }));
       await load();
     } catch (err) {
       toast.push({
@@ -97,118 +113,247 @@ export function PurchasesPage() {
     }
   }
 
+  const totalPurchasesAmount = items.reduce((acc, it) => acc + Number(it.total_amount || 0), 0);
+  const totalRemainingPayable = items.reduce((acc, it) => acc + Number(it.remaining_total || 0), 0);
+
   return (
     <div className="space-y-4">
-      <div>
-        <h1 className="text-2xl font-semibold">Purchases</h1>
-        <p className="text-sm text-[var(--erp-muted)]">
-          Central purchase service updates stock, supplier ledger, payable, price engine, and accounts.
-        </p>
+      <Breadcrumb
+        items={[
+          { label: "Home", href: "/command-center" },
+          { label: "Purchases & Inbound", href: "/purchases" },
+          { label: "Purchase Invoices" },
+        ]}
+      />
+
+      <PageHeader
+        moduleNumber="09"
+        title="Purchase Invoices & Inbound Stock"
+        description="Central purchasing ledger: Automatically updates stock counts, supplier accounts, payables, landed costs, and accounting general ledger."
+      />
+
+      {/* KPI Summary Cards */}
+      <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
+        <KpiCard
+          label="Total Purchase Orders"
+          value={items.length.toLocaleString()}
+          tone="brand"
+          icon={<i className="fa-solid fa-file-invoice" />}
+        />
+        <KpiCard
+          label="Total Purchases Value"
+          value={`Rs. ${totalPurchasesAmount.toLocaleString()}`}
+          icon={<i className="fa-solid fa-cart-shopping" />}
+        />
+        <KpiCard
+          label="Outstanding Payables"
+          value={`Rs. ${totalRemainingPayable.toLocaleString()}`}
+          tone={totalRemainingPayable > 0 ? "warning" : "success"}
+          icon={<i className="fa-solid fa-hand-holding-dollar" />}
+        />
       </div>
 
-      <Card title="New purchase invoice">
-        <Form onSubmit={onSubmit}>
-          <div className="grid gap-3 md:grid-cols-2">
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
+        {/* Purchase Entry Form */}
+        <Card title="Record New Purchase Invoice" description="Inbound stock receipt and supplier invoice." divided className="lg:col-span-1">
+          <Form onSubmit={onSubmit} className="space-y-3">
             <Select
-              label="Warehouse"
+              label="Destination Warehouse"
               options={warehouses.map((w) => ({
                 value: String(w.id),
                 label: `${String(w.name)} (${String(w.warehouse_type ?? "branch")})`,
               }))}
               value={form.warehouseId}
               onChange={(e) => setForm((p) => ({ ...p, warehouseId: e.target.value }))}
-            />
-            <Input
-              label="Supplier ID"
               required
-              value={form.supplierId}
-              onChange={(e) => setForm((p) => ({ ...p, supplierId: e.target.value }))}
             />
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+              <Input
+                label="Supplier ID"
+                value={form.supplierId}
+                onChange={(e) => setForm((p) => ({ ...p, supplierId: e.target.value }))}
+                placeholder="Supplier UUID"
+                required
+              />
+              <Input
+                label="Supplier Inv #"
+                value={form.invoiceNumber}
+                onChange={(e) => setForm((p) => ({ ...p, invoiceNumber: e.target.value }))}
+                placeholder="e.g. INV-9821"
+                required
+              />
+            </div>
+
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+              <Input
+                label="Invoice Date"
+                type="date"
+                value={form.invoiceDate}
+                onChange={(e) => setForm((p) => ({ ...p, invoiceDate: e.target.value }))}
+                required
+              />
+              <Input
+                label="Due Date"
+                type="date"
+                value={form.dueDate}
+                onChange={(e) => setForm((p) => ({ ...p, dueDate: e.target.value }))}
+              />
+            </div>
+
+            <div className="rounded-xl border border-slate-200 bg-slate-50 p-2.5 space-y-2">
+              <p className="text-[11px] font-bold uppercase text-slate-500">Item Line Details</p>
+              <div className="grid grid-cols-2 gap-2">
+                <Input
+                  label="Product ID"
+                  value={form.productId}
+                  onChange={(e) => setForm((p) => ({ ...p, productId: e.target.value }))}
+                  placeholder="Product UUID"
+                  required
+                />
+                <Input
+                  label="Unit ID"
+                  value={form.unitId}
+                  onChange={(e) => setForm((p) => ({ ...p, unitId: e.target.value }))}
+                  placeholder="Unit UUID"
+                  required
+                />
+              </div>
+
+              <div className="grid grid-cols-2 gap-2">
+                <Input
+                  label="Quantity"
+                  type="number"
+                  value={form.qty}
+                  onChange={(e) => setForm((p) => ({ ...p, qty: e.target.value }))}
+                  placeholder="1"
+                  required
+                />
+                <Input
+                  label="Unit Cost (Rs.)"
+                  type="number"
+                  value={form.unitCost}
+                  onChange={(e) => setForm((p) => ({ ...p, unitCost: e.target.value }))}
+                  placeholder="0.00"
+                  required
+                />
+              </div>
+
+              <div className="grid grid-cols-2 gap-2">
+                <Input
+                  label="Discount (Rs.)"
+                  type="number"
+                  value={form.discount}
+                  onChange={(e) => setForm((p) => ({ ...p, discount: e.target.value }))}
+                  placeholder="0.00"
+                />
+                <Input
+                  label="Tax (Rs.)"
+                  type="number"
+                  value={form.tax}
+                  onChange={(e) => setForm((p) => ({ ...p, tax: e.target.value }))}
+                  placeholder="0.00"
+                />
+              </div>
+            </div>
+
             <Input
-              label="Invoice number"
-              required
-              value={form.invoiceNumber}
-              onChange={(e) => setForm((p) => ({ ...p, invoiceNumber: e.target.value }))}
-            />
-            <Input
-              label="Date"
-              value={form.invoiceDate}
-              onChange={(e) => setForm((p) => ({ ...p, invoiceDate: e.target.value }))}
-            />
-            <Input
-              label="Product ID"
-              required
-              value={form.productId}
-              onChange={(e) => setForm((p) => ({ ...p, productId: e.target.value }))}
-            />
-            <Input
-              label="Unit ID"
-              required
-              value={form.unitId}
-              onChange={(e) => setForm((p) => ({ ...p, unitId: e.target.value }))}
-            />
-            <Input label="Qty" value={form.qty} onChange={(e) => setForm((p) => ({ ...p, qty: e.target.value }))} />
-            <Input
-              label="Purchase rate"
-              value={form.unitCost}
-              onChange={(e) => setForm((p) => ({ ...p, unitCost: e.target.value }))}
-            />
-            <Input
-              label="Discount"
-              value={form.discount}
-              onChange={(e) => setForm((p) => ({ ...p, discount: e.target.value }))}
-            />
-            <Input label="Tax" value={form.tax} onChange={(e) => setForm((p) => ({ ...p, tax: e.target.value }))} />
-            <Input
-              label="Paid"
+              label="Paid Amount Today (Rs.)"
+              type="number"
               value={form.paidTotal}
               onChange={(e) => setForm((p) => ({ ...p, paidTotal: e.target.value }))}
+              placeholder="0.00"
             />
-            <Input
-              label="Due date"
-              value={form.dueDate}
-              onChange={(e) => setForm((p) => ({ ...p, dueDate: e.target.value }))}
-              hint="Remaining = credit payable"
+
+            <FormActions>
+              <Button type="submit" className="w-full">
+                Post Purchase Invoice
+              </Button>
+            </FormActions>
+          </Form>
+        </Card>
+
+        {/* Purchase History & Supplier Prices */}
+        <div className="space-y-4 lg:col-span-2">
+          <Card title={`Purchase Invoices History (${items.length})`} description="Invoices posted in active branch." divided>
+            <DataTable
+              rows={items}
+              rowKey={(r) => String(r.id)}
+              searchable
+              searchPlaceholder="Filter invoice #, supplier…"
+              pageSize={10}
+              loading={loading}
+              emptyTitle="No purchase invoices recorded yet"
+              emptyDescription="Use the form on the left to record incoming supplier goods."
+              columns={[
+                {
+                  key: "inv",
+                  header: "Invoice #",
+                  sortValue: (r) => String(r.invoice_number ?? ""),
+                  cell: (r) => <span className="font-bold text-slate-900">{String(r.invoice_number ?? "—")}</span>,
+                },
+                {
+                  key: "date",
+                  header: "Date",
+                  sortValue: (r) => String(r.invoice_date ?? ""),
+                  cell: (r) => <span className="text-xs text-slate-600">{String(r.invoice_date ?? "").slice(0, 10)}</span>,
+                },
+                {
+                  key: "total",
+                  header: "Total (Rs.)",
+                  align: "right",
+                  sortValue: (r) => Number(r.total_amount ?? 0),
+                  cell: (r) => <span className="font-mono font-bold text-slate-900">{Number(r.total_amount ?? 0).toLocaleString()}</span>,
+                },
+                {
+                  key: "paid",
+                  header: "Paid (Rs.)",
+                  align: "right",
+                  sortValue: (r) => Number(r.paid_total ?? 0),
+                  cell: (r) => <span className="font-mono text-emerald-700">{Number(r.paid_total ?? 0).toLocaleString()}</span>,
+                },
+                {
+                  key: "remaining",
+                  header: "Balance Due",
+                  align: "right",
+                  sortValue: (r) => Number(r.remaining_total ?? 0),
+                  cell: (r) => (
+                    <span className={`font-mono font-black ${Number(r.remaining_total ?? 0) > 0 ? "text-amber-700" : "text-slate-400"}`}>
+                      {Number(r.remaining_total ?? 0).toLocaleString()}
+                    </span>
+                  ),
+                },
+              ]}
             />
-          </div>
-          <FormActions>
-            <Button type="submit">Save purchase</Button>
-          </FormActions>
-        </Form>
-      </Card>
+          </Card>
 
-      <Card title="Recent purchases">
-        <ul className="space-y-2 text-sm">
-          {items.map((p) => (
-            <li key={String(p.id)} className="flex justify-between border-b py-2">
-              <span>
-                {String(p.invoice_number)} · supplier {String(p.supplier_id).slice(0, 8)}…
-              </span>
-              <span>
-                {String(p.grand_total)} · paid {String(p.paid_total)} · due {String(p.remaining_total)}
-              </span>
-            </li>
-          ))}
-          {!items.length ? <li className="text-[var(--erp-muted)]">No purchases yet</li> : null}
-        </ul>
-      </Card>
-
-      <Card title="Supplier price comparison">
-        <ul className="space-y-2 text-sm">
-          {prices.map((p) => (
-            <li key={String(p.id)} className="flex justify-between border-b py-2">
-              <span>
-                Product {String(p.product_id).slice(0, 8)}… · supplier {String(p.supplier_id).slice(0, 8)}…
-              </span>
-              <span>
-                last {String(p.last_purchase_rate)} · avg {String(p.average_purchase_rate)} · price{" "}
-                {String(p.supplier_price)}
-              </span>
-            </li>
-          ))}
-          {!prices.length ? <li className="text-[var(--erp-muted)]">No supplier prices yet</li> : null}
-        </ul>
-      </Card>
+          {prices.length ? (
+            <Card title="Contracted Supplier Prices" description="Active negotiated rates by supplier." divided>
+              <DataTable
+                rows={prices.slice(0, 10)}
+                rowKey={(p) => String(p.id)}
+                columns={[
+                  {
+                    key: "supp",
+                    header: "Supplier",
+                    cell: (p) => <span className="font-mono text-xs">{String(p.supplier_id).slice(0, 8)}…</span>,
+                  },
+                  {
+                    key: "prod",
+                    header: "Product",
+                    cell: (p) => <span className="font-mono text-xs">{String(p.product_id).slice(0, 8)}…</span>,
+                  },
+                  {
+                    key: "price",
+                    header: "Agreed Unit Price",
+                    align: "right",
+                    cell: (p) => <span className="font-mono font-bold text-slate-900">Rs. {Number(p.purchase_price).toLocaleString()}</span>,
+                  },
+                ]}
+              />
+            </Card>
+          ) : null}
+        </div>
+      </div>
     </div>
   );
 }

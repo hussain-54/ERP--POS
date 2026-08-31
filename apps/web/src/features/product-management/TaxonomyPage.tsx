@@ -1,6 +1,6 @@
 import { useEffect, useState, type FormEvent } from "react";
 import { useLocation } from "react-router-dom";
-import { Button, Card, Form, Input, Tabs, useToast } from "@electronic-erp/ui";
+import { Breadcrumb, Button, Card, Form, FormActions, Input, PageHeader, Tabs, useToast } from "@electronic-erp/ui";
 import { catalogApi } from "./catalog-api";
 
 const TABS = [
@@ -56,7 +56,7 @@ export function TaxonomyPage() {
       await catalogApi.createTaxonomy(tab, body);
       setCode("");
       setName("");
-      toast.push({ title: "Created", tone: "success" });
+      toast.push({ title: "Taxonomy record created", tone: "success" });
       await load();
     } catch (err) {
       toast.push({
@@ -69,74 +69,78 @@ export function TaxonomyPage() {
 
   return (
     <div className="space-y-4">
-      <h1 className="text-2xl font-semibold">Catalog taxonomy</h1>
+      <Breadcrumb
+        items={[
+          { label: "Home", href: "/command-center" },
+          { label: "Products", href: "/products" },
+          { label: "Catalog Taxonomy" },
+        ]}
+      />
+
+      <PageHeader
+        moduleNumber="02"
+        title="Catalog Taxonomy & Classifications"
+        description="Organize your electronics catalog across categories, subcategories, brands, manufacturers, product types, and models."
+      />
+
       <Tabs items={TABS} value={tab} onChange={setTab} />
-      <div className="grid gap-4 lg:grid-cols-[320px_1fr]">
-        <Card title={`New ${tab}`}>
-          <Form onSubmit={onCreate}>
-            <Input label="Code" required value={code} onChange={(e) => setCode(e.target.value)} />
-            <Input label="Name" required value={name} onChange={(e) => setName(e.target.value)} />
+
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
+        <Card title={`Add New ${TABS.find((t) => t.id === tab)?.label.slice(0, -1) || "Item"}`} description="Define a new taxonomy attribute." divided className="lg:col-span-1">
+          <Form onSubmit={onCreate} className="space-y-3">
+            <Input
+              label="Code / Slug"
+              value={code}
+              onChange={(e) => setCode(e.target.value)}
+              placeholder="e.g. ELEC-AC"
+              required
+            />
+            <Input
+              label="Display Name"
+              value={name}
+              onChange={(e) => setName(e.target.value)}
+              placeholder="e.g. Air Conditioners"
+              required
+            />
             {tab === "subcategories" ? (
               <Input
-                label="Category ID"
-                required
+                label="Parent Category ID"
                 value={categoryId}
                 onChange={(e) => setCategoryId(e.target.value)}
-                hint="Paste category UUID"
+                placeholder="Parent Category UUID"
+                required
               />
             ) : null}
-            <Button type="submit">Create</Button>
+            <FormActions>
+              <Button type="submit">Create Record</Button>
+            </FormActions>
           </Form>
         </Card>
-        <Card title="Records">
-          <ul className="divide-y divide-[var(--erp-border)]">
-            {items.map((item) => (
-              <li key={String(item.id)} className="flex items-center justify-between gap-3 py-2 text-sm">
-                <span>
-                  <strong>{String(item.code)}</strong> — {String(item.name)}
-                  <span className="ml-2 text-[var(--erp-muted)]">
-                    {item.deleted_at ? "deleted" : item.is_active ? "active" : "inactive"}
+
+        <Card title={`Existing ${TABS.find((t) => t.id === tab)?.label || "Items"} (${items.length})`} description="List of configured classifications in this category." divided className="lg:col-span-2">
+          <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-2.5">
+            {items.map((it) => (
+              <div
+                key={String(it.id)}
+                className="flex flex-col justify-between p-3 rounded-xl bg-slate-50 border border-slate-200 text-xs hover:border-blue-300 transition"
+              >
+                <div>
+                  <p className="font-bold text-slate-900">{String(it.name)}</p>
+                  <p className="font-mono text-[11px] text-slate-500">{String(it.code)}</p>
+                </div>
+                {it.category_id ? (
+                  <span className="mt-2 text-[10px] text-blue-600 font-mono truncate">
+                    Parent: {String(it.category_id).slice(0, 8)}…
                   </span>
-                </span>
-                <span className="flex gap-2">
-                  <Button
-                    size="sm"
-                    variant="ghost"
-                    onClick={() =>
-                      void catalogApi
-                        .updateTaxonomy(tab, String(item.id), {
-                          name: `${String(item.name)}`,
-                        })
-                        .then(() => load())
-                    }
-                  >
-                    Edit
-                  </Button>
-                  {item.deleted_at ? (
-                    <Button
-                      size="sm"
-                      variant="secondary"
-                      onClick={() =>
-                        void catalogApi.restoreTaxonomy(tab, String(item.id)).then(() => load())
-                      }
-                    >
-                      Restore
-                    </Button>
-                  ) : (
-                    <Button
-                      size="sm"
-                      variant="danger"
-                      onClick={() =>
-                        void catalogApi.deactivateTaxonomy(tab, String(item.id)).then(() => load())
-                      }
-                    >
-                      Deactivate
-                    </Button>
-                  )}
-                </span>
-              </li>
+                ) : null}
+              </div>
             ))}
-          </ul>
+            {items.length === 0 ? (
+              <div className="col-span-full py-8 text-center text-xs text-slate-400">
+                No taxonomy records in this section yet.
+              </div>
+            ) : null}
+          </div>
         </Card>
       </div>
     </div>

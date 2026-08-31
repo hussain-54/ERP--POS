@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { Button, Card, Input, useToast } from "@electronic-erp/ui";
+import { Breadcrumb, Button, Card, Input, PageHeader, useToast } from "@electronic-erp/ui";
 import { ReportFilters } from "./ReportFilters";
 import { reportingApi, type ReportFilterInput } from "./reporting-api";
 
@@ -19,6 +19,7 @@ export function ReportsHubPage() {
   } | null>(null);
   const [key, setKey] = useState("daily");
   const [output, setOutput] = useState<unknown>(null);
+  const [loading, setLoading] = useState(false);
 
   useEffect(() => {
     void reportingApi
@@ -52,6 +53,7 @@ export function ReportsHubPage() {
   }, [tab, catalog]);
 
   async function run() {
+    setLoading(true);
     try {
       const f = { ...filter, partyId: partyId || undefined };
       let data: unknown;
@@ -63,10 +65,12 @@ export function ReportsHubPage() {
       setOutput(data);
     } catch (err) {
       toast.push({
-        title: "Report failed",
+        title: "Report query failed",
         description: err instanceof Error ? err.message : "Error",
         tone: "danger",
       });
+    } finally {
+      setLoading(false);
     }
   }
 
@@ -82,62 +86,89 @@ export function ReportsHubPage() {
             : catalog?.accounting;
 
   return (
-    <div className="space-y-4 p-4">
-      <h1 className="text-xl font-semibold">Reports</h1>
-      <p className="text-sm opacity-70">
-        Sales, purchases, stock, profit and accounting — scoped by org, branch, warehouse and permissions.
-      </p>
+    <div className="space-y-4">
+      <Breadcrumb
+        items={[
+          { label: "Home", href: "/command-center" },
+          { label: "Intelligence & BI", href: "/reports" },
+          { label: "Reports Hub" },
+        ]}
+      />
 
-      <div className="flex flex-wrap gap-2">
+      <PageHeader
+        moduleNumber="18"
+        title="Enterprise Reports & BI Analytics"
+        description="Comprehensive transactional, stock valuation, gross margin, aging receivables/payables, and financial reporting engine."
+      />
+
+      {/* Category Tabs */}
+      <div className="flex flex-wrap gap-1.5 border-b border-slate-200 pb-2">
         {(["sales", "purchases", "stock", "profit", "accounting"] as Tab[]).map((t) => (
-          <Button
+          <button
             key={t}
             type="button"
-            variant={tab === t ? "primary" : "secondary"}
             onClick={() => setTab(t)}
+            className={`rounded-lg px-3.5 py-1.5 text-xs font-bold uppercase tracking-wider transition ${
+              tab === t
+                ? "bg-blue-600 text-white shadow-xs"
+                : "bg-slate-100 text-slate-600 hover:bg-slate-200 hover:text-slate-900"
+            }`}
           >
             {t}
-          </Button>
+          </button>
         ))}
       </div>
 
-      <Card title="Filters">
-        <ReportFilters value={filter} onChange={setFilter} />
-        {tab === "accounting" && (
-          <div className="mt-2">
-            <Input
-              label="Party id (customer/supplier ledgers)"
-              value={partyId}
-              onChange={(e) => setPartyId(e.target.value)}
-            />
-          </div>
-        )}
-        <div className="mt-3 flex flex-wrap items-end gap-2">
-          <label className="flex flex-col gap-1 text-sm">
-            <span className="opacity-70">Report</span>
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
+        {/* Filter & Run Controls */}
+        <Card title="Report Parameters & Scope" description="Configure time horizons, branches, and entities." divided className="lg:col-span-1">
+          <ReportFilters value={filter} onChange={setFilter} />
+          {tab === "accounting" && (
+            <div className="mt-2.5">
+              <Input
+                label="Party ID (Customer / Supplier Ledger)"
+                value={partyId}
+                onChange={(e) => setPartyId(e.target.value)}
+                placeholder="Leave blank for global"
+              />
+            </div>
+          )}
+
+          <div className="mt-3 space-y-1.5">
+            <label className="block text-xs font-bold text-slate-700">Select Report Matrix</label>
             <select
-              className="rounded border border-[var(--erp-border)] bg-transparent px-2 py-2"
+              className="w-full rounded-lg border border-slate-300 bg-white p-2 text-xs font-bold text-slate-900 focus:border-blue-500 focus:outline-none"
               value={key}
               onChange={(e) => setKey(e.target.value)}
             >
-              {(options ?? []).map((o) => (
+              {options?.map((o) => (
                 <option key={o} value={o}>
                   {o}
                 </option>
               ))}
             </select>
-          </label>
-          <Button type="button" onClick={() => void run()}>
-            Run report
-          </Button>
-        </div>
-      </Card>
+          </div>
 
-      <Card title="Result">
-        <pre className="max-h-[32rem] overflow-auto whitespace-pre-wrap text-xs">
-          {output ? JSON.stringify(output, null, 2) : "Run a report to view results."}
-        </pre>
-      </Card>
+          <div className="mt-4 pt-4 border-t border-slate-100">
+            <Button type="button" onClick={() => void run()} loading={loading} className="w-full">
+              Execute Report
+            </Button>
+          </div>
+        </Card>
+
+        {/* Output Area */}
+        <Card title="Generated Report Output" description={key ? `Matrix: ${key} (${tab})` : "Run query above"} divided className="lg:col-span-2">
+          {output ? (
+            <div className="max-h-[32rem] overflow-auto rounded-lg border border-slate-200 bg-slate-900 p-3 text-emerald-400 font-mono text-xs shadow-inner">
+              <pre>{JSON.stringify(output, null, 2)}</pre>
+            </div>
+          ) : (
+            <div className="py-16 text-center text-xs text-slate-400">
+              Select your parameters and click "Execute Report" to view results.
+            </div>
+          )}
+        </Card>
+      </div>
     </div>
   );
 }

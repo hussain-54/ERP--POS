@@ -8,25 +8,26 @@ import {
 } from "react";
 import { cn } from "../lib/cn.js";
 
-type ToastTone = "info" | "success" | "danger";
+export type ToastTone = "info" | "success" | "warning" | "danger";
 
-interface ToastItem {
+export interface ToastItem {
   id: string;
   title: string;
   description?: string;
   tone: ToastTone;
 }
 
-interface ToastContextValue {
+export interface ToastContextValue {
   push: (toast: Omit<ToastItem, "id">) => void;
 }
 
 const ToastContext = createContext<ToastContextValue | null>(null);
 
 const toneClass: Record<ToastTone, string> = {
-  info: "erp-toast-info",
-  success: "erp-toast-success",
-  danger: "erp-toast-danger",
+  info: "erp-toast-info border-l-4 border-blue-500",
+  success: "erp-toast-success border-l-4 border-emerald-500",
+  warning: "border-l-4 border-amber-500",
+  danger: "erp-toast-danger border-l-4 border-rose-500",
 };
 
 export function ToastProvider({ children }: { children: ReactNode }) {
