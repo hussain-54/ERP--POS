@@ -175,7 +175,7 @@ describe("CartZone", () => {
       />,
     );
 
-    const checkoutBtns = screen.getAllByRole("button", { name: /PAY \/ CHECKOUT/i });
+    const checkoutBtns = screen.getAllByRole("button", { name: /CHECKOUT/i });
     expect(checkoutBtns[0]).toBeInTheDocument();
     fireEvent.click(checkoutBtns[0]!);
     expect(onProceed).toHaveBeenCalledTimes(1);

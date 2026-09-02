@@ -67,13 +67,14 @@ describe("PostSaleDialog (POS Phase 3 - Professional Invoice & Receipt)", () => 
       />,
     );
 
-    expect(screen.getByText(/✓ Sale Completed/i)).toBeInTheDocument();
-    expect(screen.getByText(/#INV-928173/i)).toBeInTheDocument();
-    expect(screen.getByText(/Ahmed Electronics/i)).toBeInTheDocument();
+    expect(screen.getByText(/Payment Successful/i)).toBeInTheDocument();
+    expect(screen.getByText(/Sale Completed/i)).toBeInTheDocument();
+    expect(screen.getAllByText(/#INV-928173/i).length).toBeGreaterThanOrEqual(1);
+    expect(screen.getAllByText(/Ahmed Electronics/i).length).toBeGreaterThanOrEqual(1);
     expect(screen.getByText(/Orient Inverter AC 1.5T/i)).toBeInTheDocument();
-    expect(screen.getByText(/11,115.00/)).toBeInTheDocument(); // Grand total
-    expect(screen.getByText(/12,000.00/)).toBeInTheDocument(); // Amount Paid
-    expect(screen.getByText(/885.00/)).toBeInTheDocument(); // Change Returned
+    expect(screen.getAllByText(/11,115\.00/).length).toBeGreaterThanOrEqual(1);
+    expect(screen.getByText(/12,000\.00/)).toBeInTheDocument();
+    expect(screen.getByText(/885\.00/)).toBeInTheDocument();
   });
 
   it("handles Print Receipt and Download PDF actions", () => {

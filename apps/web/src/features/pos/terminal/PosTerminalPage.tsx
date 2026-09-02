@@ -42,6 +42,14 @@ import "./terminal-layout.css";
 
 type MobilePane = "products" | "cart" | "checkout";
 type PosStage = "terminal" | "checkout";
+type PaymentFlowState = "idle" | "processing" | "success" | "failed";
+
+interface CompletedSaleMeta {
+  customerName: string;
+  customerMobile: string | null;
+  customerEmail: string | null;
+  paymentMethod: string;
+}
 
 export function PosTerminalPage() {
   const { branchId, organizationId, permissions, hasPermission } = useAuth();
@@ -51,9 +59,11 @@ export function PosTerminalPage() {
   const [params] = useSearchParams();
   const sale = usePosSale();
   const searchRef = useRef<HTMLInputElement>(null);
+  const idempotencyKeyRef = useRef<string>(uuid());
 
   const [stage, setStage] = useState<PosStage>("terminal");
   const [busy, setBusy] = useState(false);
+  const [paymentFlowState, setPaymentFlowState] = useState<PaymentFlowState>("idle");
   const [limit, setLimit] = useState(30);
   const [loadingProducts, setLoadingProducts] = useState(false);
   const [mobilePane, setMobilePane] = useState<MobilePane>("products");
@@ -74,6 +84,7 @@ export function PosTerminalPage() {
   const [postSaleOpen, setPostSaleOpen] = useState(false);
   const [lastPaid, setLastPaid] = useState<number>(0);
   const [lastChange, setLastChange] = useState<number>(0);
+  const [completedSaleMeta, setCompletedSaleMeta] = useState<CompletedSaleMeta | null>(null);
 
   // Hardware scanner states
   const [cameraScannerOpen, setCameraScannerOpen] = useState(false);
@@ -262,26 +273,57 @@ export function PosTerminalPage() {
 
   // Handle scanned Barcode / SKU / QR Code
   const handleScanCode = useCallback(
-    (code: string) => {
+    async (code: string) => {
       const trimmed = code.trim();
       if (!trimmed) return;
       const lower = trimmed.toLowerCase();
-      const match = products.find(
+
+      const localMatch = products.find(
         (p) =>
           p.barcode?.toLowerCase() === lower ||
           p.sku?.toLowerCase() === lower ||
-          p.name.toLowerCase() === lower
+          p.name.toLowerCase() === lower,
       );
 
-      if (match) {
-        addProduct(match);
-        push({ title: `Scanned: ${match.name}`, tone: "success" });
-      } else {
-        setUnknownBarcode(trimmed);
-        setUnknownBarcodeOpen(true);
+      if (localMatch) {
+        addProduct(localMatch);
+        push({ title: `Scanned: ${localMatch.name}`, tone: "success" });
+        setSearch("");
+        searchRef.current?.focus();
+        return;
       }
+
+      if (branchId) {
+        try {
+          const res = await posApi.searchProducts({
+            q: trimmed,
+            limit: 5,
+            warehouseId: branchId,
+            customerId: customer.id ?? undefined,
+          });
+          const serverMatch =
+            res.items.find(
+              (p) =>
+                p.barcode?.toLowerCase() === lower ||
+                p.sku?.toLowerCase() === lower,
+            ) ?? res.items[0];
+
+          if (serverMatch) {
+            addProduct(serverMatch);
+            push({ title: `Scanned: ${serverMatch.name}`, tone: "success" });
+            setSearch("");
+            searchRef.current?.focus();
+            return;
+          }
+        } catch {
+          // Fall through to unknown barcode dialog
+        }
+      }
+
+      setUnknownBarcode(trimmed);
+      setUnknownBarcodeOpen(true);
     },
-    [products, addProduct, push],
+    [products, addProduct, push, branchId, customer.id, setSearch],
   );
 
   // Subscribe to hardware keyboard wedge barcode scanner
@@ -488,7 +530,10 @@ export function PosTerminalPage() {
     ];
   }
 
-  async function completeSale(overridePayments?: PosPaymentLine[]) {
+  async function completeSale(
+    overridePayments?: PosPaymentLine[],
+    options?: { installment?: { downPayment: string; installmentCount: number } },
+  ) {
     if (busy || !branchId || !organizationId || lines.length === 0) return;
     const payments = buildPaymentsForPost(overridePayments);
     if (!customer.id && payments.length === 0) {
@@ -518,6 +563,10 @@ export function PosTerminalPage() {
     const currentChange = Math.max(0, currentTenderReceived - totals.grand);
 
     setBusy(true);
+    setPaymentFlowState("processing");
+    const saleIdempotencyKey = idempotencyKeyRef.current;
+    const installmentMeta = options?.installment ?? installmentPlan;
+
     try {
       const discounts =
         invoiceDiscount > 0
@@ -537,7 +586,7 @@ export function PosTerminalPage() {
         branchId,
         warehouseId: branchId,
         customerId: customer.id ?? undefined,
-        idempotencyKey: uuid(),
+        idempotencyKey: saleIdempotencyKey,
         notes: notes || undefined,
         couponCode: couponCode || undefined,
         discountTotal: invoiceDiscount,
@@ -556,8 +605,8 @@ export function PosTerminalPage() {
         createInstallment:
           paymentKind === "installment"
             ? {
-                downPayment: installmentPlan.downPayment,
-                installmentCount: installmentPlan.installmentCount,
+                downPayment: installmentMeta.downPayment,
+                installmentCount: installmentMeta.installmentCount,
                 startDate: new Date().toISOString().slice(0, 10),
                 frequency: "monthly" as const,
               }
@@ -662,10 +711,18 @@ export function PosTerminalPage() {
         };
       }
 
+      setCompletedSaleMeta({
+        customerName: customer.label,
+        customerMobile: customer.mobile ?? invView.customerMobile ?? null,
+        customerEmail: customer.email ?? invView.customerEmail ?? null,
+        paymentMethod: paymentKind,
+      });
       setCompletedInvoice(invView);
       setLastPaid(currentTenderReceived);
       setLastChange(currentChange);
+      setPaymentFlowState("success");
       setPostSaleOpen(true);
+      idempotencyKeyRef.current = uuid();
 
       // Trigger cash drawer kick on cash payments
       const hasCashTender = paymentKind === "cash" || paymentKind === "split" || paymentKind === "partial";
@@ -687,11 +744,12 @@ export function PosTerminalPage() {
       setStage("terminal");
       setCashReceived(undefined);
       setMobilePane("products");
-      push({ title: `Sale Completed #${invoiceNum}`, tone: "success" });
+      push({ title: `Payment successful · Sale #${invoiceNum}`, tone: "success" });
     } catch (err) {
+      setPaymentFlowState("failed");
       push({
-        title: "Checkout failed",
-        description: err instanceof Error ? err.message : "Try again.",
+        title: "Payment could not be completed",
+        description: err instanceof Error ? err.message : "Please try again.",
         tone: "danger",
       });
     } finally {
@@ -748,9 +806,10 @@ export function PosTerminalPage() {
           }}
           onHold={() => void onHold()}
           onBackToCart={() => setStage("terminal")}
-          onComplete={(overridePayments) => void completeSale(overridePayments)}
+          onComplete={(overridePayments, options) => void completeSale(overridePayments, options)}
           methodsByKind={methodsByKind}
           busy={busy}
+          paymentFlowState={paymentFlowState}
         />
       ) : (
         <>
@@ -877,7 +936,6 @@ export function PosTerminalPage() {
                   setDiscountOpen(true);
                 }}
                 onHold={() => void onHold()}
-                onQuickCashPay={() => void completeSale()}
                 canOverridePrice={allowPriceOverride}
                 selectedLineId={selectedLineId}
                 onSelectLine={setSelectedLineId}
@@ -915,7 +973,6 @@ export function PosTerminalPage() {
                 }}
                 onHold={() => void onHold()}
                 onPayment={() => setStage("checkout")}
-                onComplete={() => void completeSale()}
                 onProceedToCheckout={() => setStage("checkout")}
                 busy={busy}
               />
@@ -1014,12 +1071,20 @@ export function PosTerminalPage() {
         invoice={completedInvoice}
         paidAmount={lastPaid}
         changeAmount={lastChange}
-        customerMobile={customer.mobile}
-        customerEmail={customer.email}
-        paymentMethod={paymentKind}
-        onClose={() => setPostSaleOpen(false)}
-        onNewSale={() => {
+        customerMobile={completedSaleMeta?.customerMobile ?? completedInvoice?.customerMobile}
+        customerEmail={completedSaleMeta?.customerEmail ?? completedInvoice?.customerEmail}
+        customerName={completedSaleMeta?.customerName}
+        paymentMethod={completedSaleMeta?.paymentMethod ?? paymentKind}
+        onClose={() => {
           setPostSaleOpen(false);
+          setPaymentFlowState("idle");
+        }}
+        onNewSale={() => {
+          newSale();
+          setPostSaleOpen(false);
+          setPaymentFlowState("idle");
+          setCompletedSaleMeta(null);
+          setCompletedInvoice(null);
           setStage("terminal");
           searchRef.current?.focus();
         }}

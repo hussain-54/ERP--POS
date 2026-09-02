@@ -189,7 +189,7 @@ describe("CheckoutStage (Redesigned POS Payment UX)", () => {
     expect(screen.getByText(/Credit available/i)).toBeInTheDocument();
   });
 
-  it("triggers Complete Sale action on dominant CTA button", () => {
+  it("triggers Confirm Payment action on dominant CTA button", () => {
     const onComplete = vi.fn();
     render(
       <CheckoutStage
@@ -213,7 +213,7 @@ describe("CheckoutStage (Redesigned POS Payment UX)", () => {
       />,
     );
 
-    const completeBtns = screen.getAllByRole("button", { name: /COMPLETE SALE/i });
+    const completeBtns = screen.getAllByRole("button", { name: /CONFIRM PAYMENT/i });
     expect(completeBtns.length).toBeGreaterThan(0);
     fireEvent.click(completeBtns[0]!);
     expect(onComplete).toHaveBeenCalledTimes(1);

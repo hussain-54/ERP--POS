@@ -63,9 +63,13 @@ export interface CheckoutStageProps {
   onDiscount: () => void;
   onHold: () => void;
   onBackToCart: () => void;
-  onComplete: (overridePayments?: PosPaymentLine[]) => void;
+  onComplete: (
+    overridePayments?: PosPaymentLine[],
+    options?: { installment?: { downPayment: string; installmentCount: number } },
+  ) => void;
   methodsByKind: Record<string, string>;
   busy?: boolean;
+  paymentFlowState?: "idle" | "processing" | "success" | "failed";
 }
 
 export const PRIMARY_PAYMENT_METHODS: Array<{
@@ -118,6 +122,7 @@ export function CheckoutStage({
   onComplete,
   methodsByKind,
   busy = false,
+  paymentFlowState = "idle",
 }: CheckoutStageProps) {
   // Determine active primary category
   const [selectedCategory, setSelectedCategory] = useState<PrimaryPaymentCategory>(() => {
@@ -320,10 +325,20 @@ export function CheckoutStage({
             reference: `Down Payment: ${installmentCount}M plan`,
           },
         ];
-        onComplete(installLines);
+        onComplete(installLines, {
+          installment: {
+            downPayment: String(installmentDownPayment),
+            installmentCount,
+          },
+        });
         return;
       }
-      onComplete([]);
+      onComplete([], {
+        installment: {
+          downPayment: String(installmentDownPayment),
+          installmentCount,
+        },
+      });
       return;
     }
 
@@ -1378,11 +1393,24 @@ export function CheckoutStage({
             )}
           </div>
 
-          {/* 3. DOMINANT COMPLETE SALE ACTION FOOTER */}
+          {/* 3. DOMINANT CONFIRM PAYMENT ACTION FOOTER */}
           <div className="shrink-0 border-t border-slate-200 bg-white p-4 shadow-lg">
+            {paymentFlowState === "processing" ? (
+              <div className="mb-2 flex items-center justify-center gap-2 rounded-xl border border-blue-200 bg-blue-50 px-4 py-2 text-xs font-bold text-blue-800">
+                <i className="fa-solid fa-spinner fa-spin" />
+                Processing payment… Please wait.
+              </div>
+            ) : null}
+            {paymentFlowState === "failed" ? (
+              <div className="mb-2 flex items-center justify-center gap-2 rounded-xl border border-red-200 bg-red-50 px-4 py-2 text-xs font-bold text-red-800">
+                <i className="fa-solid fa-circle-xmark" />
+                Payment failed. Adjust tender and try again.
+              </div>
+            ) : null}
+
             <button
               type="button"
-              disabled={busy || lines.length === 0}
+              disabled={busy || lines.length === 0 || paymentFlowState === "processing"}
               onClick={handleCompleteClick}
               className={`flex w-full items-center justify-between rounded-2xl px-5 py-4 text-base font-black text-white shadow-md transition active:scale-99 disabled:cursor-not-allowed disabled:opacity-50 ${
                 selectedCategory === "cash" && isCashShort
@@ -1393,8 +1421,8 @@ export function CheckoutStage({
               }`}
             >
               <span className="flex items-center gap-2">
-                <i className="fa-solid fa-circle-check text-xl" />
-                <span>COMPLETE SALE</span>
+                <i className={`fa-solid ${busy ? "fa-spinner fa-spin" : "fa-lock"} text-xl`} />
+                <span>{busy ? "Processing…" : "CONFIRM PAYMENT"}</span>
               </span>
 
               <span className="rounded-xl bg-black/20 px-3 py-1 text-sm font-black">
@@ -1405,7 +1433,7 @@ export function CheckoutStage({
             </button>
 
             <p className="mt-2 text-center text-[10px] text-slate-400">
-              Press <span className="font-bold text-slate-600">Ctrl + Enter</span> to finalize sale · <span className="font-bold text-slate-600">Esc</span> to return to cart
+              Payment is recorded only after confirmation succeeds · <span className="font-bold text-slate-600">Esc</span> to return to cart
             </p>
           </div>
         </section>

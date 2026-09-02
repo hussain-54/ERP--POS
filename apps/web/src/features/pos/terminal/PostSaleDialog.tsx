@@ -16,6 +16,7 @@ export function PostSaleDialog({
   changeAmount,
   customerMobile,
   customerEmail,
+  customerName,
   paymentMethod = "Cash",
   onClose,
   onNewSale,
@@ -26,6 +27,7 @@ export function PostSaleDialog({
   changeAmount?: number;
   customerMobile?: string | null;
   customerEmail?: string | null;
+  customerName?: string;
   paymentMethod?: string;
   onClose: () => void;
   onNewSale: () => void;
@@ -83,7 +85,7 @@ export function PostSaleDialog({
   const paid = paidAmount != null ? paidAmount : Number(enrichedInvoice.sale?.paidTotal ?? grand);
   const change = changeAmount != null ? changeAmount : Math.max(0, paid - grand);
   const remaining = Number(enrichedInvoice.sale?.remainingTotal ?? Math.max(0, grand - paid));
-  const customerName = enrichedInvoice.customerName ?? "Walk-in Customer";
+  const customerNameDisplay = customerName ?? enrichedInvoice.customerName ?? "Walk-in Customer";
   const customerPhone = enrichedInvoice.customerMobile ?? "";
 
   function handleShareWhatsApp() {
@@ -119,13 +121,37 @@ export function PostSaleDialog({
           aria-label="Sale Completed"
           onClick={(e) => e.stopPropagation()}
         >
-          {/* Success Icon & Heading */}
-          <div className="mx-auto mb-2 flex h-14 w-14 items-center justify-center rounded-full bg-emerald-100 text-emerald-600 shadow-sm">
-            <i className="fa-solid fa-circle-check text-3xl" />
+          {/* Payment Success Hero */}
+          <div className="mx-auto mb-3 max-w-md rounded-2xl border border-emerald-200 bg-emerald-50 p-4 text-left">
+            <div className="flex items-center gap-2 text-emerald-800">
+              <i className="fa-solid fa-circle-check text-2xl" />
+              <div>
+                <p className="text-sm font-black uppercase tracking-wide">Payment Successful</p>
+                <p className="text-2xl font-black text-emerald-900">Rs. {money(grand)}</p>
+              </div>
+            </div>
+            <div className="mt-2 grid grid-cols-2 gap-2 text-xs text-emerald-950">
+              <div>
+                <span className="text-[10px] font-bold uppercase text-emerald-700">Payment Method</span>
+                <p className="font-black capitalize">{paymentMethod}</p>
+              </div>
+              <div>
+                <span className="text-[10px] font-bold uppercase text-emerald-700">Transaction</span>
+                <p className="font-black">#{invNum}</p>
+              </div>
+              <div>
+                <span className="text-[10px] font-bold uppercase text-emerald-700">Time</span>
+                <p className="font-semibold">{dt.time}</p>
+              </div>
+              <div>
+                <span className="text-[10px] font-bold uppercase text-emerald-700">Customer</span>
+                <p className="font-semibold truncate">{customerNameDisplay}</p>
+              </div>
+            </div>
           </div>
 
           <h2 className="text-xl font-black tracking-tight text-slate-900">
-            ✓ Sale Completed
+            Sale Completed
           </h2>
           <p className="mt-0.5 text-xs text-slate-500">
             Invoice: <span className="font-bold text-slate-900">#{invNum}</span> · {dt.date} at {dt.time}
@@ -137,7 +163,7 @@ export function PostSaleDialog({
               <div>
                 <span className="text-[10px] font-bold uppercase text-slate-400">Customer</span>
                 <p className="truncate font-black text-slate-900">
-                  {customerName}
+                  {customerNameDisplay}
                   {customerPhone ? <span className="text-slate-400 font-normal ml-1">({customerPhone})</span> : ""}
                 </p>
               </div>
