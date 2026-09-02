@@ -881,16 +881,6 @@ export function PosTerminalPage() {
               setUnknownBarcode("");
               setUnknownBarcodeOpen(true);
             }}
-            onCheckout={() => {
-              if (lines.length === 0) {
-                push({ title: "Cart is empty", description: "Add products before checkout.", tone: "info" });
-                return;
-              }
-              setMobilePane("checkout");
-            }}
-            checkoutDisabled={lines.length === 0 || busy}
-            cartItemCount={lines.length}
-            cartGrandTotal={totals.grand}
           />
         </div>
 
@@ -901,7 +891,6 @@ export function PosTerminalPage() {
           <CartZone
             lines={lines}
             customer={customer}
-            totals={totals}
             onQty={updateQty}
             onRemove={removeLine}
             onClear={clearCart}
@@ -949,9 +938,6 @@ export function PosTerminalPage() {
             canOverridePrice={allowPriceOverride}
             selectedLineId={selectedLineId}
             onSelectLine={setSelectedLineId}
-            onProceedToCheckout={() => {
-              setMobilePane("checkout");
-            }}
             busy={busy}
           />
         </div>
@@ -988,7 +974,6 @@ export function PosTerminalPage() {
             onHold={() => void onHold()}
             onPayment={() => setPaymentOpen(true)}
             onComplete={() => void completeSale(undefined, { cashReceived })}
-            onProceedToCheckout={() => setStage("checkout")}
             onDeliveryOrder={() => {
               const current = deliveryCharges > 0 ? String(deliveryCharges) : "";
               const raw = window.prompt(

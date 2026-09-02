@@ -157,8 +157,7 @@ describe("CartZone", () => {
     expect(onRemove).toHaveBeenCalledWith("line-1");
   });
 
-  it("renders grand total and mobile proceed to payment", () => {
-    const onProceed = vi.fn();
+  it("renders cart footer with note, counts, and action bar", () => {
     render(
       <CartZone
         lines={mockLines}
@@ -171,13 +170,21 @@ describe("CartZone", () => {
         canOverridePrice={true}
         selectedLineId={null}
         onSelectLine={vi.fn()}
-        onProceedToCheckout={onProceed}
+        onAddNote={vi.fn()}
+        onAddProduct={vi.fn()}
+        onSelectCustomer={vi.fn()}
+        onInvoiceDiscount={vi.fn()}
+        onPriceCheck={vi.fn()}
+        onHold={vi.fn()}
       />,
     );
 
-    expect(screen.getByText(/Go to Payment|Checkout \/ Complete Sale/i)).toBeInTheDocument();
-    const proceedBtn = screen.getByRole("button", { name: /Checkout \/ Complete Sale|Go to Payment/i });
-    fireEvent.click(proceedBtn);
-    expect(onProceed).toHaveBeenCalledTimes(1);
+    expect(screen.getByText(/Total Items:/i)).toBeInTheDocument();
+    expect(screen.getByText(/Total Qty:/i)).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /\+ Add Note/i })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /Add Product/i })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /^Customer$/i })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /^Discount$/i })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /Price Check/i })).toBeInTheDocument();
   });
 });

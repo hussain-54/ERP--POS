@@ -1,7 +1,9 @@
-import { useEffect, useRef, type KeyboardEvent, type RefObject } from "react";
+import { useEffect, useMemo, useRef, useState, type KeyboardEvent, type RefObject } from "react";
 import type { ProductSearchResult } from "@electronic-erp/contracts";
 import { money } from "../format";
 import type { ProductTab } from "../types";
+
+const PAGE_SIZE = 9;
 
 function productDisplayPrices(p: ProductSearchResult) {
   const retail = Number(p.retailPrice ?? 0);
@@ -39,6 +41,21 @@ function stockLine(stock: number | null | undefined, unitName?: string | null) {
   );
 }
 
+/** Build compact page number list: 1 2 3 … N */
+function pageWindow(current: number, total: number): Array<number | "ellipsis"> {
+  if (total <= 5) return Array.from({ length: total }, (_, i) => i + 1);
+  const pages: Array<number | "ellipsis"> = [];
+  const push = (v: number | "ellipsis") => {
+    if (pages[pages.length - 1] !== v) pages.push(v);
+  };
+  push(1);
+  if (current > 3) push("ellipsis");
+  for (let p = Math.max(2, current - 1); p <= Math.min(total - 1, current + 1); p++) push(p);
+  if (current < total - 2) push("ellipsis");
+  push(total);
+  return pages;
+}
+
 export function ProductDiscovery({
   search,
   onSearch,
@@ -58,10 +75,6 @@ export function ProductDiscovery({
   onOpenScanner,
   onUnknownBarcode,
   onManualEntry,
-  onCheckout,
-  checkoutDisabled,
-  cartItemCount = 0,
-  cartGrandTotal = 0,
 }: {
   search: string;
   onSearch: (v: string) => void;
@@ -81,13 +94,10 @@ export function ProductDiscovery({
   onOpenScanner?: () => void;
   onUnknownBarcode?: (code: string) => void;
   onManualEntry?: () => void;
-  onCheckout?: () => void;
-  checkoutDisabled?: boolean;
-  cartItemCount?: number;
-  cartGrandTotal?: number;
 }) {
   const localRef = useRef<HTMLInputElement>(null);
   const inputRef = searchRef ?? localRef;
+  const [page, setPage] = useState(1);
 
   useEffect(() => {
     function onFocusSearch() {
@@ -97,6 +107,22 @@ export function ProductDiscovery({
     window.addEventListener("pos:focus-search", onFocusSearch);
     return () => window.removeEventListener("pos:focus-search", onFocusSearch);
   }, [inputRef]);
+
+  useEffect(() => {
+    setPage(1);
+  }, [search, tab, categoryFilter]);
+
+  const loadedPages = Math.max(1, Math.ceil(Math.max(products.length, 1) / PAGE_SIZE));
+  const totalPages = hasMore ? loadedPages + 1 : Math.max(1, Math.ceil(products.length / PAGE_SIZE) || 1);
+  const safePage = Math.min(page, Math.max(totalPages, 1));
+  const pageProducts = useMemo(
+    () => products.slice((safePage - 1) * PAGE_SIZE, safePage * PAGE_SIZE),
+    [products, safePage],
+  );
+
+  useEffect(() => {
+    if (page > totalPages) setPage(totalPages);
+  }, [page, totalPages]);
 
   function onKeyDown(e: KeyboardEvent<HTMLInputElement>) {
     if (e.key !== "Enter") return;
@@ -126,12 +152,26 @@ export function ProductDiscovery({
     inputRef.current?.focus();
   }
 
+  function goToPage(next: number) {
+    if (next < 1) return;
+    if (next <= loadedPages) {
+      setPage(next);
+      return;
+    }
+    if (hasMore && next === loadedPages + 1) {
+      onLoadMore();
+      setPage(next);
+    }
+  }
+
   const tabs: Array<{ id: ProductTab; label: string; icon?: string }> = [
     { id: "all", label: "All" },
     { id: "favorites", label: "Favorites", icon: "fa-star" },
     { id: "recent", label: "Recent", icon: "fa-clock" },
     { id: "categories", label: "Categories", icon: "fa-layer-group" },
   ];
+
+  const showPager = products.length > 0 || Boolean(hasMore);
 
   return (
     <section
@@ -276,7 +316,7 @@ export function ProductDiscovery({
           </div>
         ) : (
           <div className="pos-products-grid-inner">
-            {products.map((p) => {
+            {pageProducts.map((p) => {
               const fav = favoriteIds.includes(p.productId);
               const stock = p.stockAvailable != null ? Number(p.stockAvailable) : null;
               const zero = stock != null && stock <= 0;
@@ -362,36 +402,47 @@ export function ProductDiscovery({
         )}
       </div>
 
-      {hasMore ? (
-        <div className="flex shrink-0 items-center justify-center gap-1 border-t border-slate-200 bg-white px-2 py-1.5">
+      {showPager ? (
+        <nav className="pos-zone-footer pos-products-pager" aria-label="Product pages">
           <button
             type="button"
-            onClick={onLoadMore}
-            className="inline-flex items-center gap-1.5 rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-[11px] font-bold text-blue-600 transition hover:bg-blue-50"
+            className="pos-pager-arrow"
+            disabled={safePage <= 1}
+            onClick={() => goToPage(safePage - 1)}
+            aria-label="Previous page"
           >
-            Load more
-            <i className="fa-solid fa-chevron-right text-[9px]" aria-hidden />
+            <i className="fa-solid fa-chevron-left" aria-hidden />
           </button>
-        </div>
-      ) : null}
-
-      {onCheckout ? (
-        <div className="pos-zone-footer shrink-0 border-t border-slate-200 bg-white p-2">
+          <div className="pos-pager-pages">
+            {pageWindow(safePage, totalPages).map((item, idx) =>
+              item === "ellipsis" ? (
+                <span key={`e-${idx}`} className="pos-pager-ellipsis">
+                  …
+                </span>
+              ) : (
+                <button
+                  key={item}
+                  type="button"
+                  className={`pos-pager-page ${item === safePage ? "is-active" : ""}`}
+                  onClick={() => goToPage(item)}
+                  aria-current={item === safePage ? "page" : undefined}
+                  aria-label={`Page ${item}`}
+                >
+                  {item}
+                </button>
+              ),
+            )}
+          </div>
           <button
             type="button"
-            disabled={checkoutDisabled}
-            onClick={onCheckout}
-            className="flex w-full items-center justify-between rounded-xl bg-blue-600 px-3 py-2.5 text-xs font-black text-white shadow-sm transition hover:bg-blue-700 disabled:cursor-not-allowed disabled:bg-slate-300 disabled:opacity-60"
+            className="pos-pager-arrow"
+            disabled={safePage >= totalPages && !hasMore}
+            onClick={() => goToPage(safePage + 1)}
+            aria-label="Next page"
           >
-            <span className="inline-flex items-center gap-1.5">
-              <i className="fa-solid fa-cash-register" aria-hidden />
-              Checkout / Complete Sale
-            </span>
-            <span className="rounded-lg bg-blue-800/50 px-2 py-0.5 tabular-nums">
-              {cartItemCount} · Rs. {money(cartGrandTotal)}
-            </span>
+            <i className="fa-solid fa-chevron-right" aria-hidden />
           </button>
-        </div>
+        </nav>
       ) : null}
     </section>
   );

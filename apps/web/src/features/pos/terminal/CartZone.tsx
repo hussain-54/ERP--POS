@@ -34,14 +34,12 @@ export interface CartZoneProps {
   canOverridePrice: boolean;
   selectedLineId: string | null;
   onSelectLine: (id: string | null) => void;
-  onProceedToCheckout?: () => void;
   busy?: boolean;
 }
 
 export function CartZone({
   lines,
   customer,
-  totals: providedTotals,
   onQty,
   onRemove,
   onClear,
@@ -58,30 +56,10 @@ export function CartZone({
   canOverridePrice,
   selectedLineId,
   onSelectLine,
-  onProceedToCheckout,
   busy = false,
 }: CartZoneProps) {
   const [moreOpen, setMoreOpen] = useState(false);
   const totalUnits = useMemo(() => lines.reduce((acc, l) => acc + l.qty, 0), [lines]);
-
-  const totals = useMemo(() => {
-    if (providedTotals) return providedTotals;
-    const subtotal = lines.reduce((acc, l) => acc + lineTotal(l), 0);
-    const itemDiscount = lines.reduce((acc, l) => acc + l.discount, 0);
-    const tax = lines.reduce((acc, l) => acc + l.tax * l.qty, 0);
-    return {
-      itemCount: lines.length,
-      totalQty: totalUnits,
-      taxable: subtotal,
-      itemDiscount,
-      invoiceDiscount: 0,
-      tax,
-      subtotal,
-      totalDiscount: itemDiscount,
-      deliveryCharges: 0,
-      grand: Math.max(0, subtotal + tax),
-    };
-  }, [providedTotals, lines, totalUnits]);
 
   const isEmpty = lines.length === 0;
 
@@ -113,7 +91,7 @@ export function CartZone({
             {lines.length} Items · {totalUnits} Pcs
           </span>
         </div>
-        <div className="flex shrink-0 items-center gap-1.5">
+          <div className="flex shrink-0 items-center gap-1.5">
           {onHold ? (
             <button
               type="button"
@@ -133,6 +111,15 @@ export function CartZone({
             className="inline-flex items-center gap-1 rounded-lg border border-red-300 bg-white px-2.5 py-1 text-[11px] font-bold text-red-600 transition hover:bg-red-50 disabled:opacity-30"
           >
             Clear
+          </button>
+          <button
+            type="button"
+            onClick={() => setMoreOpen((v) => !v)}
+            className="inline-flex h-7 w-7 items-center justify-center rounded-lg border border-slate-200 bg-white text-slate-500 transition hover:bg-slate-50"
+            aria-label="More cart actions"
+            title="More"
+          >
+            <i className="fa-solid fa-ellipsis-vertical text-[11px]" aria-hidden />
           </button>
         </div>
       </div>
@@ -366,8 +353,8 @@ export function CartZone({
         )}
       </div>
 
-      <div className="shrink-0 border-t border-slate-200 bg-slate-50 px-3 py-2">
-        <div className="flex items-center justify-between gap-2 text-[11px]">
+      <div className="pos-zone-footer pos-cart-footer shrink-0">
+        <div className="pos-cart-footer-meta">
           <button
             type="button"
             onClick={onAddNote}
@@ -385,76 +372,61 @@ export function CartZone({
             </span>
           </div>
         </div>
-        <div className="mt-1.5 flex items-center justify-between rounded-lg bg-white px-2.5 py-1.5 text-[11px] ring-1 ring-slate-200/80">
-          <span className="font-bold uppercase tracking-wide text-slate-500">Grand Total</span>
-          <span className="text-sm font-black text-slate-900">{money(totals.grand)}</span>
-        </div>
-        {onProceedToCheckout ? (
-          <button
-            type="button"
-            disabled={isEmpty || busy}
-            onClick={onProceedToCheckout}
-            className="mt-2 flex w-full items-center justify-center gap-1.5 rounded-xl bg-blue-600 py-2.5 text-xs font-black text-white shadow-sm transition hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-40"
-          >
-            <i className="fa-solid fa-cash-register text-[11px]" aria-hidden />
-            Checkout / Complete Sale
-          </button>
-        ) : null}
-      </div>
 
-      <div className="relative shrink-0 border-t border-slate-200 bg-white p-2">
-        {moreOpen ? (
-          <div className="absolute bottom-full left-2 right-2 z-10 mb-1 rounded-xl border border-slate-200 bg-white p-1.5 shadow-lg">
-            <button
-              type="button"
-              disabled={isEmpty || busy}
-              onClick={() => {
-                setMoreOpen(false);
-                onInvoiceDiscount?.();
-              }}
-              className="flex w-full items-center gap-2 rounded-lg px-2.5 py-2 text-left text-[11px] font-bold text-slate-700 hover:bg-slate-50 disabled:opacity-40"
-            >
-              <i className="fa-solid fa-percent text-blue-600" aria-hidden />
-              Invoice Discount
-            </button>
-            <button
-              type="button"
-              onClick={() => {
-                setMoreOpen(false);
-                onMore?.();
-              }}
-              className="flex w-full items-center gap-2 rounded-lg px-2.5 py-2 text-left text-[11px] font-bold text-slate-700 hover:bg-slate-50"
-            >
-              <i className="fa-solid fa-scissors text-cyan-600" aria-hidden />
-              Split / More payment
-            </button>
-            <button
-              type="button"
-              disabled={isEmpty || busy}
-              onClick={() => {
-                setMoreOpen(false);
-                onClear();
-              }}
-              className="flex w-full items-center gap-2 rounded-lg px-2.5 py-2 text-left text-[11px] font-bold text-red-600 hover:bg-red-50 disabled:opacity-40"
-            >
-              <i className="fa-regular fa-trash-can" aria-hidden />
-              Clear Cart
-            </button>
+        <div className="relative border-t border-slate-200 bg-white p-2">
+          {moreOpen ? (
+            <div className="absolute bottom-full left-2 right-2 z-10 mb-1 rounded-xl border border-slate-200 bg-white p-1.5 shadow-lg">
+              <button
+                type="button"
+                disabled={isEmpty || busy}
+                onClick={() => {
+                  setMoreOpen(false);
+                  onInvoiceDiscount?.();
+                }}
+                className="flex w-full items-center gap-2 rounded-lg px-2.5 py-2 text-left text-[11px] font-bold text-slate-700 hover:bg-slate-50 disabled:opacity-40"
+              >
+                <i className="fa-solid fa-percent text-blue-600" aria-hidden />
+                Invoice Discount
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  setMoreOpen(false);
+                  onMore?.();
+                }}
+                className="flex w-full items-center gap-2 rounded-lg px-2.5 py-2 text-left text-[11px] font-bold text-slate-700 hover:bg-slate-50"
+              >
+                <i className="fa-solid fa-scissors text-cyan-600" aria-hidden />
+                Split / More payment
+              </button>
+              <button
+                type="button"
+                disabled={isEmpty || busy}
+                onClick={() => {
+                  setMoreOpen(false);
+                  onClear();
+                }}
+                className="flex w-full items-center gap-2 rounded-lg px-2.5 py-2 text-left text-[11px] font-bold text-red-600 hover:bg-red-50 disabled:opacity-40"
+              >
+                <i className="fa-regular fa-trash-can" aria-hidden />
+                Clear Cart
+              </button>
+            </div>
+          ) : null}
+          <div className="pos-cart-actions">
+            {actions.map((action) => (
+              <button
+                key={action.id}
+                type="button"
+                disabled={!action.onClick || action.disabled}
+                onClick={() => action.onClick?.()}
+                className="pos-cart-action"
+              >
+                <i className={`fa-solid ${action.icon} text-base ${action.color}`} aria-hidden />
+                <span className="leading-tight">{action.label}</span>
+              </button>
+            ))}
           </div>
-        ) : null}
-        <div className="grid grid-cols-6 gap-1.5">
-          {actions.map((action) => (
-            <button
-              key={action.id}
-              type="button"
-              disabled={!action.onClick || action.disabled}
-              onClick={() => action.onClick?.()}
-              className="flex flex-col items-center justify-center gap-1 rounded-xl border border-slate-200 bg-white px-1 py-2.5 text-[9px] font-bold text-slate-700 shadow-xs transition hover:border-blue-300 hover:bg-blue-50/60 disabled:opacity-35"
-            >
-              <i className={`fa-solid ${action.icon} text-base ${action.color}`} aria-hidden />
-              <span className="leading-tight">{action.label}</span>
-            </button>
-          ))}
         </div>
       </div>
     </section>

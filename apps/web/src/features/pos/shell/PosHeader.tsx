@@ -88,8 +88,14 @@ export function PosHeader({
           <span className="pos-header-value">{cashier}</span>
         </div>
         <div className="pos-header-field">
-          <span className="pos-header-kicker">Shift</span>
-          <span className={`pos-header-value font-bold ${shiftOpen ? "text-emerald-600" : "text-amber-600"}`}>
+          <span className="pos-header-kicker">Shift Status</span>
+          <span
+            className={`inline-flex items-center rounded-full px-2 py-0.5 text-[10px] font-bold ${
+              shiftOpen
+                ? "bg-emerald-100 text-emerald-700"
+                : "bg-red-100 text-red-700"
+            }`}
+          >
             {shiftOpen ? "Open" : "Closed"}
           </span>
         </div>
@@ -105,13 +111,13 @@ export function PosHeader({
             aria-label="Held Sales"
             onClick={() => window.dispatchEvent(new Event("pos:open-resume-dialog"))}
           >
-            <span className="text-[10px] font-semibold text-slate-500">Held</span>
+            <span className="text-[10px] font-semibold text-slate-500">Held Orders</span>
             <i className="fa-solid fa-cart-shopping text-sm text-slate-600" aria-hidden />
             <span className="text-xs font-bold text-slate-800">{holdCount}</span>
           </button>
         ) : (
           <Link to="/pos/sales/held" className="pos-header-held" aria-label="Held Sales">
-            <span className="text-[10px] font-semibold text-slate-500">Held</span>
+            <span className="text-[10px] font-semibold text-slate-500">Held Orders</span>
             <i className="fa-solid fa-cart-shopping text-sm text-slate-600" aria-hidden />
             <span className="text-xs font-bold text-slate-800">{holdCount}</span>
           </Link>

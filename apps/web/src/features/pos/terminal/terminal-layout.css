@@ -94,10 +94,226 @@
   background: #ffffff;
 }
 
-/* Pinned checkout/payment actions — always visible at bottom of checkout rail */
+/* Pinned section footers — always visible at bottom of each rail */
 .pos-zone-footer {
   flex-shrink: 0;
   margin-top: auto;
+}
+
+/* Products pagination footer */
+.pos-products-pager {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.35rem;
+  padding: 0.45rem 0.65rem;
+  border-top: 1px solid #e2e8f0;
+  background: #ffffff;
+}
+
+.pos-pager-arrow {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 1.85rem;
+  height: 1.85rem;
+  border-radius: 0.5rem;
+  border: 1px solid #e2e8f0;
+  background: #ffffff;
+  color: #475569;
+  font-size: 0.65rem;
+  transition: background-color 0.12s ease, border-color 0.12s ease, color 0.12s ease;
+}
+
+.pos-pager-arrow:hover:not(:disabled) {
+  border-color: #93c5fd;
+  background: #eff6ff;
+  color: #1d4ed8;
+}
+
+.pos-pager-arrow:disabled {
+  opacity: 0.35;
+  cursor: not-allowed;
+}
+
+.pos-pager-pages {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25rem;
+}
+
+.pos-pager-page {
+  min-width: 1.85rem;
+  height: 1.85rem;
+  padding: 0 0.35rem;
+  border-radius: 0.5rem;
+  border: 1px solid #e2e8f0;
+  background: #ffffff;
+  color: #334155;
+  font-size: 0.7rem;
+  font-weight: 700;
+  transition: background-color 0.12s ease, border-color 0.12s ease, color 0.12s ease;
+}
+
+.pos-pager-page:hover {
+  border-color: #93c5fd;
+  background: #eff6ff;
+  color: #1d4ed8;
+}
+
+.pos-pager-page.is-active {
+  border-color: #2563eb;
+  background: #2563eb;
+  color: #ffffff;
+}
+
+.pos-pager-ellipsis {
+  min-width: 1.25rem;
+  text-align: center;
+  font-size: 0.75rem;
+  font-weight: 700;
+  color: #94a3b8;
+}
+
+/* Cart two-tier footer */
+.pos-cart-footer {
+  border-top: 1px solid #e2e8f0;
+  background: #f8fafc;
+}
+
+.pos-cart-footer-meta {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+  padding: 0.5rem 0.75rem;
+  font-size: 0.6875rem;
+  background: #f8fafc;
+}
+
+.pos-cart-actions {
+  display: grid;
+  grid-template-columns: repeat(6, minmax(0, 1fr));
+  gap: 0.35rem;
+}
+
+.pos-cart-action {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 0.25rem;
+  min-height: 3.35rem;
+  padding: 0.45rem 0.2rem;
+  border-radius: 0.75rem;
+  border: 1px solid #e2e8f0;
+  background: #ffffff;
+  color: #334155;
+  font-size: 0.5625rem;
+  font-weight: 700;
+  box-shadow: 0 1px 2px rgb(15 23 42 / 0.04);
+  transition: border-color 0.12s ease, background-color 0.12s ease;
+}
+
+.pos-cart-action:hover:not(:disabled) {
+  border-color: #93c5fd;
+  background: #eff6ff;
+}
+
+.pos-cart-action:disabled {
+  opacity: 0.35;
+  cursor: not-allowed;
+}
+
+/* Checkout complete-sale footer + shortcut chips */
+.pos-checkout-footer {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  padding: 0.65rem;
+  border-top: 1px solid #e2e8f0;
+  background: #ffffff;
+}
+
+.pos-complete-sale-btn {
+  display: flex;
+  width: 100%;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
+  border-radius: 0.75rem;
+  background: #2563eb;
+  padding: 0.9rem 1rem;
+  font-size: 0.875rem;
+  font-weight: 900;
+  letter-spacing: 0.01em;
+  color: #ffffff;
+  box-shadow: 0 4px 12px rgb(37 99 235 / 0.28);
+  transition: background-color 0.12s ease, transform 0.1s ease;
+}
+
+.pos-complete-sale-btn:hover:not(:disabled) {
+  background: #1d4ed8;
+}
+
+.pos-complete-sale-btn:active:not(:disabled) {
+  transform: scale(0.99);
+}
+
+.pos-complete-sale-btn:disabled {
+  cursor: not-allowed;
+  background: #cbd5e1;
+  box-shadow: none;
+  opacity: 0.7;
+}
+
+.pos-shortcut-chips {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  gap: 0.25rem;
+}
+
+.pos-shortcut-chip {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.25rem;
+  min-height: 1.85rem;
+  padding: 0.25rem 0.2rem;
+  border-radius: 0.5rem;
+  border: 1px solid #e2e8f0;
+  background: #f8fafc;
+  color: #475569;
+  font-size: 0.625rem;
+  font-weight: 700;
+  transition: background-color 0.12s ease, border-color 0.12s ease, color 0.12s ease;
+}
+
+.pos-shortcut-chip kbd {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 1.35rem;
+  padding: 0.05rem 0.25rem;
+  border-radius: 0.25rem;
+  border: 1px solid #cbd5e1;
+  background: #ffffff;
+  color: #1e293b;
+  font-family: inherit;
+  font-size: 0.575rem;
+  font-weight: 800;
+  line-height: 1.2;
+}
+
+.pos-shortcut-chip:hover:not(:disabled) {
+  border-color: #93c5fd;
+  background: #eff6ff;
+  color: #1d4ed8;
+}
+
+.pos-shortcut-chip:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
 }
 
 .pos-zone-header {

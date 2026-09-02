@@ -18,13 +18,10 @@ export function CheckoutZone({
   notes,
   onNotes,
   onSelectCustomer,
-  onWalkIn,
-  onNewCustomer,
   onDiscount,
   onHold,
   onPayment,
   onComplete,
-  onProceedToCheckout,
   onDeliveryOrder,
   onClearCart,
   deliveryCharges = 0,
@@ -54,8 +51,8 @@ export function CheckoutZone({
   notes: string;
   onNotes: (v: string) => void;
   onSelectCustomer: () => void;
-  onWalkIn: () => void;
-  onNewCustomer: () => void;
+  onWalkIn?: () => void;
+  onNewCustomer?: () => void;
   onDiscount: () => void;
   onHold: () => void;
   onSaveDraft?: () => void;
@@ -78,7 +75,6 @@ export function CheckoutZone({
   const currentCash = cashReceived != null ? cashReceived : undefined;
   const cashValue = currentCash ?? "";
   const changeToReturn = currentCash != null ? Math.max(0, currentCash - totals.grand) : 0;
-  const creditAvailable = Math.max(0, customer.creditLimit - customer.outstanding);
   const deliveryActive = deliveryCharges > 0 || Boolean(totals.deliveryCharges && totals.deliveryCharges > 0);
   const selectedGrid = GRID_TENDERS.find((m) => m.id === paymentKind);
   const showRecordHint = Boolean(recordOnlyHint || selectedGrid?.recordOnly);
@@ -98,45 +94,12 @@ export function CheckoutZone({
     >
       <div className="flex shrink-0 items-center justify-between border-b border-slate-200 bg-white px-3 py-2">
         <h2 className="text-sm font-black text-slate-900">Order Summary &amp; Payment</h2>
+        <span className="truncate text-[10px] font-semibold text-slate-500" title={customer.label}>
+          {customer.label}
+        </span>
       </div>
 
       <div className="pos-zone-scroll min-h-0 flex-1 space-y-2 p-2.5">
-        <div className="rounded-xl border border-slate-200 bg-white p-2.5">
-          <div className="flex items-start justify-between gap-2">
-            <div className="min-w-0">
-              <p className="truncate text-xs font-black text-slate-900">{customer.label}</p>
-              <p className="mt-0.5 text-[10px] text-slate-500">
-                Credit Limit: {money(customer.creditLimit)} · Available: {money(creditAvailable)}
-              </p>
-            </div>
-            <button
-              type="button"
-              onClick={onNewCustomer}
-              className="shrink-0 rounded-lg border border-blue-300 bg-white px-2.5 py-1 text-[11px] font-bold text-blue-700 transition hover:bg-blue-50"
-            >
-              + New
-            </button>
-          </div>
-          <div className="mt-2 flex flex-wrap gap-1.5">
-            <button
-              type="button"
-              onClick={onSelectCustomer}
-              className="rounded-md border border-slate-200 bg-slate-50 px-2 py-0.5 text-[10px] font-bold text-slate-600 hover:bg-slate-100"
-            >
-              Change
-            </button>
-            {customer.id ? (
-              <button
-                type="button"
-                onClick={onWalkIn}
-                className="rounded-md border border-slate-200 bg-slate-50 px-2 py-0.5 text-[10px] font-bold text-slate-600 hover:bg-slate-100"
-              >
-                Walk-in
-              </button>
-            ) : null}
-          </div>
-        </div>
-
         <div className="space-y-1 rounded-xl border border-slate-200 bg-white p-2.5 text-[11px]">
           <div className="flex justify-between text-slate-600">
             <span>Subtotal</span>
@@ -330,79 +293,63 @@ export function CheckoutZone({
         </div>
       </div>
 
-      <div className="pos-zone-footer shrink-0 space-y-2 border-t border-slate-200 bg-white p-2.5">
+      <div className="pos-zone-footer pos-checkout-footer shrink-0">
         <button
           type="button"
           disabled={busy || empty}
           onClick={onComplete}
-          className="flex w-full items-center justify-center gap-2 rounded-xl bg-blue-600 px-4 py-3.5 text-sm font-black text-white shadow-md transition hover:bg-blue-700 active:scale-[0.99] disabled:cursor-not-allowed disabled:bg-slate-300 disabled:opacity-60"
+          className="pos-complete-sale-btn"
         >
           <i className="fa-solid fa-cart-shopping" aria-hidden />
-          <span>{busy ? "Processing…" : `CHECKOUT / COMPLETE SALE  Rs. ${money(totals.grand)}`}</span>
+          <span>{busy ? "Processing…" : `COMPLETE SALE  Rs. ${money(totals.grand)}`}</span>
         </button>
 
-        <div className="grid grid-cols-5 gap-1">
+        <div className="pos-shortcut-chips" role="group" aria-label="Keyboard shortcuts">
           <button
             type="button"
             disabled={busy || empty}
             onClick={onComplete}
             title="Complete sale (F2)"
-            className="rounded-lg border border-slate-200 bg-white py-1.5 text-[10px] font-bold text-blue-700 shadow-xs transition hover:bg-blue-50 disabled:opacity-40"
+            className="pos-shortcut-chip"
           >
-            F2 Pay
+            <kbd>F2</kbd> Pay
           </button>
           <button
             type="button"
             disabled={busy || empty}
             onClick={onHold}
             title="Hold sale (F4)"
-            className="rounded-lg border border-slate-200 bg-white py-1.5 text-[10px] font-bold text-blue-700 shadow-xs transition hover:bg-blue-50 disabled:opacity-40"
+            className="pos-shortcut-chip"
           >
-            F4 Hold
+            <kbd>F4</kbd> Hold
           </button>
           <button
             type="button"
             disabled={!onDeliveryOrder}
             onClick={() => onDeliveryOrder?.()}
             title="Delivery order (F6)"
-            className="rounded-lg border border-slate-200 bg-white py-1.5 text-[10px] font-bold text-blue-700 shadow-xs transition hover:bg-blue-50 disabled:opacity-40"
+            className="pos-shortcut-chip"
           >
-            F6 Delivery
+            <kbd>F6</kbd> Delivery
           </button>
           <button
             type="button"
             onClick={onSelectCustomer}
             title="Select customer (F8)"
-            className="rounded-lg border border-slate-200 bg-white py-1.5 text-[10px] font-bold text-blue-700 shadow-xs transition hover:bg-blue-50"
+            className="pos-shortcut-chip"
           >
-            F8 Customer
+            <kbd>F8</kbd> Customer
           </button>
           <button
             type="button"
             disabled={busy || empty || !onClearCart}
             onClick={() => onClearCart?.()}
             title="Clear cart (Esc)"
-            className="rounded-lg border border-slate-200 bg-white py-1.5 text-[10px] font-bold text-blue-700 shadow-xs transition hover:bg-blue-50 disabled:opacity-40"
+            className="pos-shortcut-chip"
           >
-            Esc Clear
+            <kbd>Esc</kbd> Clear
           </button>
         </div>
-
-        <div className="flex items-center justify-end gap-1.5 text-[9px] font-medium text-slate-400">
-          <i className="fa-solid fa-shield-halved" aria-hidden />
-          <span>POS Version 2.0.0</span>
-        </div>
-
-        {onProceedToCheckout ? (
-          <button
-            type="button"
-            disabled={busy || empty}
-            onClick={onProceedToCheckout}
-            className="flex w-full items-center justify-center gap-1.5 rounded-lg border border-slate-200 bg-slate-50 py-1.5 text-[11px] font-bold text-slate-600 transition hover:bg-slate-100 disabled:opacity-40"
-          >
-            Open full payment screen
-          </button>
-        ) : null}
       </div>
     </section>
   );
