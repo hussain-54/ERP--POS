@@ -41,6 +41,8 @@ export interface CartLine {
   imageUrl?: string | null;
   stockAvailable?: number | null;
   category?: string | null;
+  /** Ad-hoc line not tied to catalog product. */
+  isManual?: boolean;
 }
 
 export interface PosCustomerView {

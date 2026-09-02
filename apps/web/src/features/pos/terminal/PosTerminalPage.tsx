@@ -12,6 +12,7 @@ import {
 import { useAuth } from "@/features/auth/AuthContext";
 import { useToast } from "@electronic-erp/ui";
 import { partiesApi } from "@/features/customers/parties-api";
+import { enrichCustomerForPos } from "../customers/customer-utils";
 import { CATALOG_CHANGED_EVENT } from "@/features/product-management/catalog-api";
 import { posApi } from "../api";
 import { uuid } from "../format";
@@ -38,6 +39,11 @@ import {
 } from "../hardware/hardware-broadcast";
 import { deviceHardware } from "@/features/devices/hardware-service";
 import "./terminal-layout.css";
+import {
+  customerPriceLevel,
+  mapCartLineToSaleItem,
+  validateSaleBeforeComplete,
+} from "./sale-complete-utils";
 
 type MobilePane = "products" | "cart" | "checkout";
 type PosStage = "terminal" | "checkout";
@@ -134,6 +140,7 @@ export function PosTerminalPage() {
     applyInvoiceDiscount,
     restoreFromHold,
     buildSnapshot,
+    defaultUnitId,
   } = sale;
 
   useEffect(() => {
@@ -222,6 +229,9 @@ export function PosTerminalPage() {
     if (state.resumeSnapshot) {
       const notes = typeof state.resumeSnapshot.notes === "string" ? state.resumeSnapshot.notes : "";
       restoreFromHold(state.resumeSnapshot);
+      const cid =
+        typeof state.resumeSnapshot.customerId === "string" ? state.resumeSnapshot.customerId : null;
+      if (cid) void enrichRestoredCustomer(cid);
       navigate(location.pathname, { replace: true, state: {} });
       push({
         title: notes.startsWith("Repeat of") ? "Repeat sale loaded" : "Sale restored",
@@ -379,6 +389,7 @@ export function PosTerminalPage() {
         }
       }
       if (detail === "hold") void onHold();
+      if (detail === "resume-held") setResumeOpen(true);
       if (detail === "pay") {
         if (stage === "terminal" && lines.length > 0) {
           setStage("checkout");
@@ -407,6 +418,23 @@ export function PosTerminalPage() {
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
   }, [stage, customerOpen, discountOpen, paymentOpen, postSaleOpen]);
+
+  useEffect(() => {
+    function onOpenResume() {
+      setResumeOpen(true);
+    }
+    window.addEventListener("pos:open-resume-dialog", onOpenResume);
+    return () => window.removeEventListener("pos:open-resume-dialog", onOpenResume);
+  }, []);
+
+  async function enrichRestoredCustomer(customerId: string) {
+    try {
+      const c = await partiesApi.getCustomer(customerId);
+      setCustomer(await enrichCustomerForPos(c));
+    } catch {
+      /* keep partial customer from snapshot */
+    }
+  }
 
   function onHold() {
     if (lines.length === 0) {
@@ -451,6 +479,13 @@ export function PosTerminalPage() {
 
   function handleResumeHeld(snapshot: Record<string, unknown>) {
     restoreFromHold(snapshot);
+    const customerId =
+      typeof snapshot.customerId === "string"
+        ? snapshot.customerId
+        : typeof (snapshot as { customer?: { id?: string } }).customer?.id === "string"
+          ? (snapshot as { customer: { id: string } }).customer.id
+          : null;
+    if (customerId) void enrichRestoredCustomer(customerId);
     setResumeOpen(false);
     setStage("terminal");
     window.dispatchEvent(new Event("pos:refresh-holds"));
@@ -535,6 +570,21 @@ export function PosTerminalPage() {
       return;
     }
 
+    const preCheck = validateSaleBeforeComplete({
+      lines,
+      customer,
+      paymentKind,
+      cashReceived,
+      grandTotal: totals.grand,
+      overridePayments,
+      defaultUnitId,
+    });
+    if (!preCheck.ok) {
+      push({ title: preCheck.title, description: preCheck.description, tone: "danger" });
+      if (preCheck.title === "Insufficient cash received") setStage("checkout");
+      return;
+    }
+
     const currentTenderReceived =
       overridePayments && overridePayments.length > 0
         ? overridePayments.reduce((acc, p) => acc + (p.amountReceived ?? p.amount), 0)
@@ -575,16 +625,9 @@ export function PosTerminalPage() {
         discountTotal: invoiceDiscount,
         invoiceDiscountKind: couponCode ? "coupon" : "fixed",
         discounts,
-        items: lines.map((l) => ({
-          productId: l.productId,
-          unitId: l.unitId,
-          qty: l.qty,
-          unitPrice: l.rate,
-          discount: l.discount,
-          discountPercent: l.discountPercent,
-          tax: l.tax * l.qty,
-        })),
+        items: lines.map((l) => mapCartLineToSaleItem(l, defaultUnitId)),
         payments,
+        priceLevel: customerPriceLevel(customer.priceTier),
         createInstallment:
           paymentKind === "installment"
             ? {
@@ -604,6 +647,11 @@ export function PosTerminalPage() {
         try {
           invView = await posApi.getInvoice(postRes.id);
         } catch {
+          push({
+            title: "Receipt loaded from sale totals",
+            description: "Server invoice fetch failed — verify amounts before sharing or printing.",
+            tone: "info",
+          });
           invView = {
             invoiceNumber: invoiceNum,
             customerName: customer.label,

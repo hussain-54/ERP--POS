@@ -1,4 +1,4 @@
-import { useCallback, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import type { ApproverRole, ProductSearchResult } from "@electronic-erp/contracts";
 import {
   buildHoldSnapshot,
@@ -69,18 +69,19 @@ function toCartLine(p: ProductSearchResult, qty = 1): CartLine {
 function parseRestoredLine(raw: unknown): CartLine | null {
   if (!raw || typeof raw !== "object") return null;
   const r = raw as Record<string, unknown>;
+  const isManual = Boolean(r.isManual) || (typeof r.productId === "string" && r.productId.startsWith("custom-"));
   const productId = typeof r.productId === "string" ? r.productId : null;
   const unitId = typeof r.unitId === "string" ? r.unitId : null;
-  if (!productId || !unitId) return null;
+  if (!isManual && (!productId || !unitId)) return null;
   const qty = Number(r.qty ?? 1);
   const rate = Number(r.rate ?? r.unitPrice ?? 0);
   const discount = Number(r.discount ?? 0);
   return {
     id: typeof r.id === "string" ? r.id : uuid(),
-    productId,
+    productId: productId ?? `custom-${uuid()}`,
     name: String(r.name ?? "Item"),
     sku: String(r.sku ?? "—"),
-    unitId,
+    unitId: unitId ?? uuid(),
     unitLabel: String(r.unitLabel ?? r.unitName ?? "Pcs"),
     qty: Number.isFinite(qty) && qty > 0 ? qty : 1,
     rate: Number.isFinite(rate) ? rate : 0,
@@ -92,6 +93,7 @@ function parseRestoredLine(raw: unknown): CartLine | null {
     imageUrl: typeof r.imageUrl === "string" ? r.imageUrl : null,
     stockAvailable: r.stockAvailable != null ? Number(r.stockAvailable) : null,
     category: typeof r.category === "string" ? r.category : null,
+    isManual,
   };
 }
 
@@ -115,7 +117,13 @@ export function usePosSale() {
   const [recentIds, setRecentIds] = useState<string[]>(() => loadIds(RECENT_KEY));
   const [favoriteIds, setFavoriteIds] = useState<string[]>(() => loadIds(FAVORITES_KEY));
   const [products, setProducts] = useState<ProductSearchResult[]>([]);
+  const [defaultUnitId, setDefaultUnitId] = useState<string | null>(null);
   const [draftLabel, setDraftLabel] = useState("");
+
+  useEffect(() => {
+    const unit = products.find((p) => p.unitId)?.unitId;
+    if (unit) setDefaultUnitId(unit);
+  }, [products]);
 
   const addProduct = useCallback((p: ProductSearchResult) => {
     setLines((prev) => {
@@ -205,10 +213,10 @@ export function usePosSale() {
     const rate = Math.max(0, item.rate);
     const newLine: CartLine = {
       id: uuid(),
-      productId: `custom-${Date.now()}`,
+      productId: `custom-${uuid()}`,
       name: item.name,
       sku: item.sku || item.barcode || "MANUAL",
-      unitId: "unit-manual",
+      unitId: defaultUnitId ?? uuid(),
       unitLabel: "Pcs",
       qty,
       rate,
@@ -219,9 +227,10 @@ export function usePosSale() {
       taxRate: TAX_RATE,
       stockAvailable: null,
       category: "Manual Entry",
+      isManual: true,
     };
     setLines((prev) => [...prev, newLine]);
-  }, []);
+  }, [defaultUnitId]);
 
   const removeLine = useCallback((lineId: string) => {
     setLines((prev) => prev.filter((l) => l.id !== lineId));
@@ -425,6 +434,7 @@ export function usePosSale() {
     favoriteIds,
     products,
     setProducts,
+    defaultUnitId,
     draftLabel,
     setDraftLabel,
     addProduct,

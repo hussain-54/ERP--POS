@@ -97,7 +97,7 @@ describe("PostSaleDialog (POS Phase 3 - Professional Invoice & Receipt)", () => 
     fireEvent.click(printBtn);
     expect(printSpy).toHaveBeenCalled();
 
-    const pdfBtn = screen.getByRole("button", { name: /DOWNLOAD PDF/i });
+    const pdfBtn = screen.getByRole("button", { name: /PRINT A4/i });
     fireEvent.click(pdfBtn);
     expect(pdfSpy).toHaveBeenCalled();
   });

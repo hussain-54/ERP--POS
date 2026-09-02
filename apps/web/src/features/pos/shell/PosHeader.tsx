@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
-import { Link } from "react-router-dom";
+import { Link, useLocation } from "react-router-dom";
+import { POS_TERMINAL_PATHS } from "../ownership";
 import { POS_TOGGLE_ERP_NAV, POS_TOGGLE_SIDEBAR } from "./events";
 
 export { POS_TOGGLE_ERP_NAV };
@@ -37,6 +38,8 @@ export function PosHeader({
   shiftOpen: boolean;
   showBack?: boolean;
 }) {
+  const { pathname } = useLocation();
+  const onTerminal = POS_TERMINAL_PATHS.has(pathname);
   const cashier = cashierName ?? "Cashier";
   const initials = cashier
     .split(/\s+/)
@@ -95,11 +98,24 @@ export function PosHeader({
       <PosClock />
 
       <div className="pos-header-right border-l border-slate-200 pl-4">
-        <Link to="/pos/sales/held" className="pos-header-held" aria-label="Held Sales">
-          <span className="text-[10px] font-semibold text-slate-500">Held</span>
-          <i className="fa-solid fa-cart-shopping text-sm text-slate-600" aria-hidden />
-          <span className="text-xs font-bold text-slate-800">{holdCount}</span>
-        </Link>
+        {onTerminal ? (
+          <button
+            type="button"
+            className="pos-header-held"
+            aria-label="Held Sales"
+            onClick={() => window.dispatchEvent(new Event("pos:open-resume-dialog"))}
+          >
+            <span className="text-[10px] font-semibold text-slate-500">Held</span>
+            <i className="fa-solid fa-cart-shopping text-sm text-slate-600" aria-hidden />
+            <span className="text-xs font-bold text-slate-800">{holdCount}</span>
+          </button>
+        ) : (
+          <Link to="/pos/sales/held" className="pos-header-held" aria-label="Held Sales">
+            <span className="text-[10px] font-semibold text-slate-500">Held</span>
+            <i className="fa-solid fa-cart-shopping text-sm text-slate-600" aria-hidden />
+            <span className="text-xs font-bold text-slate-800">{holdCount}</span>
+          </Link>
+        )}
         <Link
           to="/notifications"
           className="relative rounded-xl border border-slate-200 bg-slate-50 p-2.5 transition hover:bg-slate-100"

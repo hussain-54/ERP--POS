@@ -37,7 +37,7 @@ export function PostSaleDialog({
   const [emailInput, setEmailInput] = useState("");
   const [showPhonePrompt, setShowPhonePrompt] = useState(false);
   const [showEmailPrompt, setShowEmailPrompt] = useState(false);
-  const [emailState, setEmailState] = useState<"idle" | "sending" | "sent" | "failed">("idle");
+  const [emailState, setEmailState] = useState<"idle" | "sending" | "opened" | "failed">("idle");
   const [whatsappState, setWhatsappState] = useState<"idle" | "sent">("idle");
 
   useEffect(() => {
@@ -105,7 +105,7 @@ export function PostSaleDialog({
     setEmailState("sending");
     try {
       openEmailReceipt(enrichedInvoice, emailInput || enrichedInvoice.customerEmail);
-      setTimeout(() => setEmailState("sent"), 600);
+      setTimeout(() => setEmailState("opened"), 400);
     } catch {
       setEmailState("failed");
     }
@@ -324,13 +324,13 @@ export function PostSaleDialog({
               className={`my-1.5 rounded-lg p-2 text-xs font-bold ${
                 emailState === "sending"
                   ? "bg-blue-50 text-blue-700"
-                  : emailState === "sent"
+                  : emailState === "opened"
                     ? "bg-emerald-50 text-emerald-800"
                     : "bg-red-50 text-red-800"
               }`}
             >
-              {emailState === "sending" && "Sending email invoice…"}
-              {emailState === "sent" && "✓ Sent successfully to customer email"}
+              {emailState === "sending" && "Opening email client…"}
+              {emailState === "opened" && "✓ Email client opened — send manually to customer"}
               {emailState === "failed" && (
                 <div className="flex items-center justify-between">
                   <span>Failed to send email.</span>
@@ -370,10 +370,10 @@ export function PostSaleDialog({
                   downloadPdfInvoice(enrichedInvoice);
                 }}
                 className="flex items-center justify-center gap-1.5 rounded-lg border border-slate-300 bg-white py-2 text-xs font-bold text-slate-700 transition hover:bg-slate-50 active:scale-98"
-                title="Download or print A4 tax invoice PDF"
+                title="Print A4 tax invoice (browser print dialog)"
               >
                 <i className="fa-solid fa-file-pdf text-red-600" />
-                <span>DOWNLOAD PDF</span>
+                <span>PRINT A4</span>
               </button>
 
               {/* 3. SHARE ON WHATSAPP */}
@@ -395,7 +395,7 @@ export function PostSaleDialog({
                 title="Send receipt to customer email"
               >
                 <i className="fa-regular fa-envelope text-indigo-600 text-sm" />
-                <span>{emailState === "sent" ? "EMAIL ✓" : emailState === "sending" ? "SENDING…" : "EMAIL"}</span>
+                <span>{emailState === "opened" ? "EMAIL ✓" : emailState === "sending" ? "OPENING…" : "EMAIL"}</span>
               </button>
             </div>
 
