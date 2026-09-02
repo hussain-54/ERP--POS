@@ -824,8 +824,8 @@ export function PosTerminalPage() {
         {(
           [
             ["products", "Products"],
-            ["cart", lines.length ? `Cart (${lines.length})` : "Cart"],
-            ["checkout", "Summary & Pay"],
+            ["cart", lines.length ? `Cart (${lines.length})` : "Current Sale"],
+            ["checkout", "Pay"],
           ] as const
         ).map(([id, label]) => (
           <button
@@ -874,11 +874,17 @@ export function PosTerminalPage() {
               setUnknownBarcode(code);
               setUnknownBarcodeOpen(true);
             }}
+            onManualEntry={() => {
+              setUnknownBarcode("");
+              setUnknownBarcodeOpen(true);
+            }}
           />
         </div>
 
         {/* Zone 2: Cart Ledger (Center) */}
-        <div className={`pos-zone-cell ${mobilePane === "cart" ? "flex" : "hidden"} lg:flex`}>
+        <div
+          className={`pos-zone-cell min-h-0 overflow-hidden ${mobilePane === "cart" ? "flex" : "hidden"} lg:flex`}
+        >
           <CartZone
             lines={lines}
             customer={customer}
@@ -899,19 +905,37 @@ export function PosTerminalPage() {
               setDiscountOpen(true);
             }}
             onHold={() => void onHold()}
+            onAddProduct={() => {
+              setMobilePane("products");
+              window.dispatchEvent(new Event("pos:focus-search"));
+            }}
+            onPriceCheck={() => {
+              const selected = selectedLineId ? lines.find((l) => l.id === selectedLineId) : null;
+              if (selected && allowPriceOverride) {
+                openPriceEdit(selected);
+                return;
+              }
+              setMobilePane("products");
+              window.dispatchEvent(new Event("pos:focus-search"));
+              push({
+                title: "Select a cart line to edit price, or search a product",
+                tone: "info",
+              });
+            }}
             canOverridePrice={allowPriceOverride}
             selectedLineId={selectedLineId}
             onSelectLine={setSelectedLineId}
             onProceedToCheckout={() => {
               setMobilePane("checkout");
-              setStage("checkout");
             }}
             busy={busy}
           />
         </div>
 
         {/* Zone 3: Customer + Order Summary + Checkout CTA (Right) */}
-        <div className={`pos-zone-cell ${mobilePane === "checkout" ? "flex" : "hidden"} lg:flex`}>
+        <div
+          className={`pos-zone-cell min-h-0 overflow-hidden ${mobilePane === "checkout" ? "flex" : "hidden"} lg:flex`}
+        >
           <CheckoutZone
             customer={customer}
             totals={totals}
@@ -939,9 +963,18 @@ export function PosTerminalPage() {
             }}
             onHold={() => void onHold()}
             onPayment={() => setPaymentOpen(true)}
-            onComplete={() => void completeSale(undefined, { cashReceived: cashReceived ?? totals.grand })}
+            onComplete={() => void completeSale(undefined, { cashReceived })}
             onProceedToCheckout={() => setStage("checkout")}
             busy={busy}
+            recordOnlyHint={
+              paymentKind === "card" ||
+              paymentKind === "bank" ||
+              paymentKind === "qr" ||
+              paymentKind === "jazzcash" ||
+              paymentKind === "easypaisa" ||
+              paymentKind === "sadapay" ||
+              paymentKind === "wallet"
+            }
           />
         </div>
       </div>

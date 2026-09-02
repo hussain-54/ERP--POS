@@ -31,7 +31,8 @@
    instead of clipping the checkout rail at 1366×768. */
 .pos-terminal-grid-3col {
   display: grid;
-  grid-template-columns: minmax(0, 1.25fr) minmax(0, 1.1fr) minmax(0, 0.95fr);
+  /* Products | Current Sale | Order Summary — match reference density */
+  grid-template-columns: minmax(0, 1.35fr) minmax(0, 1.15fr) minmax(0, 0.95fr);
   gap: 0;
   min-height: 0;
   height: 100%;
@@ -43,13 +44,13 @@
 
 @media (min-width: 1536px) {
   .pos-terminal-grid-3col {
-    grid-template-columns: minmax(0, 1.35fr) minmax(0, 1.05fr) minmax(0, 0.9fr);
+    grid-template-columns: minmax(0, 1.45fr) minmax(0, 1.1fr) minmax(0, 0.9fr);
   }
 }
 
 @media (max-width: 1279px) and (min-width: 1024px) {
   .pos-terminal-grid-3col {
-    grid-template-columns: minmax(0, 1.15fr) minmax(0, 1fr) minmax(0, 0.92fr);
+    grid-template-columns: minmax(0, 1.2fr) minmax(0, 1.05fr) minmax(0, 0.95fr);
   }
 }
 
@@ -195,13 +196,18 @@
 .pos-product-card {
   display: flex;
   flex-direction: column;
-  gap: 0.3rem;
+  gap: 0.25rem;
   min-width: 0;
-  padding: 0.4rem;
-  border-radius: 0.5rem;
+  padding: 0.5rem;
+  border-radius: 0.75rem;
   border: 1px solid #e2e8f0;
   background: #ffffff;
+  box-shadow: 0 1px 2px rgb(15 23 42 / 0.04);
   transition: border-color 0.12s ease, box-shadow 0.12s ease;
+}
+
+.pos-zone-cart {
+  border-right: 1px solid #e2e8f0;
 }
 
 .pos-product-card:not(.pos-product-card-disabled):hover {
@@ -260,35 +266,29 @@
   display: none;
 }
 
-/* Responsive product grid density — pack cards, avoid sparse empty tracks */
+/* Product grid: 2-col mobile/tablet; forced 3-col on desktop POS (reference) */
 .pos-products-grid-inner {
   display: grid;
-  gap: 0.35rem;
+  gap: 0.5rem;
   align-content: start;
   grid-template-columns: repeat(2, minmax(0, 1fr));
 }
 
-@media (min-width: 640px) {
+@media (min-width: 640px) and (max-width: 1023px) {
   .pos-products-grid-inner {
-    grid-template-columns: repeat(auto-fill, minmax(8.75rem, 1fr));
+    grid-template-columns: repeat(3, minmax(0, 1fr));
   }
 }
 
 @media (min-width: 1024px) {
   .pos-products-grid-inner {
-    grid-template-columns: repeat(auto-fill, minmax(9rem, 1fr));
+    grid-template-columns: repeat(3, minmax(0, 1fr));
   }
 }
 
-@media (min-width: 1280px) {
+@media (min-width: 1600px) {
   .pos-products-grid-inner {
-    grid-template-columns: repeat(auto-fill, minmax(9.5rem, 1fr));
-  }
-}
-
-@media (min-width: 1536px) {
-  .pos-products-grid-inner {
-    grid-template-columns: repeat(auto-fill, minmax(10rem, 1fr));
+    grid-template-columns: repeat(4, minmax(0, 1fr));
   }
 }
 
