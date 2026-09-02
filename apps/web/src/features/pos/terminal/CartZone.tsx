@@ -1,4 +1,4 @@
-import { useMemo } from "react";
+import { useMemo, useState } from "react";
 import { money } from "../format";
 import type { CartLine, PosCustomerView } from "../types";
 import { lineTotal } from "../types";
@@ -24,10 +24,13 @@ export interface CartZoneProps {
   onEditDiscount: (line: CartLine) => void;
   onEditPrice: (line: CartLine) => void;
   onSelectCustomer?: () => void;
+  onNewCustomer?: () => void;
   onInvoiceDiscount?: () => void;
   onHold?: () => void;
   onAddProduct?: () => void;
   onPriceCheck?: () => void;
+  onAddNote?: () => void;
+  onMore?: () => void;
   canOverridePrice: boolean;
   selectedLineId: string | null;
   onSelectLine: (id: string | null) => void;
@@ -45,16 +48,20 @@ export function CartZone({
   onEditDiscount,
   onEditPrice,
   onSelectCustomer,
+  onNewCustomer,
   onInvoiceDiscount,
   onHold,
   onAddProduct,
   onPriceCheck,
+  onAddNote,
+  onMore,
   canOverridePrice,
   selectedLineId,
   onSelectLine,
   onProceedToCheckout,
   busy = false,
 }: CartZoneProps) {
+  const [moreOpen, setMoreOpen] = useState(false);
   const totalUnits = useMemo(() => lines.reduce((acc, l) => acc + l.qty, 0), [lines]);
 
   const totals = useMemo(() => {
@@ -82,8 +89,15 @@ export function CartZone({
     { id: "add", label: "Add Product", icon: "fa-plus", onClick: onAddProduct, disabled: false },
     { id: "customer", label: "Customer", icon: "fa-user", onClick: onSelectCustomer, disabled: false },
     { id: "discount", label: "Discount", icon: "fa-percent", onClick: onInvoiceDiscount, disabled: isEmpty || busy },
-    { id: "price", label: "Price Check", icon: "fa-tags", onClick: onPriceCheck, disabled: !canOverridePrice },
+    { id: "price", label: "Price Check", icon: "fa-tags", onClick: onPriceCheck, disabled: false },
     { id: "hold", label: "Hold", icon: "fa-pause", onClick: onHold, disabled: isEmpty || busy },
+    {
+      id: "more",
+      label: "More",
+      icon: "fa-ellipsis",
+      onClick: () => setMoreOpen((v) => !v),
+      disabled: false,
+    },
   ] as const;
 
   return (
@@ -91,93 +105,85 @@ export function CartZone({
       className="pos-zone pos-zone-cart flex h-full min-h-0 flex-1 flex-col overflow-hidden bg-white"
       aria-label="Current sale cart"
     >
-      <div className="pos-zone-header shrink-0 border-b border-slate-200 bg-white px-3">
-        <div className="flex min-w-0 flex-1 items-center justify-between gap-2">
-          <div className="flex min-w-0 items-center gap-2">
-            <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg bg-blue-600 text-white shadow-xs">
-              <i className="fa-solid fa-cart-shopping text-xs" aria-hidden />
-            </div>
-            <div className="min-w-0">
-              <h2 className="pos-zone-title truncate text-xs font-black text-slate-900">Current Sale</h2>
-              <p className="text-[10px] font-bold text-slate-400">
-                {lines.length} {lines.length === 1 ? "item" : "items"} · {totalUnits} pcs
-              </p>
-            </div>
-          </div>
-
-          <div className="flex shrink-0 items-center gap-1">
-            {onHold ? (
-              <button
-                type="button"
-                onClick={onHold}
-                disabled={isEmpty || busy}
-                title="Hold / Suspend sale (F6)"
-                className="inline-flex items-center gap-1 rounded-md border border-amber-300 bg-amber-50 px-2 py-1 text-[11px] font-bold text-amber-800 transition hover:bg-amber-100 disabled:pointer-events-none disabled:opacity-30"
-              >
-                <i className="fa-solid fa-pause text-[10px]" aria-hidden />
-                Hold
-              </button>
-            ) : null}
+      <div className="flex shrink-0 items-center justify-between gap-2 border-b border-slate-200 bg-white px-3 py-2">
+        <div className="flex min-w-0 items-center gap-2">
+          <h2 className="text-sm font-black text-slate-900">Current Sale</h2>
+          <span className="inline-flex items-center rounded-full bg-blue-600 px-2.5 py-0.5 text-[10px] font-bold text-white">
+            {lines.length} Items · {totalUnits} Pcs
+          </span>
+        </div>
+        <div className="flex shrink-0 items-center gap-1.5">
+          {onHold ? (
             <button
               type="button"
-              onClick={onClear}
+              onClick={onHold}
               disabled={isEmpty || busy}
-              title="Clear all items from cart (F7)"
-              className="inline-flex items-center gap-1 rounded-md border border-red-200 bg-red-50 px-2 py-1 text-[11px] font-bold text-red-600 transition hover:bg-red-100 disabled:pointer-events-none disabled:opacity-30"
+              title="Hold / Suspend sale (F6)"
+              className="inline-flex items-center gap-1 rounded-lg border border-amber-400 bg-white px-2.5 py-1 text-[11px] font-bold text-amber-700 transition hover:bg-amber-50 disabled:opacity-30"
             >
-              <i className="fa-regular fa-trash-can text-[10px]" aria-hidden />
-              Clear
+              Hold
             </button>
-          </div>
+          ) : null}
+          <button
+            type="button"
+            onClick={onClear}
+            disabled={isEmpty || busy}
+            title="Clear all items from cart (F7)"
+            className="inline-flex items-center gap-1 rounded-lg border border-red-300 bg-white px-2.5 py-1 text-[11px] font-bold text-red-600 transition hover:bg-red-50 disabled:opacity-30"
+          >
+            Clear
+          </button>
         </div>
       </div>
 
       {customer ? (
-        <button
-          type="button"
-          onClick={onSelectCustomer}
-          className="flex shrink-0 items-center justify-between gap-2 border-b border-slate-200 bg-slate-50/80 px-3 py-2 text-left transition hover:bg-blue-50/50"
-        >
+        <div className="flex shrink-0 items-center justify-between gap-2 border-b border-blue-100 bg-blue-50/70 px-3 py-2.5">
           <div className="flex min-w-0 items-center gap-2">
-            <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-blue-100 text-blue-600">
-              <i className="fa-solid fa-user text-[11px]" aria-hidden />
+            <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-blue-100 text-blue-600">
+              <i className="fa-solid fa-user text-xs" aria-hidden />
             </div>
             <div className="min-w-0">
-              <p className="truncate text-xs font-black text-slate-900">{customer.label}</p>
-              <p className="truncate text-[10px] text-slate-500">
-                {customer.priceTier}
-                {customer.id && customer.outstanding > 0 ? ` · Due ${money(customer.outstanding)}` : ""}
-              </p>
+              <div className="flex flex-wrap items-center gap-1.5">
+                <p className="truncate text-xs font-black text-slate-900">{customer.label}</p>
+                <span className="rounded bg-slate-200/80 px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-wide text-slate-600">
+                  {customer.priceTier}
+                </span>
+              </div>
+              {customer.id && customer.outstanding > 0 ? (
+                <p className="text-[10px] font-bold text-amber-700">Due {money(customer.outstanding)}</p>
+              ) : null}
             </div>
           </div>
-          <span className="shrink-0 text-[10px] font-bold text-blue-600">
-            {customer.id ? "Change" : "+ Select"}
-          </span>
-        </button>
+          <div className="flex shrink-0 items-center gap-1.5">
+            {onNewCustomer ? (
+              <button
+                type="button"
+                onClick={onNewCustomer}
+                className="rounded-lg border border-blue-300 bg-white px-2.5 py-1 text-[11px] font-bold text-blue-700 transition hover:bg-blue-50"
+              >
+                + New
+              </button>
+            ) : null}
+            {onSelectCustomer ? (
+              <button
+                type="button"
+                onClick={onSelectCustomer}
+                className="rounded-lg border border-blue-300 bg-white px-2.5 py-1 text-[11px] font-bold text-blue-700 transition hover:bg-blue-50"
+              >
+                + Change
+              </button>
+            ) : null}
+          </div>
+        </div>
       ) : null}
 
-      <div className="grid shrink-0 grid-cols-5 gap-1 border-b border-slate-200 bg-white px-2 py-1.5">
-        {actions.map((action) => (
-          <button
-            key={action.id}
-            type="button"
-            disabled={!action.onClick || action.disabled}
-            onClick={() => action.onClick?.()}
-            className="flex flex-col items-center justify-center gap-0.5 rounded-lg border border-slate-200 bg-slate-50 px-1 py-1.5 text-[9px] font-bold text-slate-700 transition hover:border-blue-400 hover:bg-blue-50 hover:text-blue-700 disabled:cursor-not-allowed disabled:opacity-35"
-          >
-            <i className={`fa-solid ${action.icon} text-[11px] text-blue-600`} aria-hidden />
-            <span className="leading-tight">{action.label}</span>
-          </button>
-        ))}
-      </div>
-
-      <div className="grid shrink-0 grid-cols-[minmax(0,1.4fr)_78px_72px_52px_68px_22px] items-center gap-1 border-b border-slate-200 bg-slate-100/80 px-2 py-1 text-[9px] font-bold uppercase tracking-wider text-slate-500">
+      <div className="grid shrink-0 grid-cols-[minmax(0,1.5fr)_76px_68px_52px_64px_22px] items-center gap-1 border-b border-slate-200 bg-slate-50 px-2.5 py-1.5 text-[9px] font-bold uppercase tracking-wider text-slate-500">
         <span>Product</span>
         <span className="text-center">Qty</span>
         <span className="text-right">Price</span>
-        <span className="text-right">Disc</span>
+        <span className="text-right">Disc.</span>
         <span className="text-right">Total</span>
-        <span aria-hidden className="w-5" />
+        <span aria-hidden />
       </div>
 
       <div className="pos-zone-scroll min-h-0 flex-1 p-1.5">
@@ -197,8 +203,6 @@ export function CartZone({
               const isSelected = selectedLineId === line.id;
               const hasDiscount = line.discount > 0 || line.discountPercent > 0;
               const isPriceOverridden = line.rate !== line.listPrice;
-              const unitSaving = Math.max(0, line.listPrice - line.rate);
-              const totalItemDiscount = line.discount + unitSaving * line.qty;
               const isOverStock =
                 line.stockAvailable != null && line.stockAvailable > 0 && line.qty > line.stockAvailable;
               const isZeroStock = line.stockAvailable != null && line.stockAvailable <= 0;
@@ -224,14 +228,14 @@ export function CartZone({
                       onQty(line.id, -1);
                     }
                   }}
-                  className={`grid grid-cols-[minmax(0,1.4fr)_78px_72px_52px_68px_22px] items-center gap-1 rounded-lg border px-1.5 py-1.5 transition ${
+                  className={`grid grid-cols-[minmax(0,1.5fr)_76px_68px_52px_64px_22px] items-center gap-1 rounded-xl border px-2 py-2 transition ${
                     isSelected
-                      ? "border-blue-500 bg-blue-50/70 shadow-xs ring-1 ring-blue-500/25"
-                      : "border-slate-200/90 bg-white hover:border-slate-300 hover:bg-slate-50/70"
+                      ? "border-blue-500 bg-blue-50/70 shadow-xs ring-1 ring-blue-500/20"
+                      : "border-slate-200 bg-white hover:border-slate-300"
                   }`}
                 >
-                  <div className="flex min-w-0 items-center gap-1.5">
-                    <div className="flex h-8 w-8 shrink-0 items-center justify-center overflow-hidden rounded-md border border-slate-200 bg-slate-50 text-slate-400">
+                  <div className="flex min-w-0 items-center gap-2">
+                    <div className="flex h-9 w-9 shrink-0 items-center justify-center overflow-hidden rounded-lg border border-slate-200 bg-slate-50">
                       {line.imageUrl ? (
                         <img src={line.imageUrl} alt="" className="h-full w-full object-cover" />
                       ) : (
@@ -242,19 +246,11 @@ export function CartZone({
                       <p className="truncate text-[11px] font-black text-slate-900" title={line.name}>
                         {line.name}
                       </p>
-                      <div className="flex flex-wrap items-center gap-x-1 text-[9px] text-slate-500">
-                        <span className="font-mono text-slate-400">SKU: {line.sku}</span>
-                        <span>·</span>
-                        <span className="font-semibold text-slate-600">{line.unitLabel}</span>
-                        {isOverStock ? (
-                          <span className="rounded bg-amber-100 px-1 text-[8px] font-bold text-amber-800">
-                            Max {line.stockAvailable}
-                          </span>
-                        ) : null}
-                        {isZeroStock ? (
-                          <span className="rounded bg-red-100 px-1 text-[8px] font-bold text-red-700">No stock</span>
-                        ) : null}
-                      </div>
+                      <p className="truncate text-[9px] text-slate-500">
+                        SKU: {line.sku} · {line.unitLabel}
+                        {isOverStock ? ` · Max ${line.stockAvailable}` : ""}
+                        {isZeroStock ? " · No stock" : ""}
+                      </p>
                     </div>
                   </div>
 
@@ -299,20 +295,17 @@ export function CartZone({
                     </div>
                   </div>
 
-                  <div className="text-right">
-                    {line.listPrice > line.rate ? (
-                      <div className="leading-tight">
+                  <div className="text-right leading-tight">
+                    {line.listPrice > line.rate || isPriceOverridden ? (
+                      <>
                         <div className="pos-price-original">{money(line.listPrice)}</div>
                         <div className="pos-price-selling text-slate-900">{money(line.rate)}</div>
-                        <span className="inline-block rounded bg-emerald-50 px-1 text-[8px] font-bold text-emerald-700">
-                          Save {money(line.listPrice - line.rate)}
-                        </span>
-                      </div>
-                    ) : isPriceOverridden ? (
-                      <div className="leading-tight">
-                        <div className="pos-price-original">{money(line.listPrice)}</div>
-                        <div className="pos-price-selling text-blue-700">{money(line.rate)}</div>
-                      </div>
+                        {line.listPrice > line.rate ? (
+                          <span className="inline-block rounded bg-emerald-50 px-1 text-[8px] font-bold text-emerald-700">
+                            Save {money(line.listPrice - line.rate)}
+                          </span>
+                        ) : null}
+                      </>
                     ) : (
                       <span className="pos-price-selling text-slate-900">{money(line.rate)}</span>
                     )}
@@ -339,21 +332,16 @@ export function CartZone({
                         e.stopPropagation();
                         onEditDiscount(line);
                       }}
-                      className={`inline-block rounded px-1 py-0.5 text-right text-[10px] font-bold transition ${
-                        hasDiscount
-                          ? "bg-red-50 text-red-600 ring-1 ring-red-200 hover:bg-red-100"
-                          : "text-blue-600 hover:bg-slate-100"
+                      className={`inline-block rounded px-1 py-0.5 text-[10px] font-bold ${
+                        hasDiscount ? "text-red-600" : "text-blue-600 hover:underline"
                       }`}
                     >
-                      {hasDiscount ? `−${money(line.discount)}` : "+ Disc"}
+                      {hasDiscount ? `−${money(line.discount)}` : "—"}
                     </button>
                   </div>
 
-                  <div className="text-right">
-                    <div className="text-[11px] font-black text-slate-900">{money(lineTotal(line))}</div>
-                    {totalItemDiscount > 0 ? (
-                      <div className="text-[8px] font-medium text-emerald-700">−{money(totalItemDiscount)}</div>
-                    ) : null}
+                  <div className="text-right text-[11px] font-black text-slate-900">
+                    {money(lineTotal(line))}
                   </div>
 
                   <div className="flex justify-end">
@@ -365,9 +353,9 @@ export function CartZone({
                         e.stopPropagation();
                         onRemove(line.id);
                       }}
-                      className="rounded p-0.5 text-slate-300 transition hover:bg-red-50 hover:text-red-600"
+                      className="rounded p-0.5 text-red-400 transition hover:bg-red-50 hover:text-red-600"
                     >
-                      <i className="fa-solid fa-xmark text-xs" aria-hidden />
+                      <i className="fa-regular fa-trash-can text-[11px]" aria-hidden />
                     </button>
                   </div>
                 </div>
@@ -377,62 +365,96 @@ export function CartZone({
         )}
       </div>
 
-      <div className="pos-zone-footer shrink-0 border-t border-slate-200 bg-slate-50/95 p-2">
-        <div className="space-y-0.5 rounded-lg border border-slate-200/80 bg-white px-2.5 py-2 text-[11px]">
-          <div className="flex justify-between text-slate-600">
-            <span>Subtotal ({totalUnits} pcs)</span>
-            <span className="font-bold text-slate-900">{money(totals.subtotal)}</span>
-          </div>
-          {totals.itemDiscount > 0 ? (
-            <div className="flex justify-between font-semibold text-red-600">
-              <span>Item Discounts</span>
-              <span>−{money(totals.itemDiscount)}</span>
-            </div>
-          ) : null}
-          <div className="flex justify-between text-slate-600">
-            <span className="flex items-center gap-1">
-              Invoice Discount
-              {onInvoiceDiscount ? (
-                <button
-                  type="button"
-                  onClick={onInvoiceDiscount}
-                  className="text-[10px] font-bold text-blue-600 hover:underline"
-                >
-                  ({totals.invoiceDiscount > 0 ? "Edit" : "+ Add"})
-                </button>
-              ) : null}
+      <div className="shrink-0 border-t border-slate-200 bg-white px-3 py-2">
+        <div className="flex items-center justify-between gap-2 text-[11px]">
+          <button
+            type="button"
+            onClick={onAddNote}
+            className="font-bold text-blue-600 hover:underline disabled:opacity-40"
+            disabled={!onAddNote}
+          >
+            + Add Note
+          </button>
+          <div className="flex items-center gap-3 font-bold text-slate-600">
+            <span>
+              Total Items: <span className="text-slate-900">{lines.length}</span>
             </span>
-            <span className={totals.invoiceDiscount > 0 ? "font-bold text-red-600" : "font-medium text-slate-400"}>
-              {totals.invoiceDiscount > 0 ? `−${money(totals.invoiceDiscount)}` : "0.00"}
+            <span>
+              Total Qty: <span className="text-slate-900">{totalUnits}</span>
             </span>
           </div>
-          <div className="flex justify-between text-slate-600">
-            <span>Sales Tax (GST)</span>
-            <span className="font-medium text-slate-800">{money(totals.tax)}</span>
-          </div>
         </div>
-
-        <div className="pos-grand-box mt-2 flex items-center justify-between">
-          <div>
-            <p className="text-[10px] font-black uppercase tracking-widest text-slate-400">Grand Total</p>
-            <p className="text-lg font-black tracking-tight text-white">{money(totals.grand)}</p>
-          </div>
-          <span className="rounded-full bg-blue-500/30 px-2.5 py-0.5 text-[10px] font-bold text-blue-100">
-            {lines.length} {lines.length === 1 ? "Item" : "Items"}
-          </span>
+        {/* Kept for cashier glance + existing tests; payment totals live on the right */}
+        <div className="mt-1.5 flex items-center justify-between rounded-lg bg-slate-50 px-2.5 py-1.5 text-[11px]">
+          <span className="font-bold uppercase tracking-wide text-slate-500">Grand Total</span>
+          <span className="text-sm font-black text-slate-900">{money(totals.grand)}</span>
         </div>
-
         {onProceedToCheckout ? (
           <button
             type="button"
             disabled={isEmpty || busy}
             onClick={onProceedToCheckout}
-            className="mt-2 flex w-full items-center justify-center gap-1.5 rounded-lg border border-blue-300 bg-blue-50 py-2 text-xs font-bold text-blue-800 transition hover:bg-blue-100 disabled:cursor-not-allowed disabled:opacity-40 lg:hidden"
+            className="mt-2 flex w-full items-center justify-center gap-1.5 rounded-lg border border-blue-300 bg-blue-50 py-2 text-xs font-bold text-blue-800 transition hover:bg-blue-100 disabled:opacity-40 lg:hidden"
           >
-            <i className="fa-solid fa-arrow-right text-[10px]" aria-hidden />
             Go to Payment
           </button>
         ) : null}
+      </div>
+
+      <div className="relative shrink-0 border-t border-slate-200 bg-slate-50/90 p-2">
+        {moreOpen ? (
+          <div className="absolute bottom-full left-2 right-2 z-10 mb-1 rounded-xl border border-slate-200 bg-white p-1.5 shadow-lg">
+            <button
+              type="button"
+              disabled={isEmpty || busy}
+              onClick={() => {
+                setMoreOpen(false);
+                onInvoiceDiscount?.();
+              }}
+              className="flex w-full items-center gap-2 rounded-lg px-2.5 py-2 text-left text-[11px] font-bold text-slate-700 hover:bg-slate-50 disabled:opacity-40"
+            >
+              <i className="fa-solid fa-percent text-blue-600" aria-hidden />
+              Invoice Discount
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                setMoreOpen(false);
+                onMore?.();
+              }}
+              className="flex w-full items-center gap-2 rounded-lg px-2.5 py-2 text-left text-[11px] font-bold text-slate-700 hover:bg-slate-50"
+            >
+              <i className="fa-solid fa-scissors text-cyan-600" aria-hidden />
+              Split / More payment
+            </button>
+            <button
+              type="button"
+              disabled={isEmpty || busy}
+              onClick={() => {
+                setMoreOpen(false);
+                onClear();
+              }}
+              className="flex w-full items-center gap-2 rounded-lg px-2.5 py-2 text-left text-[11px] font-bold text-red-600 hover:bg-red-50 disabled:opacity-40"
+            >
+              <i className="fa-regular fa-trash-can" aria-hidden />
+              Clear Cart
+            </button>
+          </div>
+        ) : null}
+        <div className="grid grid-cols-6 gap-1">
+          {actions.map((action) => (
+            <button
+              key={action.id}
+              type="button"
+              disabled={!action.onClick || action.disabled}
+              onClick={() => action.onClick?.()}
+              className="flex flex-col items-center justify-center gap-1 rounded-xl border border-slate-200 bg-white px-1 py-2 text-[9px] font-bold text-slate-700 transition hover:border-blue-400 hover:bg-blue-50 hover:text-blue-700 disabled:opacity-35"
+            >
+              <i className={`fa-solid ${action.icon} text-sm text-blue-600`} aria-hidden />
+              <span className="leading-tight">{action.label}</span>
+            </button>
+          ))}
+        </div>
       </div>
     </section>
   );

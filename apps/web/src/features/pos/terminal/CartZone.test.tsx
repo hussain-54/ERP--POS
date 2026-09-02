@@ -71,7 +71,7 @@ describe("CartZone", () => {
     );
 
     expect(screen.getByText(/Your cart is empty/i)).toBeInTheDocument();
-    expect(screen.getByText(/0 items · 0 pcs/i)).toBeInTheDocument();
+    expect(screen.getByText(/0 Items · 0 Pcs/i)).toBeInTheDocument();
   });
 
   it("renders items with original and sale prices and savings badge", () => {

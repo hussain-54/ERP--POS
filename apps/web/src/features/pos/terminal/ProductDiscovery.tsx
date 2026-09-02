@@ -11,27 +11,29 @@ function productDisplayPrices(p: ProductSearchResult) {
   return { retail, selling, hasDiscount, discountPct };
 }
 
-function stockBadge(stock: number | null | undefined, unitName?: string | null) {
+function stockLine(stock: number | null | undefined, unitName?: string | null) {
   const unit = unitName || "Pcs";
   if (stock == null) {
-    return <span className="text-[9px] font-medium text-slate-400">Stock — · {unit}</span>;
+    return <span className="text-[10px] font-medium text-slate-400">Stock — · {unit}</span>;
   }
   if (stock <= 0) {
     return (
-      <span className="inline-flex items-center rounded bg-red-100 px-1.5 py-0.5 text-[9px] font-bold text-red-700">
+      <span className="inline-flex items-center gap-1 text-[10px] font-bold text-red-600">
+        <i className="fa-solid fa-triangle-exclamation text-[9px]" aria-hidden />
         Out of Stock
       </span>
     );
   }
   if (stock <= 5) {
     return (
-      <span className="inline-flex items-center rounded bg-amber-100 px-1.5 py-0.5 text-[9px] font-bold text-amber-800">
+      <span className="inline-flex items-center gap-1 text-[10px] font-bold text-amber-600">
+        <i className="fa-solid fa-triangle-exclamation text-[9px]" aria-hidden />
         Low Stock: {stock} {unit}
       </span>
     );
   }
   return (
-    <span className="inline-flex items-center rounded bg-emerald-100 px-1.5 py-0.5 text-[9px] font-bold text-emerald-700">
+    <span className="text-[10px] font-bold text-emerald-600">
       Stock: {stock} {unit}
     </span>
   );
@@ -116,122 +118,109 @@ export function ProductDiscovery({
     inputRef.current?.focus();
   }
 
-  const tabs: Array<{ id: ProductTab; label: string }> = [
+  const tabs: Array<{ id: ProductTab; label: string; icon?: string }> = [
     { id: "all", label: "All" },
-    { id: "favorites", label: "Favorites" },
-    { id: "recent", label: "Recent" },
-    { id: "categories", label: "Categories" },
+    { id: "favorites", label: "Favorites", icon: "fa-star" },
+    { id: "recent", label: "Recent", icon: "fa-clock" },
+    { id: "categories", label: "Categories", icon: "fa-layer-group" },
   ];
-
-  const quickActions = [
-    {
-      id: "barcode",
-      label: "Barcode Scan",
-      icon: "fa-barcode",
-      onClick: () => {
-        inputRef.current?.focus();
-        inputRef.current?.select();
-      },
-    },
-    {
-      id: "qr",
-      label: "QR Scan",
-      icon: "fa-qrcode",
-      onClick: () => onOpenScanner?.(),
-      disabled: !onOpenScanner,
-    },
-    {
-      id: "camera",
-      label: "Camera",
-      icon: "fa-camera",
-      onClick: () => onOpenScanner?.(),
-      disabled: !onOpenScanner,
-    },
-    {
-      id: "manual",
-      label: "Manual Entry",
-      icon: "fa-keyboard",
-      onClick: () => onManualEntry?.(),
-      disabled: !onManualEntry,
-    },
-  ] as const;
 
   return (
     <section
       className="pos-zone pos-zone-products flex h-full min-h-0 flex-1 flex-col overflow-hidden"
       aria-label="Product discovery"
     >
-      <div className="pos-zone-header shrink-0">
-        <h2 className="pos-zone-title flex items-center gap-1.5">
-          <i className="fa-solid fa-boxes-stacked text-xs text-blue-600" aria-hidden />
-          Products
-        </h2>
-        <span className="text-[10px] font-bold tabular-nums text-slate-400">
-          {products.length} {products.length === 1 ? "item" : "items"}
+      <div className="flex shrink-0 items-center justify-between gap-2 border-b border-slate-200 bg-white px-3 py-2">
+        <h2 className="text-sm font-black text-slate-900">Products</h2>
+        <span className="inline-flex items-center rounded-full bg-blue-600 px-2.5 py-0.5 text-[10px] font-bold text-white">
+          {products.length} Items
         </span>
       </div>
 
-      <div className="pos-products-toolbar shrink-0 space-y-2 p-2.5">
-        <div className="relative">
-          <i
-            className="fa-solid fa-magnifying-glass absolute left-3 top-1/2 -translate-y-1/2 text-xs text-slate-400"
-            aria-hidden
-          />
-          <input
-            ref={inputRef}
-            type="search"
-            value={search}
-            onChange={(e) => onSearch(e.target.value)}
-            onKeyDown={onKeyDown}
-            placeholder="Search Product by name, barcode, sku, brand..."
-            className="w-full rounded-xl border border-slate-200 bg-white py-2.5 pl-9 pr-9 text-xs font-medium placeholder-slate-400 shadow-xs transition focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/20"
-            aria-label="Search products"
-            autoComplete="off"
-          />
-          {search ? (
+      <div className="pos-products-toolbar shrink-0 space-y-2 border-b border-slate-200 bg-white p-2.5">
+        <div className="flex gap-1.5">
+          <div className="relative min-w-0 flex-1">
+            <i
+              className="fa-solid fa-magnifying-glass absolute left-2.5 top-1/2 -translate-y-1/2 text-[11px] text-slate-400"
+              aria-hidden
+            />
+            <input
+              ref={inputRef}
+              type="search"
+              value={search}
+              onChange={(e) => onSearch(e.target.value)}
+              onKeyDown={onKeyDown}
+              placeholder="Search product, SKU, barcode..."
+              className="w-full rounded-lg border border-slate-200 bg-white py-2 pl-8 pr-8 text-xs font-medium placeholder-slate-400 transition focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/15"
+              aria-label="Search products"
+              autoComplete="off"
+            />
+            {search ? (
+              <button
+                type="button"
+                onClick={() => onSearch("")}
+                className="absolute right-2 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-700"
+                aria-label="Clear search"
+              >
+                <i className="fa-solid fa-xmark text-xs" />
+              </button>
+            ) : null}
+          </div>
+          <button
+            type="button"
+            onClick={() => {
+              inputRef.current?.focus();
+              inputRef.current?.select();
+            }}
+            className="inline-flex shrink-0 items-center gap-1.5 rounded-lg border border-slate-200 bg-white px-2.5 py-2 text-[11px] font-bold text-slate-700 transition hover:border-blue-400 hover:bg-blue-50 hover:text-blue-700"
+            title="Focus barcode / SKU search"
+          >
+            <i className="fa-solid fa-barcode text-xs text-blue-600" aria-hidden />
+            Scan
+          </button>
+          {onOpenScanner ? (
             <button
               type="button"
-              onClick={() => onSearch("")}
-              className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-700"
-              aria-label="Clear search"
+              onClick={onOpenScanner}
+              className="inline-flex shrink-0 items-center gap-1.5 rounded-lg border border-slate-200 bg-white px-2.5 py-2 text-[11px] font-bold text-slate-700 transition hover:border-blue-400 hover:bg-blue-50 hover:text-blue-700"
+              title="Open camera scanner"
             >
-              <i className="fa-solid fa-xmark text-xs" />
+              <i className="fa-solid fa-camera text-xs text-blue-600" aria-hidden />
+              Camera
             </button>
-          ) : (
-            <i className="fa-solid fa-barcode absolute right-3 top-1/2 -translate-y-1/2 text-xs text-slate-400" />
-          )}
+          ) : null}
         </div>
 
-        <div className="grid grid-cols-4 gap-1.5">
-          {quickActions.map((action) => (
-            <button
-              key={action.id}
-              type="button"
-              disabled={"disabled" in action ? Boolean(action.disabled) : false}
-              onClick={action.onClick}
-              className="flex flex-col items-center justify-center gap-1 rounded-xl border border-slate-200 bg-white px-1 py-2 text-[10px] font-bold text-slate-700 transition hover:border-blue-400 hover:bg-blue-50 hover:text-blue-700 disabled:cursor-not-allowed disabled:opacity-40"
-            >
-              <i className={`fa-solid ${action.icon} text-sm text-blue-600`} aria-hidden />
-              <span className="leading-tight">{action.label}</span>
-            </button>
-          ))}
-        </div>
-
-        <div className="pos-products-tabs border-b border-slate-200">
+        <div className="flex items-center gap-1.5 overflow-x-auto pb-0.5">
           {tabs.map((t) => (
             <button
               key={t.id}
               type="button"
               onClick={() => onTab(t.id)}
-              className={`shrink-0 border-b-2 px-3 py-1.5 text-[11px] font-bold transition ${
+              className={`inline-flex shrink-0 items-center gap-1 rounded-full px-3 py-1.5 text-[11px] font-bold transition ${
                 tab === t.id
-                  ? "border-blue-600 text-blue-600"
-                  : "border-transparent text-slate-500 hover:text-slate-800"
+                  ? "bg-blue-600 text-white shadow-xs"
+                  : "border border-slate-200 bg-white text-slate-600 hover:bg-slate-50"
               }`}
             >
+              {t.icon ? <i className={`fa-solid ${t.icon} text-[9px]`} aria-hidden /> : null}
               {t.label}
+              {t.id === "categories" ? (
+                <i className="fa-solid fa-chevron-down text-[8px] opacity-70" aria-hidden />
+              ) : null}
             </button>
           ))}
+          {onManualEntry ? (
+            <button
+              type="button"
+              onClick={onManualEntry}
+              className="ml-auto inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-lg border border-slate-200 bg-white text-slate-500 transition hover:border-blue-400 hover:text-blue-600"
+              title="Manual entry / filters"
+              aria-label="Manual entry"
+            >
+              <i className="fa-solid fa-sliders text-[11px]" aria-hidden />
+            </button>
+          ) : null}
         </div>
 
         {tab === "categories" || categoryFilter ? (
@@ -245,7 +234,7 @@ export function ProductDiscovery({
                   : "border border-slate-200 bg-white text-slate-600 hover:bg-slate-100"
               }`}
             >
-              All
+              All categories
             </button>
             {categories.map((c) => (
               <button
@@ -290,7 +279,7 @@ export function ProductDiscovery({
                   key={p.productId}
                   className={`pos-product-card ${zero ? "pos-product-card-disabled" : ""}`}
                 >
-                  <div className="relative mb-1.5 flex h-16 items-center justify-center overflow-hidden rounded-lg bg-slate-50">
+                  <div className="relative mb-1.5 flex h-[4.5rem] items-center justify-center overflow-hidden rounded-lg bg-slate-50">
                     {p.imageUrl ? (
                       <img src={p.imageUrl} alt="" loading="lazy" className="h-full w-full object-cover" />
                     ) : (
@@ -298,12 +287,9 @@ export function ProductDiscovery({
                     )}
                     <button
                       type="button"
-                      className="absolute right-1 top-1 rounded-full bg-white/90 p-1 text-slate-300 shadow-xs hover:text-amber-400"
+                      className="absolute right-1.5 top-1.5 rounded-full bg-white p-1 text-slate-300 shadow-xs hover:text-amber-400"
                       aria-label={fav ? "Remove favorite" : "Add favorite"}
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        onToggleFavorite(p.productId);
-                      }}
+                      onClick={() => onToggleFavorite(p.productId)}
                     >
                       <i
                         className={`fa-${fav ? "solid" : "regular"} fa-star text-[10px] ${fav ? "text-amber-400" : ""}`}
@@ -317,25 +303,30 @@ export function ProductDiscovery({
                     onClick={() => !zero && handleAddProduct(p)}
                     className="min-w-0 flex-1 text-left disabled:cursor-not-allowed"
                   >
-                    <h3 className="line-clamp-2 min-h-[2rem] text-[11px] font-bold leading-snug text-slate-900" title={p.name}>
+                    <h3
+                      className="line-clamp-2 min-h-[2rem] text-[11px] font-bold leading-snug text-slate-900"
+                      title={p.name}
+                    >
                       {p.name}
                     </h3>
-                    <p className="mt-0.5 truncate text-[9px] font-medium text-slate-500">SKU: {p.sku || "—"}</p>
+                    <p className="mt-0.5 truncate text-[10px] font-medium text-slate-500">
+                      SKU: {p.sku || "—"}
+                    </p>
                     <div className="mt-1.5 flex items-end justify-between gap-1">
-                      <div className="min-w-0">{stockBadge(stock, p.unitName)}</div>
+                      <div className="min-w-0">{stockLine(stock, p.unitName)}</div>
                       <div className="shrink-0 text-right leading-tight">
                         {hasDiscount ? (
                           <>
-                            <div className="pos-price-original">{money(retail)}</div>
+                            <div className="text-[9px] text-slate-400 line-through">{money(retail)}</div>
                             <div className="flex items-center justify-end gap-1">
-                              <span className="text-xs font-black text-slate-900">{money(selling)}</span>
+                              <span className="text-xs font-black text-slate-900">Rs. {money(selling)}</span>
                               {discountPct > 0 ? (
                                 <span className="pos-price-discount-badge">-{discountPct}%</span>
                               ) : null}
                             </div>
                           </>
                         ) : (
-                          <span className="text-xs font-black text-slate-900">{money(selling)}</span>
+                          <span className="text-xs font-black text-slate-900">Rs. {money(selling)}</span>
                         )}
                       </div>
                     </div>
@@ -345,7 +336,7 @@ export function ProductDiscovery({
                     type="button"
                     disabled={zero}
                     onClick={() => handleAddProduct(p)}
-                    className="mt-1.5 flex w-full items-center justify-center gap-1 rounded-lg bg-blue-600 py-1.5 text-[11px] font-bold text-white shadow-xs transition hover:bg-blue-700 active:scale-[0.98] disabled:cursor-not-allowed disabled:bg-slate-200 disabled:text-slate-400 disabled:shadow-none"
+                    className="mt-2 flex w-full items-center justify-center gap-1 rounded-lg bg-blue-600 py-2 text-[11px] font-bold text-white transition hover:bg-blue-700 active:scale-[0.98] disabled:cursor-not-allowed disabled:bg-slate-200 disabled:text-slate-500"
                   >
                     {zero ? (
                       "Out of Stock"
@@ -361,20 +352,20 @@ export function ProductDiscovery({
             })}
           </div>
         )}
-
-        {hasMore ? (
-          <div className="pt-2 text-center">
-            <button
-              type="button"
-              onClick={onLoadMore}
-              className="inline-flex items-center gap-1 text-[11px] font-bold text-blue-600 hover:underline"
-            >
-              View More Products
-              <i className="fa-solid fa-chevron-down text-[9px]" aria-hidden />
-            </button>
-          </div>
-        ) : null}
       </div>
+
+      {hasMore ? (
+        <div className="flex shrink-0 items-center justify-center gap-1 border-t border-slate-200 bg-white px-2 py-1.5">
+          <button
+            type="button"
+            onClick={onLoadMore}
+            className="inline-flex items-center gap-1.5 rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-[11px] font-bold text-blue-600 transition hover:bg-blue-50"
+          >
+            Load more
+            <i className="fa-solid fa-chevron-right text-[9px]" aria-hidden />
+          </button>
+        </div>
+      ) : null}
     </section>
   );
 }

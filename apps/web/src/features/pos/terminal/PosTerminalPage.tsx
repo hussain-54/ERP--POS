@@ -130,6 +130,8 @@ export function PosTerminalPage() {
     couponCode,
     notes,
     setNotes,
+    deliveryCharges,
+    setDeliveryCharges,
     totals,
     updateQty,
     setLineDiscount,
@@ -898,6 +900,10 @@ export function PosTerminalPage() {
               setCustomerMode("select");
               setCustomerOpen(true);
             }}
+            onNewCustomer={() => {
+              setCustomerMode("create");
+              setCustomerOpen(true);
+            }}
             onInvoiceDiscount={() => {
               setDiscountScope("invoice");
               setDiscountSection("invoice");
@@ -922,6 +928,13 @@ export function PosTerminalPage() {
                 tone: "info",
               });
             }}
+            onAddNote={() => {
+              setMobilePane("checkout");
+              window.setTimeout(() => {
+                document.getElementById("pos-sale-note")?.focus();
+              }, 50);
+            }}
+            onMore={() => setPaymentOpen(true)}
             canOverridePrice={allowPriceOverride}
             selectedLineId={selectedLineId}
             onSelectLine={setSelectedLineId}
@@ -965,6 +978,31 @@ export function PosTerminalPage() {
             onPayment={() => setPaymentOpen(true)}
             onComplete={() => void completeSale(undefined, { cashReceived })}
             onProceedToCheckout={() => setStage("checkout")}
+            onDeliveryOrder={() => {
+              const current = deliveryCharges > 0 ? String(deliveryCharges) : "";
+              const raw = window.prompt(
+                "Delivery charges (Rs). Enter 0 to clear delivery order.",
+                current || "0",
+              );
+              if (raw == null) return;
+              const n = Number(raw);
+              if (!Number.isFinite(n) || n < 0) {
+                push({ title: "Invalid delivery charge", tone: "danger" });
+                return;
+              }
+              setDeliveryCharges(n);
+              if (n > 0 && !notes.toLowerCase().includes("delivery")) {
+                setNotes(notes ? `${notes} | Delivery order` : "Delivery order");
+              }
+              if (n === 0 && notes.toLowerCase().includes("delivery order")) {
+                setNotes(notes.replace(/\s*\|\s*Delivery order/i, "").replace(/^Delivery order\s*\|\s*/i, "").trim());
+              }
+              push({
+                title: n > 0 ? `Delivery charges: Rs. ${n.toFixed(2)}` : "Delivery charges cleared",
+                tone: "info",
+              });
+            }}
+            deliveryCharges={deliveryCharges}
             busy={busy}
             recordOnlyHint={
               paymentKind === "card" ||
