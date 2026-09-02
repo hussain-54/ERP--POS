@@ -29,7 +29,7 @@
 /* 3-Zone Desktop Grid: Left (Catalog) | Center (Cart) | Right (Customer + Summary) */
 .pos-terminal-grid-3col {
   display: grid;
-  grid-template-columns: minmax(280px, 320px) minmax(0, 1.35fr) minmax(320px, 360px);
+  grid-template-columns: minmax(0, 1.15fr) minmax(400px, 520px) minmax(340px, 400px);
   gap: 0;
   min-height: 0;
   height: 100%;
@@ -40,13 +40,13 @@
 
 @media (max-width: 1400px) {
   .pos-terminal-grid-3col {
-    grid-template-columns: minmax(250px, 290px) minmax(0, 1.2fr) minmax(300px, 340px);
+    grid-template-columns: minmax(0, 1fr) minmax(360px, 480px) minmax(320px, 380px);
   }
 }
 
 @media (max-width: 1140px) {
   .pos-terminal-grid-3col {
-    grid-template-columns: minmax(220px, 260px) minmax(0, 1fr) minmax(280px, 310px);
+    grid-template-columns: minmax(0, 0.95fr) minmax(320px, 420px) minmax(300px, 360px);
   }
 }
 
@@ -261,6 +261,18 @@
   padding: 1rem;
   background: rgb(15 23 42 / 0.5);
   backdrop-filter: blur(2px);
+}
+
+/* Full-screen checkout overlay — keeps 3-column POS visible underneath */
+.pos-checkout-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 55;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  background: rgb(248 250 252 / 0.97);
+  backdrop-filter: blur(4px);
 }
 
 .pos-modal {

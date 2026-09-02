@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { Link, useLocation, useNavigate, useSearchParams } from "react-router-dom";
+import { useLocation, useNavigate, useSearchParams } from "react-router-dom";
 import {
   actingDiscountRole,
   canOverridePrice,
@@ -29,7 +29,6 @@ import { PostSaleDialog } from "./PostSaleDialog";
 import { CheckoutStage } from "./CheckoutStage";
 import { HoldSaleDialog } from "../sales/HoldSaleDialog";
 import { ResumeSaleDialog } from "../sales/ResumeSaleDialog";
-import { HardwareStatusPill } from "../hardware/HardwareStatusPill";
 import { CameraScannerDialog } from "../hardware/CameraScannerDialog";
 import { UnknownBarcodeDialog } from "../hardware/UnknownBarcodeDialog";
 import {
@@ -94,11 +93,9 @@ export function PosTerminalPage() {
   // Hold & Resume states
   const [holdOpen, setHoldOpen] = useState(false);
   const [resumeOpen, setResumeOpen] = useState(false);
-  const [heldCount, setHeldCount] = useState(0);
 
   const actingRole = actingDiscountRole(permissions);
   const allowPriceOverride = canOverridePrice(permissions);
-  const isQuick = location.pathname.includes("/quick");
 
   const {
     search,
@@ -411,20 +408,6 @@ export function PosTerminalPage() {
     return () => window.removeEventListener("keydown", onKeyDown);
   }, [stage, customerOpen, discountOpen, paymentOpen, postSaleOpen]);
 
-  const refreshHeldCount = useCallback(async () => {
-    if (!branchId) return;
-    try {
-      const res = await posApi.listHolds(branchId);
-      setHeldCount(res.items.length);
-    } catch {
-      setHeldCount(0);
-    }
-  }, [branchId]);
-
-  useEffect(() => {
-    void refreshHeldCount();
-  }, [refreshHeldCount]);
-
   function onHold() {
     if (lines.length === 0) {
       push({ title: "Cart is empty", description: "Add items before holding a sale.", tone: "info" });
@@ -454,7 +437,7 @@ export function PosTerminalPage() {
       });
       newSale();
       setStage("terminal");
-      void refreshHeldCount();
+      window.dispatchEvent(new Event("pos:refresh-holds"));
     } catch (err) {
       push({
         title: "Hold failed",
@@ -470,7 +453,7 @@ export function PosTerminalPage() {
     restoreFromHold(snapshot);
     setResumeOpen(false);
     setStage("terminal");
-    void refreshHeldCount();
+    window.dispatchEvent(new Event("pos:refresh-holds"));
     push({ title: "Sale resumed into cart", tone: "success" });
   }
 
@@ -777,6 +760,131 @@ export function PosTerminalPage() {
 
   return (
     <div className="pos-terminal-root flex h-full min-h-0 flex-1 flex-col overflow-hidden">
+      {/* Mobile Tab Switcher */}
+      <div className="flex shrink-0 gap-1 border-b border-slate-200 bg-slate-50 p-1 lg:hidden">
+        {(
+          [
+            ["products", "Products"],
+            ["cart", lines.length ? `Cart (${lines.length})` : "Cart"],
+            ["checkout", "Summary & Pay"],
+          ] as const
+        ).map(([id, label]) => (
+          <button
+            key={id}
+            type="button"
+            onClick={() => setMobilePane(id)}
+            className={`flex-1 rounded-lg py-1.5 text-xs font-bold transition ${
+              mobilePane === id ? "bg-white text-blue-600 shadow-xs" : "text-slate-500 hover:text-slate-900"
+            }`}
+          >
+            {label}
+          </button>
+        ))}
+      </div>
+
+      {/* Main 3-Zone Desktop Grid: Left (Catalog) | Center (Cart) | Right (Customer + Summary + Pay) */}
+      <div className="pos-terminal-grid-3col min-h-0 flex-1 overflow-hidden">
+        {/* Zone 1: Product Discovery (Left) */}
+        <div className={`min-h-0 min-w-0 ${mobilePane === "products" ? "flex" : "hidden"} lg:flex`}>
+          <ProductDiscovery
+            search={search}
+            onSearch={setSearch}
+            tab={tab}
+            onTab={setTab}
+            categoryFilter={categoryFilter}
+            onCategory={setCategoryFilter}
+            categories={categories}
+            products={visibleProducts}
+            favoriteIds={favoriteIds}
+            onAdd={(p) => {
+              addProduct(p);
+              push({
+                title: `${p.name} added to cart`,
+                tone: "info",
+              });
+            }}
+            onToggleFavorite={toggleFavorite}
+            onLoadMore={() => setLimit((l) => l + 30)}
+            loading={loadingProducts}
+            hasMore={products.length >= limit}
+            searchRef={searchRef}
+            onOpenScanner={() => setCameraScannerOpen(true)}
+            onUnknownBarcode={(code) => {
+              setUnknownBarcode(code);
+              setUnknownBarcodeOpen(true);
+            }}
+          />
+        </div>
+
+        {/* Zone 2: Cart Ledger (Center) */}
+        <div className={`min-h-0 min-w-0 ${mobilePane === "cart" ? "flex" : "hidden"} lg:flex`}>
+          <CartZone
+            lines={lines}
+            customer={customer}
+            totals={totals}
+            onQty={updateQty}
+            onRemove={removeLine}
+            onClear={clearCart}
+            onEditDiscount={openItemDiscount}
+            onEditPrice={openPriceEdit}
+            onSelectCustomer={() => {
+              setCustomerMode("select");
+              setCustomerOpen(true);
+            }}
+            onInvoiceDiscount={() => {
+              setDiscountScope("invoice");
+              setDiscountSection("invoice");
+              setDiscountLine(null);
+              setDiscountOpen(true);
+            }}
+            onHold={() => void onHold()}
+            canOverridePrice={allowPriceOverride}
+            selectedLineId={selectedLineId}
+            onSelectLine={setSelectedLineId}
+            onProceedToCheckout={() => {
+              setMobilePane("checkout");
+              setStage("checkout");
+            }}
+            busy={busy}
+          />
+        </div>
+
+        {/* Zone 3: Customer + Order Summary + Checkout CTA (Right) */}
+        <div className={`min-h-0 min-w-0 ${mobilePane === "checkout" ? "flex" : "hidden"} lg:flex`}>
+          <CheckoutZone
+            customer={customer}
+            totals={totals}
+            paymentKind={paymentKind}
+            onPaymentKind={setPaymentKind}
+            cashReceived={cashReceived}
+            onCashReceived={setCashReceived}
+            couponCode={couponCode}
+            notes={notes}
+            onNotes={setNotes}
+            onSelectCustomer={() => {
+              setCustomerMode("select");
+              setCustomerOpen(true);
+            }}
+            onWalkIn={() => setCustomer(emptyCustomer())}
+            onNewCustomer={() => {
+              setCustomerMode("create");
+              setCustomerOpen(true);
+            }}
+            onDiscount={() => {
+              setDiscountScope("invoice");
+              setDiscountSection("invoice");
+              setDiscountLine(null);
+              setDiscountOpen(true);
+            }}
+            onHold={() => void onHold()}
+            onPayment={() => setPaymentOpen(true)}
+            onComplete={() => void completeSale()}
+            onProceedToCheckout={() => setStage("checkout")}
+            busy={busy}
+          />
+        </div>
+      </div>
+
       {stage === "checkout" ? (
         <CheckoutStage
           lines={lines}
@@ -811,175 +919,7 @@ export function PosTerminalPage() {
           busy={busy}
           paymentFlowState={paymentFlowState}
         />
-      ) : (
-        <>
-          {/* Sub-Header bar inside POS */}
-          <div className="flex shrink-0 items-center justify-between gap-2 border-b border-slate-200 bg-white px-3 py-1.5 sm:px-4">
-            <Link to="/pos" className="pos-back-link">
-              <i className="fa-solid fa-arrow-left text-[11px]" aria-hidden />
-              Back to POS Command Center
-            </Link>
-            <div className="flex items-center gap-3 text-xs text-slate-500">
-              <HardwareStatusPill onOpenScanner={() => setCameraScannerOpen(true)} />
-              <span className="font-bold text-slate-800">{isQuick ? "Quick Counter" : "Sale Register"}</span>
-              
-              <Link
-                to="/pos/returns"
-                className="flex items-center gap-1 font-bold text-slate-600 hover:text-blue-600 hover:underline"
-                title="Process Returns & Exchanges"
-              >
-                <i className="fa-solid fa-rotate-left text-[11px]" />
-                <span>Returns</span>
-              </Link>
-
-              <button
-                type="button"
-                onClick={() => setResumeOpen(true)}
-                className="flex items-center gap-1 font-bold text-amber-700 hover:text-amber-800 transition"
-                title="View & Resume Parked Sales (F6 to Hold)"
-              >
-                <i className="fa-solid fa-pause text-[11px]" />
-                <span>Held Sales</span>
-                {heldCount > 0 ? (
-                  <span className="rounded-full bg-amber-200 px-1.5 py-0.2 text-[10px] font-black text-amber-900">
-                    {heldCount}
-                  </span>
-                ) : null}
-              </button>
-
-              {hasPermission("products.write") ? (
-                <Link
-                  to={`/products/new?returnTo=${encodeURIComponent(location.pathname)}`}
-                  className="font-bold text-blue-600 hover:underline"
-                >
-                  + New Product
-                </Link>
-              ) : null}
-            </div>
-          </div>
-
-          {/* Mobile Tab Switcher */}
-          <div className="flex shrink-0 gap-1 border-b border-slate-200 bg-slate-50 p-1 lg:hidden">
-            {(
-              [
-                ["products", "Products"],
-                ["cart", lines.length ? `Cart (${lines.length})` : "Cart"],
-                ["checkout", "Summary & Pay"],
-              ] as const
-            ).map(([id, label]) => (
-              <button
-                key={id}
-                type="button"
-                onClick={() => setMobilePane(id)}
-                className={`flex-1 rounded-lg py-1.5 text-xs font-bold transition ${
-                  mobilePane === id ? "bg-white text-blue-600 shadow-xs" : "text-slate-500 hover:text-slate-900"
-                }`}
-              >
-                {label}
-              </button>
-            ))}
-          </div>
-
-          {/* Main 3-Zone Desktop Grid: Left (Catalog) | Center (Cart) | Right (Customer + Summary + Pay) */}
-          <div className="pos-terminal-grid-3col min-h-0 flex-1 overflow-hidden">
-            {/* Zone 1: Product Discovery (Left) */}
-            <div className={`min-h-0 min-w-0 ${mobilePane === "products" ? "flex" : "hidden"} lg:flex`}>
-              <ProductDiscovery
-                search={search}
-                onSearch={setSearch}
-                tab={tab}
-                onTab={setTab}
-                categoryFilter={categoryFilter}
-                onCategory={setCategoryFilter}
-                categories={categories}
-                products={visibleProducts}
-                favoriteIds={favoriteIds}
-                onAdd={(p) => {
-                  addProduct(p);
-                  push({
-                    title: `${p.name} added to cart`,
-                    tone: "info",
-                  });
-                }}
-                onToggleFavorite={toggleFavorite}
-                onLoadMore={() => setLimit((l) => l + 30)}
-                loading={loadingProducts}
-                hasMore={products.length >= limit}
-                searchRef={searchRef}
-                onOpenScanner={() => setCameraScannerOpen(true)}
-                onUnknownBarcode={(code) => {
-                  setUnknownBarcode(code);
-                  setUnknownBarcodeOpen(true);
-                }}
-              />
-            </div>
-
-            {/* Zone 2: Cart Ledger (Center) */}
-            <div className={`min-h-0 min-w-0 ${mobilePane === "cart" ? "flex" : "hidden"} lg:flex`}>
-              <CartZone
-                lines={lines}
-                customer={customer}
-                totals={totals}
-                onQty={updateQty}
-                onRemove={removeLine}
-                onClear={clearCart}
-                onEditDiscount={openItemDiscount}
-                onEditPrice={openPriceEdit}
-                onSelectCustomer={() => {
-                  setCustomerMode("select");
-                  setCustomerOpen(true);
-                }}
-                onInvoiceDiscount={() => {
-                  setDiscountScope("invoice");
-                  setDiscountSection("invoice");
-                  setDiscountLine(null);
-                  setDiscountOpen(true);
-                }}
-                onHold={() => void onHold()}
-                canOverridePrice={allowPriceOverride}
-                selectedLineId={selectedLineId}
-                onSelectLine={setSelectedLineId}
-                onProceedToCheckout={() => setStage("checkout")}
-                busy={busy}
-              />
-            </div>
-
-            {/* Zone 3: Customer + Order Summary + Checkout CTA (Right) */}
-            <div className={`min-h-0 min-w-0 ${mobilePane === "checkout" ? "flex" : "hidden"} lg:flex`}>
-              <CheckoutZone
-                customer={customer}
-                totals={totals}
-                paymentKind={paymentKind}
-                onPaymentKind={setPaymentKind}
-                cashReceived={cashReceived}
-                onCashReceived={setCashReceived}
-                couponCode={couponCode}
-                notes={notes}
-                onNotes={setNotes}
-                onSelectCustomer={() => {
-                  setCustomerMode("select");
-                  setCustomerOpen(true);
-                }}
-                onWalkIn={() => setCustomer(emptyCustomer())}
-                onNewCustomer={() => {
-                  setCustomerMode("create");
-                  setCustomerOpen(true);
-                }}
-                onDiscount={() => {
-                  setDiscountScope("invoice");
-                  setDiscountSection("invoice");
-                  setDiscountLine(null);
-                  setDiscountOpen(true);
-                }}
-                onHold={() => void onHold()}
-                onPayment={() => setStage("checkout")}
-                onProceedToCheckout={() => setStage("checkout")}
-                busy={busy}
-              />
-            </div>
-          </div>
-        </>
-      )}
+      ) : null}
 
       {/* Customer Dialog Modal */}
       <CustomerDialog

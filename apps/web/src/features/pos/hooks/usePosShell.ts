@@ -55,8 +55,22 @@ export function usePosShell(branchId: string | null) {
     }
 
     void load();
+
+    function onRefreshHolds() {
+      void (async () => {
+        try {
+          const holds = await posApi.listHolds(branchId!);
+          if (!cancelled) setHoldCount(holds.items.length);
+        } catch {
+          if (!cancelled) setHoldCount(0);
+        }
+      })();
+    }
+    window.addEventListener("pos:refresh-holds", onRefreshHolds);
+
     return () => {
       cancelled = true;
+      window.removeEventListener("pos:refresh-holds", onRefreshHolds);
     };
   }, [branchId]);
 

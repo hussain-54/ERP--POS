@@ -44,6 +44,7 @@ export function CartZone({
   onEditDiscount,
   onEditPrice,
   onSelectCustomer,
+  onInvoiceDiscount,
   onHold,
   canOverridePrice,
   selectedLineId,
@@ -392,30 +393,68 @@ export function CartZone({
         )}
       </div>
 
-      {/* Compact checkout bar — full totals live in Checkout zone */}
+      {/* Cart totals — payment actions live in the checkout column */}
       <div className="shrink-0 border-t border-slate-200 bg-slate-50/95 p-2 shadow-sm">
-        <div className="mb-2 flex items-center justify-between text-xs">
-          <span className="font-bold text-slate-600">
-            {totalUnits} pcs · {lines.length} {lines.length === 1 ? "item" : "items"}
-          </span>
-          <span className="text-sm font-black text-slate-900">Rs. {money(totals.grand)}</span>
+        <div className="space-y-1 rounded-lg border border-slate-200/80 bg-white p-2 text-xs">
+          <div className="flex justify-between text-slate-600">
+            <span>Subtotal ({totalUnits} pcs)</span>
+            <span className="font-bold text-slate-900">{money(totals.subtotal)}</span>
+          </div>
+
+          {totals.itemDiscount > 0 ? (
+            <div className="flex justify-between font-semibold text-red-600">
+              <span>Item Discounts</span>
+              <span>−{money(totals.itemDiscount)}</span>
+            </div>
+          ) : null}
+
+          <div className="flex justify-between text-slate-600">
+            <span className="flex items-center gap-1">
+              <span>Invoice Discount</span>
+              {onInvoiceDiscount ? (
+                <button
+                  type="button"
+                  onClick={onInvoiceDiscount}
+                  className="text-[10px] font-bold text-blue-600 hover:underline"
+                >
+                  ({totals.invoiceDiscount > 0 ? "Edit" : "+ Add"})
+                </button>
+              ) : null}
+            </span>
+            <span className={totals.invoiceDiscount > 0 ? "font-bold text-red-600" : "font-medium text-slate-400"}>
+              {totals.invoiceDiscount > 0 ? `−${money(totals.invoiceDiscount)}` : "0.00"}
+            </span>
+          </div>
+
+          <div className="flex justify-between text-slate-600">
+            <span>Sales Tax (GST)</span>
+            <span className="font-medium text-slate-800">{money(totals.tax)}</span>
+          </div>
         </div>
 
-        <button
-          type="button"
-          disabled={isEmpty || busy}
-          onClick={onProceedToCheckout}
-          className="flex w-full items-center justify-between rounded-xl bg-blue-600 px-3.5 py-2.5 text-sm font-black text-white shadow-md transition hover:bg-blue-700 active:scale-98 disabled:cursor-not-allowed disabled:bg-slate-300 disabled:opacity-60"
-        >
-          <span className="flex items-center gap-2">
-            <i className="fa-solid fa-credit-card text-base" aria-hidden />
-            <span>CHECKOUT</span>
-          </span>
-          <span className="flex items-center gap-1.5 rounded-lg bg-blue-800/60 px-2 py-0.5 text-xs font-black">
-            <span>Rs. {money(totals.grand)}</span>
-            <i className="fa-solid fa-arrow-right text-[10px]" />
-          </span>
-        </button>
+        <div className="pos-grand-box mt-2 flex items-center justify-between">
+          <div>
+            <p className="text-[10px] font-black uppercase tracking-widest text-slate-400">Grand Total</p>
+            <p className="text-lg font-black tracking-tight text-white">{money(totals.grand)}</p>
+          </div>
+          <div className="text-right">
+            <span className="rounded-full bg-blue-500/30 px-2.5 py-0.5 text-[10px] font-bold text-blue-100">
+              {lines.length} {lines.length === 1 ? "Item" : "Items"}
+            </span>
+          </div>
+        </div>
+
+        {onProceedToCheckout ? (
+          <button
+            type="button"
+            disabled={isEmpty || busy}
+            onClick={onProceedToCheckout}
+            className="mt-2 flex w-full items-center justify-center gap-1.5 rounded-lg border border-blue-300 bg-blue-50 py-2 text-xs font-bold text-blue-800 transition hover:bg-blue-100 lg:hidden disabled:cursor-not-allowed disabled:opacity-40"
+          >
+            <i className="fa-solid fa-arrow-right text-[10px]" aria-hidden />
+            <span>Go to Payment</span>
+          </button>
+        ) : null}
       </div>
     </section>
   );

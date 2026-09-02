@@ -157,7 +157,7 @@ describe("CartZone", () => {
     expect(onRemove).toHaveBeenCalledWith("line-1");
   });
 
-  it("renders grand total and triggers proceed to checkout", () => {
+  it("renders grand total and mobile proceed to payment", () => {
     const onProceed = vi.fn();
     render(
       <CartZone
@@ -175,9 +175,9 @@ describe("CartZone", () => {
       />,
     );
 
-    const checkoutBtns = screen.getAllByRole("button", { name: /CHECKOUT/i });
-    expect(checkoutBtns[0]).toBeInTheDocument();
-    fireEvent.click(checkoutBtns[0]!);
+    expect(screen.getByText(/Grand Total/i)).toBeInTheDocument();
+    const proceedBtn = screen.getByRole("button", { name: /Go to Payment/i });
+    fireEvent.click(proceedBtn);
     expect(onProceed).toHaveBeenCalledTimes(1);
   });
 });
