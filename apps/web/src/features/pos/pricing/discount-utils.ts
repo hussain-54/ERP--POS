@@ -10,6 +10,7 @@ export type DiscountSection =
   | "promotion"
   | "coupon"
   | "customer"
+  | "referral"
   | "approval";
 
 export function discountTypeLabel(mode: DiscountMode): string {

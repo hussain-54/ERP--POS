@@ -357,13 +357,13 @@ export function CheckoutZone({
           type="button"
           disabled={busy || empty}
           onClick={onProceedToCheckout ?? onComplete}
-          className="flex w-full items-center justify-between rounded-xl bg-blue-600 px-3.5 py-2.5 text-sm font-black text-white shadow-md transition hover:bg-blue-700 active:scale-98 disabled:cursor-not-allowed disabled:bg-slate-300"
+          className="flex w-full items-center justify-between rounded-xl bg-blue-600 px-3.5 py-3 text-sm font-black text-white shadow-md transition hover:bg-blue-700 active:scale-98 disabled:cursor-not-allowed disabled:bg-slate-300 disabled:opacity-60"
         >
           <span className="flex items-center gap-2">
-            <i className="fa-solid fa-arrow-right-to-bracket text-base" />
-            <span>PROCEED TO CHECKOUT →</span>
+            <i className="fa-solid fa-cash-register text-base" aria-hidden />
+            <span>CHECKOUT / PAY NOW (F4)</span>
           </span>
-          <span className="rounded-lg bg-blue-800/60 px-2 py-0.5 text-xs font-black">
+          <span className="rounded-lg bg-blue-800/60 px-2.5 py-0.5 text-xs font-black tracking-tight">
             {money(totals.grand)}
           </span>
         </button>

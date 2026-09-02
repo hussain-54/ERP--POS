@@ -334,35 +334,56 @@ export function printInvoiceReceipt(
 /**
  * Format receipt into plain text for WhatsApp sharing or SMS.
  */
-export function buildWhatsAppReceiptText(invoice: InvoiceView, companyName = "Electronic Store"): string {
+export function buildWhatsAppReceiptText(invoice: InvoiceView, companyName = "Electronic & Electrical Store"): string {
   const invNum = invoice.invoiceNumber ?? `INV-${Date.now()}`;
   const dt = formatInvoiceDateTime(invoice.dateTime ?? invoice.sale?.createdAt);
   const grand = Number(invoice.sale?.grandTotal ?? 0);
+  const subtotal = Number(invoice.sale?.subtotal ?? grand);
+  const disc = Number(invoice.sale?.discountTotal ?? 0);
+  const tax = Number(invoice.sale?.taxTotal ?? 0);
   const paid = Number(invoice.sale?.paidTotal ?? invoice.paidAmount ?? grand);
   const remaining = Number(invoice.sale?.remainingTotal ?? invoice.remainingAmount ?? 0);
+  const change = Math.max(0, paid - grand);
+  const customer = invoice.customerName ?? "Walk-in Customer";
+  const customerPhone = invoice.customerMobile ?? "";
   const paymentMethod = invoice.payments?.length
     ? invoice.payments.map((p) => p.method).join(", ")
     : "Cash";
 
   const itemsList = (invoice.items ?? [])
-    .map((i, idx) => `${idx + 1}. *${i.name}* (x${i.qty} ${i.unit || "Pcs"}) — Rs. ${Number(i.total).toFixed(2)}`)
+    .map(
+      (i, idx) =>
+        `${idx + 1}. *${i.name}*\n   Qty: ${i.qty} ${i.unit || "Pcs"} @ Rs. ${Number(i.rate).toFixed(2)}${
+          Number(i.discount) > 0 ? ` (Disc: -Rs. ${Number(i.discount).toFixed(2)})` : ""
+        } ➔ *Rs. ${Number(i.total).toFixed(2)}*`
+    )
     .join("\n");
 
-  return `*${companyName.toUpperCase()}* — POS RECEIPT\n` +
-    `══════════════════════════\n` +
+  return (
+    `🧾 *${companyName.toUpperCase()}*\n` +
+    `📍 Retail POS & Distribution ERP\n` +
+    `════════════════════════════\n` +
     `📄 *Invoice #:* ${invNum}\n` +
-    `📅 *Date:* ${dt.date} ${dt.time}\n` +
-    `👤 *Customer:* ${invoice.customerName ?? "Walk-in Customer"}\n` +
-    `🏪 *Branch:* ${invoice.branchName ?? "Main Store"}\n` +
-    `══════════════════════════\n` +
-    `*ITEMS ORDERED:*\n${itemsList}\n` +
-    `──────────────────────────\n` +
-    `💰 *GRAND TOTAL: Rs. ${grand.toFixed(2)}*\n` +
-    `💳 *Paid (${paymentMethod}):* Rs. ${paid.toFixed(2)}\n` +
-    (remaining > 0 ? `⚠️ *Remaining Balance:* Rs. ${remaining.toFixed(2)}\n` : "") +
-    `══════════════════════════\n` +
-    `Thank you for shopping with us!\n` +
-    `Goods exchangeable within 3 days with receipt.`;
+    `📅 *Date:* ${dt.date} at ${dt.time}\n` +
+    `👤 *Customer:* ${customer}${customerPhone ? ` (${customerPhone})` : ""}\n` +
+    `🏪 *Branch:* ${invoice.branchName ?? "Main Branch"} | *Cashier:* ${invoice.cashierName ?? "Counter"}\n` +
+    `════════════════════════════\n` +
+    `*BILLED ITEMS:*\n${itemsList}\n` +
+    `────────────────────────────\n` +
+    `💰 *Subtotal:* Rs. ${subtotal.toFixed(2)}\n` +
+    (disc > 0 ? `🎁 *Discount:* -Rs. ${disc.toFixed(2)}\n` : "") +
+    (tax > 0 ? `🏛️ *Sales Tax (GST):* Rs. ${tax.toFixed(2)}\n` : "") +
+    `⭐ *TOTAL PAYABLE: Rs. ${grand.toFixed(2)}*\n` +
+    `────────────────────────────\n` +
+    `💳 *Payment Method:* ${paymentMethod}\n` +
+    `💵 *Amount Paid:* Rs. ${paid.toFixed(2)}\n` +
+    (change > 0 ? `🪙 *Change Returned:* Rs. ${change.toFixed(2)}\n` : "") +
+    (remaining > 0 ? `⚠️ *Outstanding Balance (Udhaar):* Rs. ${remaining.toFixed(2)}\n` : "") +
+    `════════════════════════════\n` +
+    `Thank you for your business! 🙏\n` +
+    `• Exchange within 3 days with original invoice.\n` +
+    `• Electrical warranty covered under company terms.`
+  );
 }
 
 /**

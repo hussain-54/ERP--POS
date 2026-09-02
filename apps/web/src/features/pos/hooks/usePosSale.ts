@@ -200,6 +200,29 @@ export function usePosSale() {
     );
   }, []);
 
+  const addCustomLine = useCallback((item: { name: string; rate: number; qty?: number; barcode?: string; sku?: string }) => {
+    const qty = Math.max(1, item.qty ?? 1);
+    const rate = Math.max(0, item.rate);
+    const newLine: CartLine = {
+      id: uuid(),
+      productId: `custom-${Date.now()}`,
+      name: item.name,
+      sku: item.sku || item.barcode || "MANUAL",
+      unitId: "unit-manual",
+      unitLabel: "Pcs",
+      qty,
+      rate,
+      listPrice: rate,
+      discount: 0,
+      discountPercent: 0,
+      tax: lineTax(rate, qty, 0) / qty,
+      taxRate: TAX_RATE,
+      stockAvailable: null,
+      category: "Manual Entry",
+    };
+    setLines((prev) => [...prev, newLine]);
+  }, []);
+
   const removeLine = useCallback((lineId: string) => {
     setLines((prev) => prev.filter((l) => l.id !== lineId));
   }, []);
@@ -405,6 +428,7 @@ export function usePosSale() {
     draftLabel,
     setDraftLabel,
     addProduct,
+    addCustomLine,
     toggleFavorite,
     updateQty,
     setLineDiscount,

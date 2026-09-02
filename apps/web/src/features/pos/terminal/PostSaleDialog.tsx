@@ -4,9 +4,10 @@ import { money } from "../format";
 import {
   downloadPdfInvoice,
   formatInvoiceDateTime,
+  openEmailReceipt,
+  openWhatsAppReceipt,
   printInvoiceReceipt,
 } from "../invoices/invoice-utils";
-import { CustomerDeliveryModal } from "../invoices/CustomerDeliveryModal";
 
 export function PostSaleDialog({
   open,
@@ -29,13 +30,18 @@ export function PostSaleDialog({
   onClose: () => void;
   onNewSale: () => void;
 }) {
-  const [deliveryOpen, setDeliveryOpen] = useState(false);
-  const [deliveryTab, setDeliveryTab] = useState<"whatsapp" | "email" | "print">("whatsapp");
+  // Inline sharing input states
+  const [phoneInput, setPhoneInput] = useState("");
+  const [emailInput, setEmailInput] = useState("");
+  const [showPhonePrompt, setShowPhonePrompt] = useState(false);
+  const [showEmailPrompt, setShowEmailPrompt] = useState(false);
+  const [emailState, setEmailState] = useState<"idle" | "sending" | "sent" | "failed">("idle");
+  const [whatsappState, setWhatsappState] = useState<"idle" | "sent">("idle");
 
   useEffect(() => {
     if (!open) return;
     function onKeyDown(e: KeyboardEvent) {
-      if (e.key === "Escape" && !deliveryOpen) {
+      if (e.key === "Escape" && !showPhonePrompt && !showEmailPrompt) {
         e.preventDefault();
         onNewSale();
       }
@@ -46,49 +52,94 @@ export function PostSaleDialog({
     }
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
-  }, [open, invoice, onNewSale, deliveryOpen]);
+  }, [open, invoice, onNewSale, showPhonePrompt, showEmailPrompt]);
+
+  // Sync initial phone/email when invoice changes
+  useEffect(() => {
+    if (invoice) {
+      setPhoneInput(invoice.customerMobile ?? customerMobile ?? "");
+      setEmailInput(invoice.customerEmail ?? customerEmail ?? "");
+      setEmailState("idle");
+      setWhatsappState("idle");
+      setShowPhonePrompt(false);
+      setShowEmailPrompt(false);
+    }
+  }, [invoice, customerMobile, customerEmail]);
 
   if (!open || !invoice) return null;
 
   const enrichedInvoice: InvoiceView = {
     ...invoice,
-    customerMobile: invoice.customerMobile ?? customerMobile ?? null,
-    customerEmail: invoice.customerEmail ?? customerEmail ?? null,
+    customerMobile: phoneInput || invoice.customerMobile || customerMobile || null,
+    customerEmail: emailInput || invoice.customerEmail || customerEmail || null,
   };
 
   const invNum = enrichedInvoice.invoiceNumber || `INV-${Date.now().toString().slice(-6)}`;
   const dt = formatInvoiceDateTime(enrichedInvoice.dateTime ?? enrichedInvoice.sale?.createdAt);
   const grand = Number(enrichedInvoice.sale?.grandTotal ?? 0);
-  const paid = paidAmount != null ? paidAmount : grand;
+  const subtotal = Number(enrichedInvoice.sale?.subtotal ?? grand);
+  const disc = Number(enrichedInvoice.sale?.discountTotal ?? 0);
+  const tax = Number(enrichedInvoice.sale?.taxTotal ?? 0);
+  const paid = paidAmount != null ? paidAmount : Number(enrichedInvoice.sale?.paidTotal ?? grand);
   const change = changeAmount != null ? changeAmount : Math.max(0, paid - grand);
+  const remaining = Number(enrichedInvoice.sale?.remainingTotal ?? Math.max(0, grand - paid));
   const customerName = enrichedInvoice.customerName ?? "Walk-in Customer";
+  const customerPhone = enrichedInvoice.customerMobile ?? "";
+
+  function handleShareWhatsApp() {
+    if (!customerPhone && !phoneInput) {
+      setShowPhonePrompt(true);
+      return;
+    }
+    openWhatsAppReceipt(enrichedInvoice, phoneInput || customerPhone);
+    setWhatsappState("sent");
+  }
+
+  function handleSendEmail() {
+    if (!emailInput && !enrichedInvoice.customerEmail) {
+      setShowEmailPrompt(true);
+      return;
+    }
+    setEmailState("sending");
+    try {
+      openEmailReceipt(enrichedInvoice, emailInput || enrichedInvoice.customerEmail);
+      setTimeout(() => setEmailState("sent"), 600);
+    } catch {
+      setEmailState("failed");
+    }
+  }
 
   return (
     <>
       <div className="pos-modal-backdrop" role="presentation" onClick={onClose}>
         <div
-          className="pos-modal max-w-lg p-5 text-center"
+          className="pos-modal max-w-xl p-5 text-center"
           role="dialog"
           aria-modal
           aria-label="Sale Completed"
           onClick={(e) => e.stopPropagation()}
         >
-          {/* Success Icon */}
-          <div className="mx-auto mb-2.5 flex h-14 w-14 items-center justify-center rounded-full bg-emerald-100 text-emerald-600 shadow-sm">
+          {/* Success Icon & Heading */}
+          <div className="mx-auto mb-2 flex h-14 w-14 items-center justify-center rounded-full bg-emerald-100 text-emerald-600 shadow-sm">
             <i className="fa-solid fa-circle-check text-3xl" />
           </div>
 
-          <h2 className="text-xl font-black tracking-tight text-slate-900">Sale Completed!</h2>
+          <h2 className="text-xl font-black tracking-tight text-slate-900">
+            ✓ Sale Completed
+          </h2>
           <p className="mt-0.5 text-xs text-slate-500">
             Invoice: <span className="font-bold text-slate-900">#{invNum}</span> · {dt.date} at {dt.time}
           </p>
 
-          {/* Transaction Summary Card */}
-          <div className="my-3.5 rounded-xl border border-slate-200 bg-slate-50/80 p-3 text-left">
+          {/* Transaction Metadata Card */}
+          <div className="my-3 rounded-xl border border-slate-200 bg-slate-50/90 p-3 text-left space-y-2">
             <div className="grid grid-cols-2 gap-2 text-xs border-b border-slate-200/80 pb-2">
               <div>
                 <span className="text-[10px] font-bold uppercase text-slate-400">Customer</span>
-                <p className="truncate font-black text-slate-800">{customerName}</p>
+                <p className="truncate font-black text-slate-900">
+                  {customerName}
+                  {customerPhone ? <span className="text-slate-400 font-normal ml-1">({customerPhone})</span> : ""}
+                </p>
               </div>
               <div className="text-right">
                 <span className="text-[10px] font-bold uppercase text-slate-400">Payment Method</span>
@@ -96,37 +147,182 @@ export function PostSaleDialog({
               </div>
             </div>
 
-            {/* Billed Items Count / Preview */}
-            <div className="flex items-center justify-between border-b border-slate-200/80 py-1.5 text-xs text-slate-600">
-              <span className="text-[10px] font-bold uppercase text-slate-400">Billed Items</span>
-              <span className="font-bold text-slate-800">
-                {enrichedInvoice.items?.length ?? 0} {enrichedInvoice.items?.length === 1 ? "Product" : "Products"} (
-                {enrichedInvoice.items?.reduce((acc, it) => acc + Number(it.qty || 0), 0) ?? 0} Units)
-              </span>
+            {/* Billed Items Detailed Preview */}
+            <div className="space-y-1">
+              <div className="flex items-center justify-between text-[10px] font-bold uppercase text-slate-400 px-0.5">
+                <span>Items ({enrichedInvoice.items?.length ?? 0})</span>
+                <span>Line Total</span>
+              </div>
+              <div className="max-h-28 overflow-y-auto space-y-1 rounded-lg border border-slate-200/60 bg-white p-1.5 text-xs">
+                {(enrichedInvoice.items ?? []).map((item, idx) => (
+                  <div key={idx} className="flex items-center justify-between py-0.5 px-1 border-b border-slate-100 last:border-b-0">
+                    <div className="truncate pr-2">
+                      <span className="font-bold text-slate-800">{item.name}</span>
+                      <span className="text-[10px] text-slate-400 ml-1">
+                        (x{item.qty} {item.unit || "Pcs"})
+                      </span>
+                    </div>
+                    <span className="shrink-0 font-black text-slate-900">
+                      Rs. {Number(item.total).toFixed(2)}
+                    </span>
+                  </div>
+                ))}
+              </div>
             </div>
 
-            <div className="mt-2 grid grid-cols-2 gap-2 text-xs">
+            {/* Financial Breakdown Grid */}
+            <div className="grid grid-cols-4 gap-1 rounded-lg bg-white p-2 text-center text-xs border border-slate-200/80">
               <div>
-                <span className="text-[10px] font-bold uppercase text-slate-400">Total Paid</span>
-                <p className="text-base font-black text-slate-900">{money(paid)}</p>
+                <span className="text-[10px] text-slate-400 block uppercase">Subtotal</span>
+                <span className="font-bold text-slate-800">Rs. {money(subtotal)}</span>
               </div>
-              {change > 0 ? (
-                <div className="text-right">
-                  <span className="text-[10px] font-bold uppercase text-emerald-700">Change Returned</span>
-                  <p className="text-base font-black text-emerald-600">{money(change)}</p>
-                </div>
-              ) : (
-                <div className="text-right">
-                  <span className="text-[10px] font-bold uppercase text-slate-400">Status</span>
-                  <p className="text-sm font-bold text-emerald-600">Settled Full</p>
-                </div>
-              )}
+              <div>
+                <span className="text-[10px] text-slate-400 block uppercase">Discount</span>
+                <span className={disc > 0 ? "font-bold text-emerald-600" : "text-slate-500"}>
+                  {disc > 0 ? `−${money(disc)}` : "0.00"}
+                </span>
+              </div>
+              <div>
+                <span className="text-[10px] text-slate-400 block uppercase">GST / Tax</span>
+                <span className="font-bold text-slate-800">Rs. {money(tax)}</span>
+              </div>
+              <div>
+                <span className="text-[10px] text-blue-600 block uppercase font-black">Total</span>
+                <span className="font-black text-slate-900">Rs. {money(grand)}</span>
+              </div>
+            </div>
+
+            {/* Paid & Change / Udhaar Row */}
+            <div className="grid grid-cols-2 gap-2 text-xs pt-1">
+              <div className="rounded-lg bg-white p-2 border border-slate-200">
+                <span className="text-[10px] font-bold uppercase text-slate-400 block">Amount Paid</span>
+                <p className="text-base font-black text-slate-900">Rs. {money(paid)}</p>
+              </div>
+              <div className="rounded-lg bg-white p-2 border border-slate-200 text-right">
+                {change > 0 ? (
+                  <>
+                    <span className="text-[10px] font-bold uppercase text-emerald-700 block">Change Returned</span>
+                    <p className="text-base font-black text-emerald-600">Rs. {money(change)}</p>
+                  </>
+                ) : remaining > 0 ? (
+                  <>
+                    <span className="text-[10px] font-bold uppercase text-amber-700 block">Balance Due (Udhaar)</span>
+                    <p className="text-base font-black text-amber-600">Rs. {money(remaining)}</p>
+                  </>
+                ) : (
+                  <>
+                    <span className="text-[10px] font-bold uppercase text-slate-400 block">Status</span>
+                    <p className="text-sm font-black text-emerald-600">Settled in Full</p>
+                  </>
+                )}
+              </div>
             </div>
           </div>
 
-          {/* Action Buttons Grid */}
-          <div className="space-y-2">
-            {/* Primary Print Thermal Button */}
+          {/* Inline Phone Prompt for WhatsApp (if missing) */}
+          {showPhonePrompt ? (
+            <div className="my-2 rounded-xl border border-emerald-300 bg-emerald-50 p-2.5 text-left text-xs space-y-2">
+              <div className="flex items-center justify-between">
+                <span className="font-bold text-emerald-900">Enter Customer WhatsApp / Mobile Number:</span>
+                <button
+                  type="button"
+                  onClick={() => setShowPhonePrompt(false)}
+                  className="text-slate-400 hover:text-slate-700 text-xs"
+                >
+                  ✕
+                </button>
+              </div>
+              <div className="flex gap-2">
+                <input
+                  type="tel"
+                  autoFocus
+                  value={phoneInput}
+                  onChange={(e) => setPhoneInput(e.target.value)}
+                  placeholder="03001234567"
+                  className="flex-1 rounded-lg border border-emerald-300 bg-white px-3 py-1.5 text-xs font-bold text-slate-900 focus:outline-none focus:ring-2 focus:ring-emerald-500"
+                />
+                <button
+                  type="button"
+                  onClick={() => {
+                    openWhatsAppReceipt(enrichedInvoice, phoneInput);
+                    setShowPhonePrompt(false);
+                    setWhatsappState("sent");
+                  }}
+                  className="rounded-lg bg-emerald-600 px-3 py-1.5 text-xs font-bold text-white shadow-xs hover:bg-emerald-700"
+                >
+                  Send
+                </button>
+              </div>
+            </div>
+          ) : null}
+
+          {/* Inline Email Prompt (if requested) */}
+          {showEmailPrompt ? (
+            <div className="my-2 rounded-xl border border-indigo-300 bg-indigo-50 p-2.5 text-left text-xs space-y-2">
+              <div className="flex items-center justify-between">
+                <span className="font-bold text-indigo-900">Enter Customer Email Address:</span>
+                <button
+                  type="button"
+                  onClick={() => setShowEmailPrompt(false)}
+                  className="text-slate-400 hover:text-slate-700 text-xs"
+                >
+                  ✕
+                </button>
+              </div>
+              <div className="flex gap-2">
+                <input
+                  type="email"
+                  autoFocus
+                  value={emailInput}
+                  onChange={(e) => setEmailInput(e.target.value)}
+                  placeholder="customer@example.com"
+                  className="flex-1 rounded-lg border border-indigo-300 bg-white px-3 py-1.5 text-xs text-slate-900 focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                />
+                <button
+                  type="button"
+                  onClick={() => {
+                    handleSendEmail();
+                    setShowEmailPrompt(false);
+                  }}
+                  className="rounded-lg bg-indigo-600 px-3 py-1.5 text-xs font-bold text-white shadow-xs hover:bg-indigo-700"
+                >
+                  Send
+                </button>
+              </div>
+            </div>
+          ) : null}
+
+          {/* Email Status Indicator */}
+          {emailState !== "idle" ? (
+            <div
+              className={`my-1.5 rounded-lg p-2 text-xs font-bold ${
+                emailState === "sending"
+                  ? "bg-blue-50 text-blue-700"
+                  : emailState === "sent"
+                    ? "bg-emerald-50 text-emerald-800"
+                    : "bg-red-50 text-red-800"
+              }`}
+            >
+              {emailState === "sending" && "Sending email invoice…"}
+              {emailState === "sent" && "✓ Sent successfully to customer email"}
+              {emailState === "failed" && (
+                <div className="flex items-center justify-between">
+                  <span>Failed to send email.</span>
+                  <button
+                    type="button"
+                    onClick={handleSendEmail}
+                    className="underline text-red-900 ml-2"
+                  >
+                    Retry
+                  </button>
+                </div>
+              )}
+            </div>
+          ) : null}
+
+          {/* 5 MAIN ACTION BUTTONS */}
+          <div className="mt-3 space-y-2">
+            {/* 1. PRINT RECEIPT (Thermal 80mm) */}
             <button
               type="button"
               autoFocus
@@ -136,68 +332,59 @@ export function PostSaleDialog({
               className="flex w-full items-center justify-center gap-2 rounded-xl bg-blue-600 py-3 text-sm font-black text-white shadow-sm transition hover:bg-blue-700 active:scale-98"
             >
               <i className="fa-solid fa-print text-base" />
-              Print Thermal Receipt (80mm)
+              <span>PRINT RECEIPT (80mm Thermal)</span>
             </button>
 
+            {/* Secondary Actions Grid */}
             <div className="grid grid-cols-3 gap-1.5">
+              {/* 2. DOWNLOAD PDF */}
               <button
                 type="button"
                 onClick={() => {
                   downloadPdfInvoice(enrichedInvoice);
                 }}
-                className="flex items-center justify-center gap-1.5 rounded-lg border border-slate-300 bg-white py-2 text-xs font-bold text-slate-700 transition hover:bg-slate-50"
-                title="Download or print formal A4 tax invoice"
+                className="flex items-center justify-center gap-1.5 rounded-lg border border-slate-300 bg-white py-2 text-xs font-bold text-slate-700 transition hover:bg-slate-50 active:scale-98"
+                title="Download or print A4 tax invoice PDF"
               >
-                <i className="fa-solid fa-file-invoice text-blue-600" />
-                <span>A4 / PDF</span>
+                <i className="fa-solid fa-file-pdf text-red-600" />
+                <span>DOWNLOAD PDF</span>
               </button>
 
+              {/* 3. SHARE ON WHATSAPP */}
               <button
                 type="button"
-                onClick={() => {
-                  setDeliveryTab("whatsapp");
-                  setDeliveryOpen(true);
-                }}
-                className="flex items-center justify-center gap-1.5 rounded-lg border border-emerald-300 bg-emerald-50 py-2 text-xs font-bold text-emerald-800 transition hover:bg-emerald-100"
-                title="Share receipt via WhatsApp"
+                onClick={handleShareWhatsApp}
+                className="flex items-center justify-center gap-1.5 rounded-lg border border-emerald-300 bg-emerald-50 py-2 text-xs font-bold text-emerald-800 transition hover:bg-emerald-100 active:scale-98"
+                title="Share bill via WhatsApp"
               >
                 <i className="fa-brands fa-whatsapp text-emerald-600 text-sm" />
-                <span>WhatsApp</span>
+                <span>{whatsappState === "sent" ? "WHATSAPP ✓" : "WHATSAPP"}</span>
               </button>
 
+              {/* 4. SEND BY EMAIL */}
               <button
                 type="button"
-                onClick={() => {
-                  setDeliveryTab("email");
-                  setDeliveryOpen(true);
-                }}
-                className="flex items-center justify-center gap-1.5 rounded-lg border border-indigo-300 bg-indigo-50 py-2 text-xs font-bold text-indigo-800 transition hover:bg-indigo-100"
-                title="Send receipt via Email"
+                onClick={handleSendEmail}
+                className="flex items-center justify-center gap-1.5 rounded-lg border border-indigo-300 bg-indigo-50 py-2 text-xs font-bold text-indigo-800 transition hover:bg-indigo-100 active:scale-98"
+                title="Send receipt to customer email"
               >
                 <i className="fa-regular fa-envelope text-indigo-600 text-sm" />
-                <span>Email</span>
+                <span>{emailState === "sent" ? "EMAIL ✓" : emailState === "sending" ? "SENDING…" : "EMAIL"}</span>
               </button>
             </div>
 
-            {/* Start New Sale Button */}
+            {/* 5. NEW SALE (Reset Workspace) */}
             <button
               type="button"
               onClick={onNewSale}
-              className="mt-2.5 flex w-full items-center justify-center gap-2 rounded-xl bg-slate-900 py-2.5 text-xs font-bold text-white transition hover:bg-slate-800"
+              className="mt-2.5 flex w-full items-center justify-center gap-2 rounded-xl bg-slate-900 py-3 text-xs font-bold text-white transition hover:bg-slate-800 active:scale-98"
             >
-              <span>Start Next Sale</span>
+              <span>START NEW SALE</span>
               <kbd className="rounded bg-slate-800 px-1.5 py-0.5 text-[10px] text-slate-300">Esc</kbd>
             </button>
           </div>
         </div>
       </div>
-
-      <CustomerDeliveryModal
-        open={deliveryOpen}
-        invoice={enrichedInvoice}
-        initialTab={deliveryTab}
-        onClose={() => setDeliveryOpen(false)}
-      />
     </>
   );
 }

@@ -14,6 +14,8 @@ export function DiscountDialog({
   allowPriceOverride,
   organizationId,
   branchId,
+  notes,
+  onNotes,
   onClose,
   onApplyItem,
   onApplyInvoice,
@@ -29,6 +31,8 @@ export function DiscountDialog({
   allowPriceOverride: boolean;
   organizationId: string | null;
   branchId: string | null;
+  notes?: string;
+  onNotes?: (notes: string) => void;
   onClose: () => void;
   onApplyItem: (lineId: string, amount: number, percent: number) => void;
   onApplyInvoice: (input: {
@@ -69,6 +73,8 @@ export function DiscountDialog({
           allowPriceOverride={allowPriceOverride}
           organizationId={organizationId}
           branchId={branchId}
+          notes={notes}
+          onNotes={onNotes}
           onApplyItem={onApplyItem}
           onApplyInvoice={onApplyInvoice}
           onApplyPriceOverride={onApplyPriceOverride}

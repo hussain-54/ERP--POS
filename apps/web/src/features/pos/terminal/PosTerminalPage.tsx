@@ -22,13 +22,25 @@ import type { DiscountSection } from "../pricing/discount-utils";
 import { PaymentDrawer } from "../payments/PaymentDrawer";
 import { ProductDiscovery } from "./ProductDiscovery";
 import { CartZone } from "./CartZone";
+import { CheckoutZone } from "./CheckoutZone";
 import { CustomerDialog } from "./CustomerDialog";
 import { DiscountDialog } from "./DiscountDialog";
 import { PostSaleDialog } from "./PostSaleDialog";
 import { CheckoutStage } from "./CheckoutStage";
+import { HoldSaleDialog } from "../sales/HoldSaleDialog";
+import { ResumeSaleDialog } from "../sales/ResumeSaleDialog";
+import { HardwareStatusPill } from "../hardware/HardwareStatusPill";
+import { CameraScannerDialog } from "../hardware/CameraScannerDialog";
+import { UnknownBarcodeDialog } from "../hardware/UnknownBarcodeDialog";
+import {
+  broadcastCartToCustomerDisplay,
+  broadcastSalePaymentToCustomerDisplay,
+  triggerCashDrawerKick,
+} from "../hardware/hardware-broadcast";
+import { deviceHardware } from "@/features/devices/hardware-service";
 import "./terminal-layout.css";
 
-type MobilePane = "products" | "cart";
+type MobilePane = "products" | "cart" | "checkout";
 type PosStage = "terminal" | "checkout";
 
 export function PosTerminalPage() {
@@ -63,6 +75,16 @@ export function PosTerminalPage() {
   const [lastPaid, setLastPaid] = useState<number>(0);
   const [lastChange, setLastChange] = useState<number>(0);
 
+  // Hardware scanner states
+  const [cameraScannerOpen, setCameraScannerOpen] = useState(false);
+  const [unknownBarcodeOpen, setUnknownBarcodeOpen] = useState(false);
+  const [unknownBarcode, setUnknownBarcode] = useState("");
+
+  // Hold & Resume states
+  const [holdOpen, setHoldOpen] = useState(false);
+  const [resumeOpen, setResumeOpen] = useState(false);
+  const [heldCount, setHeldCount] = useState(0);
+
   const actingRole = actingDiscountRole(permissions);
   const allowPriceOverride = canOverridePrice(permissions);
   const isQuick = location.pathname.includes("/quick");
@@ -80,6 +102,7 @@ export function PosTerminalPage() {
     favoriteIds,
     recentIds,
     addProduct,
+    addCustomLine,
     toggleFavorite,
     lines,
     customer,
@@ -232,6 +255,45 @@ export function PosTerminalPage() {
     addProduct,
   ]);
 
+  // Real-time broadcast to Customer Counter / Pole Display
+  useEffect(() => {
+    broadcastCartToCustomerDisplay(lines, customer, totals);
+  }, [lines, customer, totals]);
+
+  // Handle scanned Barcode / SKU / QR Code
+  const handleScanCode = useCallback(
+    (code: string) => {
+      const trimmed = code.trim();
+      if (!trimmed) return;
+      const lower = trimmed.toLowerCase();
+      const match = products.find(
+        (p) =>
+          p.barcode?.toLowerCase() === lower ||
+          p.sku?.toLowerCase() === lower ||
+          p.name.toLowerCase() === lower
+      );
+
+      if (match) {
+        addProduct(match);
+        push({ title: `Scanned: ${match.name}`, tone: "success" });
+      } else {
+        setUnknownBarcode(trimmed);
+        setUnknownBarcodeOpen(true);
+      }
+    },
+    [products, addProduct, push],
+  );
+
+  // Subscribe to hardware keyboard wedge barcode scanner
+  useEffect(() => {
+    const unsub = deviceHardware.subscribeScanner((evt) => {
+      if (evt?.code) {
+        handleScanCode(evt.code);
+      }
+    });
+    return () => unsub();
+  }, [handleScanCode]);
+
   const visibleProducts = useMemo(() => {
     let list = products;
     if (tab === "favorites") {
@@ -307,22 +369,50 @@ export function PosTerminalPage() {
     return () => window.removeEventListener("keydown", onKeyDown);
   }, [stage, customerOpen, discountOpen, paymentOpen, postSaleOpen]);
 
-  async function onHold() {
+  const refreshHeldCount = useCallback(async () => {
+    if (!branchId) return;
+    try {
+      const res = await posApi.listHolds(branchId);
+      setHeldCount(res.items.length);
+    } catch {
+      setHeldCount(0);
+    }
+  }, [branchId]);
+
+  useEffect(() => {
+    void refreshHeldCount();
+  }, [refreshHeldCount]);
+
+  function onHold() {
+    if (lines.length === 0) {
+      push({ title: "Cart is empty", description: "Add items before holding a sale.", tone: "info" });
+      return;
+    }
+    setHoldOpen(true);
+  }
+
+  async function handleConfirmHold(data: { customerName?: string; reference: string; notes: string }) {
     if (!branchId || !organizationId || lines.length === 0) return;
     setBusy(true);
     try {
+      const combinedNotes = [data.reference, data.notes].filter(Boolean).join(" · ") || notes || undefined;
       await posApi.holdSale({
         organizationId,
         branchId,
         warehouseId: branchId,
         customerId: customer.id,
-        notes: notes || undefined,
-        holdLabel: customer.label,
+        notes: combinedNotes,
+        holdLabel: data.customerName || customer.label || "Held Sale",
         cartSnapshot: buildSnapshot(),
       });
-      push({ title: "Sale held", description: "Open Held Sales to resume.", tone: "success" });
+      push({
+        title: "Sale held successfully",
+        description: "Transaction parked. Open Held Sales to resume at any time.",
+        tone: "success",
+      });
       newSale();
-      navigate("/pos/sales/held");
+      setStage("terminal");
+      void refreshHeldCount();
     } catch (err) {
       push({
         title: "Hold failed",
@@ -332,6 +422,14 @@ export function PosTerminalPage() {
     } finally {
       setBusy(false);
     }
+  }
+
+  function handleResumeHeld(snapshot: Record<string, unknown>) {
+    restoreFromHold(snapshot);
+    setResumeOpen(false);
+    setStage("terminal");
+    void refreshHeldCount();
+    push({ title: "Sale resumed into cart", tone: "success" });
   }
 
   function buildPaymentsForPost(override?: PosPaymentLine[]) {
@@ -569,6 +667,21 @@ export function PosTerminalPage() {
       setLastChange(currentChange);
       setPostSaleOpen(true);
 
+      // Trigger cash drawer kick on cash payments
+      const hasCashTender = paymentKind === "cash" || paymentKind === "split" || paymentKind === "partial";
+      if (hasCashTender) {
+        void triggerCashDrawerKick(`Sale #${invoiceNum}`, organizationId ?? undefined);
+      }
+
+      // Broadcast completed sale & change to Customer Pole Display
+      broadcastSalePaymentToCustomerDisplay(
+        totals.grand,
+        currentTenderReceived,
+        currentChange,
+        paymentKind,
+        "Electronic & Electrical Store",
+      );
+
       // Reset cart, stage, and tender
       newSale();
       setStage("terminal");
@@ -648,7 +761,33 @@ export function PosTerminalPage() {
               Back to POS Command Center
             </Link>
             <div className="flex items-center gap-3 text-xs text-slate-500">
+              <HardwareStatusPill onOpenScanner={() => setCameraScannerOpen(true)} />
               <span className="font-bold text-slate-800">{isQuick ? "Quick Counter" : "Sale Register"}</span>
+              
+              <Link
+                to="/pos/returns"
+                className="flex items-center gap-1 font-bold text-slate-600 hover:text-blue-600 hover:underline"
+                title="Process Returns & Exchanges"
+              >
+                <i className="fa-solid fa-rotate-left text-[11px]" />
+                <span>Returns</span>
+              </Link>
+
+              <button
+                type="button"
+                onClick={() => setResumeOpen(true)}
+                className="flex items-center gap-1 font-bold text-amber-700 hover:text-amber-800 transition"
+                title="View & Resume Parked Sales (F6 to Hold)"
+              >
+                <i className="fa-solid fa-pause text-[11px]" />
+                <span>Held Sales</span>
+                {heldCount > 0 ? (
+                  <span className="rounded-full bg-amber-200 px-1.5 py-0.2 text-[10px] font-black text-amber-900">
+                    {heldCount}
+                  </span>
+                ) : null}
+              </button>
+
               {hasPermission("products.write") ? (
                 <Link
                   to={`/products/new?returnTo=${encodeURIComponent(location.pathname)}`}
@@ -657,9 +796,6 @@ export function PosTerminalPage() {
                   + New Product
                 </Link>
               ) : null}
-              <Link to="/pos/sales/held" className="font-bold text-amber-700 hover:underline">
-                Held Sales
-              </Link>
             </div>
           </div>
 
@@ -668,7 +804,8 @@ export function PosTerminalPage() {
             {(
               [
                 ["products", "Products"],
-                ["cart", "Cart"],
+                ["cart", lines.length ? `Cart (${lines.length})` : "Cart"],
+                ["checkout", "Summary & Pay"],
               ] as const
             ).map(([id, label]) => (
               <button
@@ -680,14 +817,13 @@ export function PosTerminalPage() {
                 }`}
               >
                 {label}
-                {id === "cart" && lines.length ? ` (${lines.length})` : ""}
               </button>
             ))}
           </div>
 
-          {/* Main 2-Zone Desktop Grid */}
-          <div className="pos-terminal-grid min-h-0 flex-1 overflow-hidden">
-            {/* Zone 1: Product Discovery */}
+          {/* Main 3-Zone Desktop Grid: Left (Catalog) | Center (Cart) | Right (Customer + Summary + Pay) */}
+          <div className="pos-terminal-grid-3col min-h-0 flex-1 overflow-hidden">
+            {/* Zone 1: Product Discovery (Left) */}
             <div className={`min-h-0 min-w-0 ${mobilePane === "products" ? "flex" : "hidden"} lg:flex`}>
               <ProductDiscovery
                 search={search}
@@ -711,10 +847,15 @@ export function PosTerminalPage() {
                 loading={loadingProducts}
                 hasMore={products.length >= limit}
                 searchRef={searchRef}
+                onOpenScanner={() => setCameraScannerOpen(true)}
+                onUnknownBarcode={(code) => {
+                  setUnknownBarcode(code);
+                  setUnknownBarcodeOpen(true);
+                }}
               />
             </div>
 
-            {/* Zone 2: Cart Ledger & Checkout CTA */}
+            {/* Zone 2: Cart Ledger (Center) */}
             <div className={`min-h-0 min-w-0 ${mobilePane === "cart" ? "flex" : "hidden"} lg:flex`}>
               <CartZone
                 lines={lines}
@@ -744,6 +885,41 @@ export function PosTerminalPage() {
                 busy={busy}
               />
             </div>
+
+            {/* Zone 3: Customer + Order Summary + Checkout CTA (Right) */}
+            <div className={`min-h-0 min-w-0 ${mobilePane === "checkout" ? "flex" : "hidden"} lg:flex`}>
+              <CheckoutZone
+                customer={customer}
+                totals={totals}
+                paymentKind={paymentKind}
+                onPaymentKind={setPaymentKind}
+                cashReceived={cashReceived}
+                onCashReceived={setCashReceived}
+                couponCode={couponCode}
+                notes={notes}
+                onNotes={setNotes}
+                onSelectCustomer={() => {
+                  setCustomerMode("select");
+                  setCustomerOpen(true);
+                }}
+                onWalkIn={() => setCustomer(emptyCustomer())}
+                onNewCustomer={() => {
+                  setCustomerMode("create");
+                  setCustomerOpen(true);
+                }}
+                onDiscount={() => {
+                  setDiscountScope("invoice");
+                  setDiscountSection("invoice");
+                  setDiscountLine(null);
+                  setDiscountOpen(true);
+                }}
+                onHold={() => void onHold()}
+                onPayment={() => setStage("checkout")}
+                onComplete={() => void completeSale()}
+                onProceedToCheckout={() => setStage("checkout")}
+                busy={busy}
+              />
+            </div>
           </div>
         </>
       )}
@@ -768,6 +944,8 @@ export function PosTerminalPage() {
         allowPriceOverride={allowPriceOverride}
         organizationId={organizationId}
         branchId={branchId}
+        notes={notes}
+        onNotes={setNotes}
         onClose={() => setDiscountOpen(false)}
         onApplyItem={(lineId, amount, percent) => {
           try {
@@ -845,6 +1023,54 @@ export function PosTerminalPage() {
           setStage("terminal");
           searchRef.current?.focus();
         }}
+      />
+
+      {/* Camera & QR Scanner Modal */}
+      <CameraScannerDialog
+        open={cameraScannerOpen}
+        onClose={() => setCameraScannerOpen(false)}
+        onScan={handleScanCode}
+      />
+
+      {/* Unknown Barcode Modal */}
+      <UnknownBarcodeDialog
+        open={unknownBarcodeOpen}
+        barcode={unknownBarcode}
+        hasCreatePermission={hasPermission("products.write") || hasPermission("products.create")}
+        onClose={() => setUnknownBarcodeOpen(false)}
+        onSearchProduct={(code) => {
+          setSearch(code);
+          setTab("all");
+          searchRef.current?.focus();
+        }}
+        onManualEntry={(manualItem) => {
+          addCustomLine(manualItem);
+          push({ title: `Added manual item: ${manualItem.name}`, tone: "success" });
+        }}
+        onCreateProduct={(code) => {
+          navigate(
+            `/products/new?sku=${encodeURIComponent(code)}&barcode=${encodeURIComponent(code)}&returnTo=${encodeURIComponent(location.pathname)}`,
+          );
+        }}
+      />
+
+      {/* Hold Current Sale Modal */}
+      <HoldSaleDialog
+        open={holdOpen}
+        itemCount={lines.length}
+        grandTotal={totals.grand}
+        customer={customer}
+        initialNotes={notes}
+        onClose={() => setHoldOpen(false)}
+        onConfirmHold={handleConfirmHold}
+      />
+
+      {/* Resume Held Sale Modal */}
+      <ResumeSaleDialog
+        open={resumeOpen}
+        branchId={branchId}
+        onClose={() => setResumeOpen(false)}
+        onResume={handleResumeHeld}
       />
     </div>
   );

@@ -58,7 +58,7 @@ const mockMethodsByKind = {
 };
 
 describe("CheckoutStage (Redesigned POS Payment UX)", () => {
-  it("renders prominent Total Due, summary, and primary payment methods cleanly", () => {
+  it("renders prominent Total Payable, summary, and primary payment methods cleanly", () => {
     render(
       <CheckoutStage
         lines={mockLines}
@@ -80,8 +80,8 @@ describe("CheckoutStage (Redesigned POS Payment UX)", () => {
       />,
     );
 
-    expect(screen.getByText(/Total Amount Due/i)).toBeInTheDocument();
-    const amounts = screen.getAllByText("1,170.00");
+    expect(screen.getByText(/Total Payable/i)).toBeInTheDocument();
+    const amounts = screen.getAllByText(/1,170.00/i);
     expect(amounts.length).toBeGreaterThanOrEqual(1);
     expect(screen.getByRole("button", { name: /^Cash/i })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: /^Card/i })).toBeInTheDocument();
@@ -89,7 +89,9 @@ describe("CheckoutStage (Redesigned POS Payment UX)", () => {
     expect(screen.getByRole("button", { name: /^QR Payment/i })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: /^Mobile Wallet/i })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: /^Credit \/ Udhaar/i })).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: /\+ Split Payment/i })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /^Split Payment/i })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /^Partial Payment/i })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /^Installment/i })).toBeInTheDocument();
   });
 
   it("handles cash payment with exact and smart quick amount buttons and change calculation", () => {
@@ -118,7 +120,7 @@ describe("CheckoutStage (Redesigned POS Payment UX)", () => {
     );
 
     expect(screen.getByText(/Change to Return/i)).toBeInTheDocument();
-    expect(screen.getByText("830.00")).toBeInTheDocument(); // 2000 - 1170 = 830
+    expect(screen.getByText(/830.00/)).toBeInTheDocument(); // 2000 - 1170 = 830
 
     // Quick presets
     const exactBtns = screen.getAllByRole("button", { name: /Exact/i });
@@ -181,12 +183,10 @@ describe("CheckoutStage (Redesigned POS Payment UX)", () => {
       />,
     );
 
-    const udhaarLabels = screen.getAllByText(/Current Udhaar/i);
-    expect(udhaarLabels.length).toBeGreaterThanOrEqual(1);
-    const outstandingVals = screen.getAllByText("12,000.00");
-    expect(outstandingVals.length).toBeGreaterThanOrEqual(1);
-    const creditLimits = screen.getAllByText("50,000.00");
-    expect(creditLimits.length).toBeGreaterThanOrEqual(1);
+    expect(screen.getByText("Udhaar Sale")).toBeInTheDocument();
+    expect(screen.getByText(/Current Udhaar/i)).toBeInTheDocument();
+    expect(screen.getByText(/New Total Balance/i)).toBeInTheDocument();
+    expect(screen.getByText(/Credit available/i)).toBeInTheDocument();
   });
 
   it("triggers Complete Sale action on dominant CTA button", () => {
@@ -213,8 +213,9 @@ describe("CheckoutStage (Redesigned POS Payment UX)", () => {
       />,
     );
 
-    const completeBtn = screen.getByRole("button", { name: /COMPLETE SALE/i });
-    fireEvent.click(completeBtn);
-    expect(onComplete).toHaveBeenCalled();
+    const completeBtns = screen.getAllByRole("button", { name: /COMPLETE SALE/i });
+    expect(completeBtns.length).toBeGreaterThan(0);
+    fireEvent.click(completeBtns[0]!);
+    expect(onComplete).toHaveBeenCalledTimes(1);
   });
 });

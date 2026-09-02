@@ -42,6 +42,8 @@ export function ProductDiscovery({
   loading,
   hasMore,
   searchRef,
+  onOpenScanner,
+  onUnknownBarcode,
 }: {
   search: string;
   onSearch: (v: string) => void;
@@ -58,6 +60,8 @@ export function ProductDiscovery({
   loading?: boolean;
   hasMore?: boolean;
   searchRef?: RefObject<HTMLInputElement>;
+  onOpenScanner?: () => void;
+  onUnknownBarcode?: (code: string) => void;
 }) {
   const localRef = useRef<HTMLInputElement>(null);
   const inputRef = searchRef ?? localRef;
@@ -72,11 +76,32 @@ export function ProductDiscovery({
   }, [inputRef]);
 
   function onKeyDown(e: KeyboardEvent<HTMLInputElement>) {
-    if (e.key === "Enter" && products[0]) {
+    if (e.key === "Enter") {
       e.preventDefault();
-      onAdd(products[0]);
-      onSearch("");
+      const trimmed = search.trim().toLowerCase();
+      if (!trimmed) return;
+
+      // Look for exact barcode/SKU match first, else pick top search result
+      const exactMatch = products.find(
+        (p) =>
+          p.sku?.toLowerCase() === trimmed ||
+          p.barcode?.toLowerCase() === trimmed ||
+          p.name.toLowerCase() === trimmed
+      ) ?? (products.length > 0 ? products[0] : null);
+
+      if (exactMatch) {
+        onAdd(exactMatch);
+        onSearch("");
+        inputRef.current?.focus();
+      } else {
+        onUnknownBarcode?.(search.trim());
+      }
     }
+  }
+
+  function handleAddProduct(p: ProductSearchResult) {
+    onAdd(p);
+    inputRef.current?.focus();
   }
 
   const tabs: Array<{ id: ProductTab; label: string; icon: string }> = [
@@ -101,38 +126,51 @@ export function ProductDiscovery({
 
       {/* Search & Tabs Controls */}
       <div className="shrink-0 space-y-1.5 border-b border-slate-200 bg-slate-50/70 p-2">
-        {/* Fast Search Input */}
-        <div className="relative">
-          <i
-            className="fa-solid fa-magnifying-glass absolute left-3 top-1/2 -translate-y-1/2 text-xs text-slate-400"
-            aria-hidden
-          />
-          <input
-            ref={inputRef}
-            type="search"
-            value={search}
-            onChange={(e) => onSearch(e.target.value)}
-            onKeyDown={onKeyDown}
-            placeholder="Scan barcode, SKU, name… (Enter to add)"
-            className="w-full rounded-lg border border-slate-300 bg-white py-1.5 pl-8 pr-8 text-xs font-medium placeholder-slate-400 transition focus:border-blue-500 focus:bg-white focus:outline-none focus:ring-2 focus:ring-blue-500/20"
-            aria-label="Search products"
-            autoComplete="off"
-          />
-          {search ? (
+        {/* Fast Search Input & Camera Scanner Action */}
+        <div className="flex gap-1.5">
+          <div className="relative flex-1">
+            <i
+              className="fa-solid fa-magnifying-glass absolute left-3 top-1/2 -translate-y-1/2 text-xs text-slate-400"
+              aria-hidden
+            />
+            <input
+              ref={inputRef}
+              type="search"
+              value={search}
+              onChange={(e) => onSearch(e.target.value)}
+              onKeyDown={onKeyDown}
+              placeholder="Scan barcode, SKU, name… (Enter to add)"
+              className="w-full rounded-lg border border-slate-300 bg-white py-1.5 pl-8 pr-8 text-xs font-medium placeholder-slate-400 transition focus:border-blue-500 focus:bg-white focus:outline-none focus:ring-2 focus:ring-blue-500/20"
+              aria-label="Search products"
+              autoComplete="off"
+            />
+            {search ? (
+              <button
+                type="button"
+                onClick={() => onSearch("")}
+                className="absolute right-2.5 top-1/2 -translate-y-1/2 text-xs text-slate-400 hover:text-slate-700"
+                aria-label="Clear search"
+              >
+                <i className="fa-solid fa-xmark" />
+              </button>
+            ) : (
+              <i
+                className="fa-solid fa-barcode absolute right-2.5 top-1/2 -translate-y-1/2 text-xs text-slate-400"
+                title="Barcode ready"
+              />
+            )}
+          </div>
+
+          {onOpenScanner ? (
             <button
               type="button"
-              onClick={() => onSearch("")}
-              className="absolute right-2.5 top-1/2 -translate-y-1/2 text-xs text-slate-400 hover:text-slate-700"
-              aria-label="Clear search"
+              onClick={onOpenScanner}
+              title="Open Camera & QR Scanner"
+              className="flex items-center justify-center rounded-lg border border-slate-200 bg-white px-2.5 text-slate-700 transition hover:border-blue-500 hover:bg-blue-50 hover:text-blue-600 shadow-2xs"
             >
-              <i className="fa-solid fa-xmark" />
+              <i className="fa-solid fa-camera text-xs" />
             </button>
-          ) : (
-            <i
-              className="fa-solid fa-barcode absolute right-2.5 top-1/2 -translate-y-1/2 text-xs text-slate-400"
-              title="Barcode ready"
-            />
-          )}
+          ) : null}
         </div>
 
         {/* Filter Tabs */}
@@ -212,16 +250,25 @@ export function ProductDiscovery({
               return (
                 <div
                   key={p.productId}
-                  className={`group relative flex flex-col justify-between rounded-lg border bg-white p-2 transition ${
+                  role="button"
+                  tabIndex={0}
+                  onClick={() => !zero && handleAddProduct(p)}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter" || e.key === " ") {
+                      e.preventDefault();
+                      if (!zero) handleAddProduct(p);
+                    }
+                  }}
+                  className={`group relative flex cursor-pointer flex-col justify-between rounded-lg border bg-white p-2 transition select-none ${
                     zero
-                      ? "border-slate-200 bg-slate-50/60 opacity-75"
-                      : "border-slate-200/90 hover:border-blue-500 hover:shadow-xs"
+                      ? "cursor-not-allowed border-slate-200 bg-slate-50/60 opacity-75"
+                      : "border-slate-200/90 hover:border-blue-500 hover:shadow-xs active:scale-[0.99]"
                   }`}
                 >
                   {/* Top line: image + info */}
                   <div>
                     <div className="flex items-start gap-2">
-                      <div className="flex h-11 w-11 shrink-0 items-center justify-center overflow-hidden rounded-md border border-slate-100 bg-slate-50">
+                      <div className="flex h-10 w-10 shrink-0 items-center justify-center overflow-hidden rounded-md border border-slate-100 bg-slate-50">
                         {p.imageUrl ? (
                           <img src={p.imageUrl} alt="" className="h-full w-full object-cover" />
                         ) : (
@@ -238,7 +285,7 @@ export function ProductDiscovery({
                           </h3>
                           <button
                             type="button"
-                            className="shrink-0 text-slate-300 hover:text-amber-400"
+                            className="shrink-0 p-0.5 text-slate-300 hover:text-amber-400"
                             aria-label={fav ? "Remove favorite" : "Add favorite"}
                             onClick={(e) => {
                               e.stopPropagation();
@@ -274,7 +321,10 @@ export function ProductDiscovery({
                   <button
                     type="button"
                     disabled={zero}
-                    onClick={() => onAdd(p)}
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      handleAddProduct(p);
+                    }}
                     className="mt-1.5 flex w-full items-center justify-center gap-1 rounded-md bg-blue-600 py-1 text-[11px] font-bold text-white transition hover:bg-blue-700 active:scale-98 disabled:cursor-not-allowed disabled:bg-slate-200 disabled:text-slate-400"
                   >
                     <i className="fa-solid fa-plus text-[9px]" aria-hidden />

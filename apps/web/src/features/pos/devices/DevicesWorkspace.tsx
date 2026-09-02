@@ -3,6 +3,7 @@ import { deviceHardware } from "@/features/devices/hardware-service";
 import { hardwareApi } from "@/features/printing/hardware-api";
 import { infrastructureApi } from "@/features/system/infrastructure-api";
 import { PosComingSoonPanel, PosSubPageShell } from "../PosSubPageShell";
+import { CustomerDisplayScreen } from "../hardware/CustomerDisplayScreen";
 import {
   CAPABILITY_FILTER,
   DEVICE_META,
@@ -89,11 +90,27 @@ export function DevicesWorkspace({ mode }: { mode: DeviceWorkspaceMode }) {
   if (mode === "customer-display") {
     return (
       <PosSubPageShell moduleNumber="14" moduleLabel="Devices & Terminal" title={meta.title} description={meta.description}>
-        <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
-          <p className="text-sm text-slate-600">
-            No customer pole display driver is registered in this browser host. Status:{" "}
-            <StatusBadge status="unavailable" />
-          </p>
+        <div className="space-y-4">
+          <div className="flex items-center justify-between rounded-2xl border border-slate-200 bg-white p-4 shadow-xs">
+            <div>
+              <h3 className="text-sm font-bold text-slate-900">Customer Counter & Pole Display</h3>
+              <p className="text-xs text-slate-500">
+                Displays real-time cart items, totals, and payment completion to the customer on a second screen.
+              </p>
+            </div>
+            <button
+              type="button"
+              onClick={() => {
+                window.open("/pos/devices/customer-display", "CustomerDisplay", "width=800,height=600");
+              }}
+              className="flex items-center gap-2 rounded-xl bg-blue-600 px-4 py-2 text-xs font-bold text-white shadow-xs hover:bg-blue-700"
+            >
+              <i className="fa-solid fa-up-right-from-square text-xs" />
+              <span>Open in Separate Monitor / Window</span>
+            </button>
+          </div>
+
+          <CustomerDisplayScreen />
         </div>
       </PosSubPageShell>
     );

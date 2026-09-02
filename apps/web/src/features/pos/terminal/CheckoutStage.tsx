@@ -4,8 +4,18 @@ import { lineTotal, tenderToMethodKind } from "../types";
 import { money } from "../format";
 import { roundMoney } from "../payments/payment-utils";
 
-type PrimaryPaymentCategory = "cash" | "card" | "bank" | "qr" | "wallet" | "credit" | "split";
-type SubWalletKind = "jazzcash" | "easypaisa" | "sadapay" | "wallet";
+export type PrimaryPaymentCategory =
+  | "cash"
+  | "card"
+  | "bank"
+  | "qr"
+  | "wallet"
+  | "split"
+  | "partial"
+  | "credit"
+  | "installment";
+
+export type SubWalletKind = "jazzcash" | "easypaisa" | "sadapay" | "wallet";
 
 interface SplitPaymentRow {
   id: string;
@@ -36,6 +46,7 @@ export interface CheckoutStageProps {
     subtotal: number;
     totalDiscount: number;
     deliveryCharges?: number;
+    roundOff?: number;
     grand: number;
     expectedProfit?: number | null;
   };
@@ -57,22 +68,25 @@ export interface CheckoutStageProps {
   busy?: boolean;
 }
 
-const PRIMARY_PAYMENT_METHODS: Array<{
+export const PRIMARY_PAYMENT_METHODS: Array<{
   id: PrimaryPaymentCategory;
   label: string;
   icon: string;
   color: string;
-  badge?: string;
+  subtitle: string;
 }> = [
-  { id: "cash", label: "Cash", icon: "fa-money-bill-wave", color: "text-emerald-600" },
-  { id: "card", label: "Card", icon: "fa-credit-card", color: "text-blue-600" },
-  { id: "bank", label: "Bank Transfer", icon: "fa-building-columns", color: "text-indigo-600" },
-  { id: "qr", label: "QR Payment", icon: "fa-qrcode", color: "text-purple-600" },
-  { id: "wallet", label: "Mobile Wallet", icon: "fa-mobile-screen-button", color: "text-amber-600" },
-  { id: "credit", label: "Credit / Udhaar", icon: "fa-book-bookmark", color: "text-rose-600" },
+  { id: "cash", label: "Cash", icon: "fa-money-bill-wave", color: "text-emerald-600", subtitle: "Cash & Change" },
+  { id: "card", label: "Card", icon: "fa-credit-card", color: "text-blue-600", subtitle: "Debit / Credit POS" },
+  { id: "bank", label: "Bank Transfer", icon: "fa-building-columns", color: "text-indigo-600", subtitle: "Online IBFT" },
+  { id: "qr", label: "QR Payment", icon: "fa-qrcode", color: "text-purple-600", subtitle: "Raast / EMVCo QR" },
+  { id: "wallet", label: "Mobile Wallet", icon: "fa-mobile-screen-button", color: "text-amber-600", subtitle: "JazzCash / Easy" },
+  { id: "split", label: "Split Payment", icon: "fa-code-fork", color: "text-sky-600", subtitle: "Multi-Tender" },
+  { id: "partial", label: "Partial Payment", icon: "fa-calculator", color: "text-teal-600", subtitle: "Pay Now + Due" },
+  { id: "credit", label: "Credit / Udhaar", icon: "fa-book-bookmark", color: "text-rose-600", subtitle: "Customer Ledger" },
+  { id: "installment", label: "Installment", icon: "fa-calendar-days", color: "text-violet-600", subtitle: "Monthly Schedule" },
 ];
 
-const MOBILE_WALLETS: Array<{
+export const MOBILE_WALLETS: Array<{
   id: SubWalletKind;
   label: string;
   icon: string;
@@ -108,6 +122,8 @@ export function CheckoutStage({
   // Determine active primary category
   const [selectedCategory, setSelectedCategory] = useState<PrimaryPaymentCategory>(() => {
     if (paymentKind === "split") return "split";
+    if (paymentKind === "installment") return "installment";
+    if (paymentKind === "partial") return "partial";
     if (["jazzcash", "easypaisa", "sadapay", "wallet"].includes(paymentKind)) return "wallet";
     if (["card", "bank", "qr", "credit"].includes(paymentKind)) return paymentKind as PrimaryPaymentCategory;
     return "cash";
@@ -126,6 +142,14 @@ export function CheckoutStage({
   const [walletPhone, setWalletPhone] = useState(customer.mobile || "");
   const [creditDownPayment, setCreditDownPayment] = useState<number>(0);
 
+  // Partial Payment State
+  const [partialPaidAmount, setPartialPaidAmount] = useState<number>(() => roundMoney(totals.grand * 0.5));
+  const [partialMethod, setPartialMethod] = useState<PosPaymentKind>("cash");
+
+  // Installment Plan State
+  const [installmentDownPayment, setInstallmentDownPayment] = useState<number>(() => roundMoney(totals.grand * 0.2));
+  const [installmentCount, setInstallmentCount] = useState<number>(6);
+
   // Split rows state
   const [splitRows, setSplitRows] = useState<SplitPaymentRow[]>(() => [
     newSplitRow("cash", String(roundMoney(totals.grand / 2))),
@@ -137,6 +161,8 @@ export function CheckoutStage({
     setSelectedCategory(cat);
     if (cat === "wallet") {
       onPaymentKind(activeSubWallet);
+    } else if (cat === "partial" || cat === "installment") {
+      onPaymentKind(cat as PosPaymentKind);
     } else {
       onPaymentKind(cat as PosPaymentKind);
     }
@@ -151,6 +177,7 @@ export function CheckoutStage({
   const currentCash = cashReceived != null ? cashReceived : totals.grand;
   const changeToReturn = Math.max(0, roundMoney(currentCash - totals.grand));
   const isCashShort = selectedCategory === "cash" && currentCash + 1e-9 < totals.grand;
+  const balanceRemaining = Math.max(0, roundMoney(totals.grand - currentCash));
 
   // Smart Cash Preset Denominations
   const smartQuickAmounts = useMemo(() => {
@@ -160,7 +187,7 @@ export function CheckoutStage({
     const standardDenominations = [500, 1000, 2000, 5000, 10000];
     const filtered = standardDenominations.filter((d) => d > grand);
 
-    // If grand total is between two denominations, add the next immediate round multiple
+    // If grand total is between denominations, add the next immediate round multiple of 500
     if (grand > 500 && grand % 500 !== 0) {
       const next500 = Math.ceil(grand / 500) * 500;
       if (!filtered.includes(next500)) {
@@ -182,10 +209,18 @@ export function CheckoutStage({
   const splitRemaining = roundMoney(totals.grand - totalSplitAllocated);
   const isSplitExact = Math.abs(splitRemaining) <= 0.01;
 
+  // Partial Calculations
+  const partialBalanceDue = Math.max(0, roundMoney(totals.grand - partialPaidAmount));
+  const partialNewUdhaar = roundMoney(customer.outstanding + partialBalanceDue);
+
   // Credit Calculations
   const newUdhaarBalance = roundMoney(customer.outstanding + totals.grand - creditDownPayment);
   const isCreditOverLimit = customer.creditLimit > 0 && newUdhaarBalance > customer.creditLimit;
   const creditHeadroom = Math.max(0, roundMoney(customer.creditLimit - (customer.outstanding + totals.grand)));
+
+  // Installment Calculations
+  const installmentPrincipal = Math.max(0, roundMoney(totals.grand - installmentDownPayment));
+  const monthlyInstallment = installmentCount > 0 ? roundMoney(installmentPrincipal / installmentCount) : 0;
 
   function resolveMethodId(kind: PosPaymentKind): string | null {
     const mapped = tenderToMethodKind(kind);
@@ -205,7 +240,9 @@ export function CheckoutStage({
     // 1. Cash Validation
     if (selectedCategory === "cash") {
       if (isCashShort) {
-        alert(`Cash received (Rs. ${money(currentCash)}) is less than total due (Rs. ${money(totals.grand)}). Short by Rs. ${money(totals.grand - currentCash)}`);
+        alert(
+          `Cash received (Rs. ${money(currentCash)}) is less than total due (Rs. ${money(totals.grand)}). Balance remaining: Rs. ${money(balanceRemaining)}`,
+        );
         return;
       }
       onComplete();
@@ -215,7 +252,7 @@ export function CheckoutStage({
     // 2. Credit / Udhaar Validation
     if (selectedCategory === "credit") {
       if (!customer.id) {
-        alert("Credit / Udhaar sale requires an attached customer. Please select or add a customer.");
+        alert("Credit / Udhaar sale requires an attached registered customer. Please select or add a customer.");
         onSelectCustomer();
         return;
       }
@@ -237,10 +274,65 @@ export function CheckoutStage({
       return;
     }
 
-    // 3. Split Payment Validation
+    // 3. Partial Payment Validation
+    if (selectedCategory === "partial") {
+      if (!customer.id) {
+        alert("Partial payment requires an attached customer for remaining balance due. Please select a customer.");
+        onSelectCustomer();
+        return;
+      }
+      if (partialPaidAmount <= 0) {
+        alert("Partial payment amount paid today must be greater than 0.");
+        return;
+      }
+      if (partialPaidAmount >= totals.grand) {
+        alert("Partial payment paid amount is equal to or greater than total. Please select standard payment.");
+        return;
+      }
+      const partialLines: PosPaymentLine[] = [
+        {
+          kind: partialMethod,
+          paymentMethodId: resolveMethodId(partialMethod),
+          amount: partialPaidAmount,
+          amountReceived: partialPaidAmount,
+          reference: reference ? `Partial Payment: ${reference}` : `Partial Payment (Bal Rs. ${money(partialBalanceDue)})`,
+        },
+      ];
+      onComplete(partialLines);
+      return;
+    }
+
+    // 4. Installment Plan Validation
+    if (selectedCategory === "installment") {
+      if (!customer.id) {
+        alert("Installment plan requires an attached registered customer. Please select or add a customer.");
+        onSelectCustomer();
+        return;
+      }
+      if (installmentDownPayment > 0) {
+        const cashId = resolveMethodId("cash");
+        const installLines: PosPaymentLine[] = [
+          {
+            kind: "cash",
+            paymentMethodId: cashId,
+            amount: installmentDownPayment,
+            amountReceived: installmentDownPayment,
+            reference: `Down Payment: ${installmentCount}M plan`,
+          },
+        ];
+        onComplete(installLines);
+        return;
+      }
+      onComplete([]);
+      return;
+    }
+
+    // 5. Split Payment Validation
     if (selectedCategory === "split") {
       if (!isSplitExact) {
-        alert(`Split total (Rs. ${money(totalSplitAllocated)}) must match Total Due (Rs. ${money(totals.grand)}). Remaining difference: Rs. ${money(splitRemaining)}`);
+        alert(
+          `Split total (Rs. ${money(totalSplitAllocated)}) must match Total Due (Rs. ${money(totals.grand)}). Remaining difference: Rs. ${money(splitRemaining)}`,
+        );
         return;
       }
       const splitLines: PosPaymentLine[] = splitRows
@@ -256,7 +348,7 @@ export function CheckoutStage({
       return;
     }
 
-    // 4. Digital / Card / Bank / QR / Mobile Wallet
+    // 6. Digital / Card / Bank / QR / Mobile Wallet
     const targetKind: PosPaymentKind = selectedCategory === "wallet" ? activeSubWallet : (selectedCategory as PosPaymentKind);
     const pMethodId = resolveMethodId(targetKind);
     const fullRef = [
@@ -279,7 +371,7 @@ export function CheckoutStage({
     onComplete(digitalLines);
   }
 
-  // Keyboard shortcut listener for Enter / F8 / Esc
+  // Keyboard shortcut listener for Enter / Esc
   useEffect(() => {
     function onKeyDown(e: KeyboardEvent) {
       if (e.key === "Escape") {
@@ -310,10 +402,10 @@ export function CheckoutStage({
           </button>
           <div>
             <h1 className="text-sm font-black uppercase tracking-wider text-slate-900">
-              Complete Payment
+              POS Terminal Checkout
             </h1>
             <p className="text-[10px] text-slate-400">
-              {lines.length} {lines.length === 1 ? "Item" : "Items"} · {totals.totalQty} Units · Review & Finalize
+              {lines.length} {lines.length === 1 ? "Item" : "Items"} · {totals.totalQty} Units · Settle & Finalize
             </p>
           </div>
         </div>
@@ -365,7 +457,7 @@ export function CheckoutStage({
       </header>
 
       {/* 2. MAIN 2-COLUMN CHECKOUT PANEL */}
-      <div className="grid min-h-0 flex-1 grid-cols-1 overflow-hidden lg:grid-cols-[minmax(320px,1.1fr)_minmax(420px,1.3fr)]">
+      <div className="grid min-h-0 flex-1 grid-cols-1 overflow-hidden lg:grid-cols-[minmax(340px,1.15fr)_minmax(420px,1.35fr)]">
         {/* ========================================================
             LEFT COLUMN: ORDER SUMMARY & PROMINENT DUE CARD
            ======================================================== */}
@@ -375,10 +467,10 @@ export function CheckoutStage({
             <div className="flex items-center justify-between">
               <div>
                 <span className="text-[11px] font-black uppercase tracking-widest text-blue-300">
-                  Total Amount Due
+                  Total Payable
                 </span>
                 <p className="text-3xl font-black tracking-tight text-white">
-                  {money(totals.grand)}
+                  Rs. {money(totals.grand)}
                 </p>
               </div>
               <div className="text-right">
@@ -389,24 +481,33 @@ export function CheckoutStage({
               </div>
             </div>
 
-            {/* Quick Summary Strip */}
-            <div className="mt-3 flex items-center justify-between border-t border-slate-800 pt-2 text-xs text-slate-300">
-              <span>Subtotal: {money(totals.subtotal)}</span>
-              <span className="flex items-center gap-1">
+            {/* Financial Summary Strip */}
+            <div className="mt-3 grid grid-cols-3 gap-2 border-t border-slate-800 pt-2 text-xs text-slate-300">
+              <div>
+                <span className="text-[10px] text-slate-400 block uppercase">Subtotal</span>
+                <span className="font-bold">{money(totals.subtotal)}</span>
+              </div>
+              <div>
+                <div className="flex items-center gap-1">
+                  <span className="text-[10px] text-slate-400 uppercase">Discounts</span>
+                  {onDiscount ? (
+                    <button
+                      type="button"
+                      onClick={onDiscount}
+                      className="text-[9px] font-bold text-blue-400 hover:underline"
+                    >
+                      ({totals.invoiceDiscount > 0 ? "Edit" : "+ Add"})
+                    </button>
+                  ) : null}
+                </div>
                 <span className={totals.totalDiscount > 0 ? "font-bold text-emerald-400" : ""}>
-                  Disc: {totals.totalDiscount > 0 ? `−${money(totals.totalDiscount)}` : "0.00"}
+                  {totals.totalDiscount > 0 ? `−${money(totals.totalDiscount)}` : "0.00"}
                 </span>
-                {onDiscount ? (
-                  <button
-                    type="button"
-                    onClick={onDiscount}
-                    className="text-[10px] font-bold text-blue-400 hover:underline"
-                  >
-                    ({couponCode ? `Coupon: ${couponCode}` : totals.invoiceDiscount > 0 ? "Edit" : "+ Add"})
-                  </button>
-                ) : null}
-              </span>
-              <span>Tax: {money(totals.tax)}</span>
+              </div>
+              <div className="text-right">
+                <span className="text-[10px] text-slate-400 block uppercase">GST / Tax</span>
+                <span className="font-bold">{money(totals.tax)}</span>
+              </div>
             </div>
           </div>
 
@@ -414,7 +515,7 @@ export function CheckoutStage({
           <div className="pos-zone-scroll flex-1 p-3 space-y-1.5">
             <div className="flex items-center justify-between text-[10px] font-bold uppercase tracking-wider text-slate-400 px-1 pb-1 border-b border-slate-100">
               <span>Item details</span>
-              <span className="text-right">Total</span>
+              <span className="text-right">Subtotal</span>
             </div>
 
             {lines.map((line, idx) => (
@@ -431,7 +532,7 @@ export function CheckoutStage({
                       {line.name}
                     </p>
                     <p className="text-[10px] text-slate-400">
-                      {line.qty} {line.unitLabel} × {money(line.rate)}
+                      SKU: {line.sku || "—"} · {line.qty} {line.unitLabel} × {money(line.rate)}
                       {line.discount > 0 ? ` (Disc: −${money(line.discount)})` : ""}
                     </p>
                   </div>
@@ -443,8 +544,47 @@ export function CheckoutStage({
             ))}
           </div>
 
-          {/* Customer Meta & Notes Ledger */}
+          {/* Financial Breakdown Table & Customer Ledger Strip */}
           <div className="shrink-0 border-t border-slate-200 bg-slate-50/80 p-3 space-y-2">
+            <div className="rounded-lg border border-slate-200/90 bg-white p-2.5 text-[11px] space-y-1">
+              <div className="flex justify-between text-slate-600">
+                <span>Subtotal</span>
+                <span className="font-bold text-slate-900">{money(totals.subtotal)}</span>
+              </div>
+              {totals.itemDiscount > 0 ? (
+                <div className="flex justify-between text-emerald-700 font-semibold">
+                  <span>Item Discounts</span>
+                  <span>−{money(totals.itemDiscount)}</span>
+                </div>
+              ) : null}
+              {totals.invoiceDiscount > 0 ? (
+                <div className="flex justify-between text-emerald-700 font-semibold">
+                  <span>Invoice Discount {couponCode ? `(${couponCode})` : ""}</span>
+                  <span>−{money(totals.invoiceDiscount)}</span>
+                </div>
+              ) : null}
+              {totals.taxable > 0 ? (
+                <div className="flex justify-between text-slate-400 text-[10px]">
+                  <span>Taxable Base</span>
+                  <span>{money(totals.taxable)}</span>
+                </div>
+              ) : null}
+              <div className="flex justify-between text-slate-600">
+                <span>Sales Tax (GST 17%)</span>
+                <span>{money(totals.tax)}</span>
+              </div>
+              {totals.deliveryCharges ? (
+                <div className="flex justify-between text-slate-600">
+                  <span>Delivery Charges</span>
+                  <span>+{money(totals.deliveryCharges)}</span>
+                </div>
+              ) : null}
+              <div className="flex justify-between text-slate-400 text-[10px] border-t border-slate-100 pt-1">
+                <span>Round Off</span>
+                <span>0.00</span>
+              </div>
+            </div>
+
             {customer.id ? (
               <div className="grid grid-cols-3 gap-1 rounded-lg border border-slate-200 bg-white p-2 text-center text-[10px]">
                 <div>
@@ -482,24 +622,15 @@ export function CheckoutStage({
         <section className="flex min-h-0 flex-col bg-slate-50" aria-label="Payment selection">
           {/* Scrollable Middle Area */}
           <div className="pos-zone-scroll flex-1 p-4 space-y-4">
-            {/* 1. SELECT PAYMENT METHOD TABS */}
+            {/* 1. SELECT PAYMENT METHOD GRID */}
             <div>
               <div className="mb-2 flex items-center justify-between">
                 <span className="text-xs font-black uppercase tracking-wider text-slate-700">
                   Select Payment Method
                 </span>
-                <button
-                  type="button"
-                  onClick={() => handleSelectCategory("split")}
-                  className={`inline-flex items-center gap-1 rounded-md px-2 py-1 text-xs font-bold transition ${
-                    selectedCategory === "split"
-                      ? "bg-blue-600 text-white shadow-xs"
-                      : "border border-blue-200 bg-blue-50 text-blue-700 hover:bg-blue-100"
-                  }`}
-                >
-                  <i className="fa-solid fa-code-fork text-[10px]" />
-                  <span>+ Split Payment</span>
-                </button>
+                <span className="text-[10px] font-bold text-slate-400">
+                  {PRIMARY_PAYMENT_METHODS.find((m) => m.id === selectedCategory)?.subtitle}
+                </span>
               </div>
 
               {/* Clean Selectable Cards */}
@@ -511,37 +642,27 @@ export function CheckoutStage({
                       key={m.id}
                       type="button"
                       onClick={() => handleSelectCategory(m.id)}
-                      className={`relative flex items-center gap-2.5 rounded-xl border p-3 text-left transition ${
+                      className={`relative flex items-center gap-2 rounded-xl border p-2.5 text-left transition ${
                         isActive
                           ? "border-blue-600 bg-white shadow-sm ring-2 ring-blue-600/30"
                           : "border-slate-200 bg-white hover:border-slate-300 hover:bg-slate-50/70"
                       }`}
                     >
                       <div
-                        className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-lg ${
+                        className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-lg ${
                           isActive ? "bg-blue-600 text-white" : "bg-slate-100 text-slate-600"
                         }`}
                       >
-                        <i className={`fa-solid ${m.icon} text-sm`} />
+                        <i className={`fa-solid ${m.icon} text-xs`} />
                       </div>
                       <div className="min-w-0 flex-1">
                         <p className={`text-xs font-black truncate ${isActive ? "text-blue-700" : "text-slate-900"}`}>
                           {m.label}
                         </p>
-                        <p className="text-[10px] text-slate-400">
-                          {m.id === "cash"
-                            ? "Cash & Change"
-                            : m.id === "card"
-                              ? "Debit / Credit"
-                              : m.id === "wallet"
-                                ? "JazzCash / Easy"
-                                : m.id === "credit"
-                                  ? "Account Ledger"
-                                  : "Instant Bank"}
-                        </p>
+                        <p className="text-[9px] text-slate-400 truncate">{m.subtitle}</p>
                       </div>
                       {isActive ? (
-                        <div className="absolute top-2 right-2 flex h-4 w-4 items-center justify-center rounded-full bg-blue-600 text-[9px] font-bold text-white">
+                        <div className="absolute top-1.5 right-1.5 flex h-3.5 w-3.5 items-center justify-center rounded-full bg-blue-600 text-[8px] font-bold text-white">
                           ✓
                         </div>
                       ) : null}
@@ -561,9 +682,9 @@ export function CheckoutStage({
                 <div className="flex items-center justify-between border-b border-slate-100 pb-2.5">
                   <div>
                     <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400">
-                      Amount Due
+                      Total Due
                     </span>
-                    <p className="text-xl font-black text-slate-900">{money(totals.grand)}</p>
+                    <p className="text-xl font-black text-slate-900">Rs. {money(totals.grand)}</p>
                   </div>
                   <div className="text-right">
                     <span className="inline-flex items-center gap-1 rounded-full bg-emerald-100 px-2.5 py-0.5 text-[11px] font-bold text-emerald-800">
@@ -600,7 +721,7 @@ export function CheckoutStage({
                 {/* Smart Quick Amount Buttons */}
                 <div>
                   <span className="block text-[10px] font-bold uppercase tracking-wider text-slate-400 mb-1.5">
-                    Quick Cash Presets
+                    Quick Amounts
                   </span>
                   <div className="flex flex-wrap gap-1.5">
                     {smartQuickAmounts.map((q) => (
@@ -632,10 +753,10 @@ export function CheckoutStage({
                 >
                   <div>
                     <span className="text-[10px] font-black uppercase tracking-wider">
-                      {isCashShort ? "Amount Short" : "Change to Return"}
+                      {isCashShort ? "Balance Remaining / Short" : "Change to Return"}
                     </span>
                     <p className={`text-2xl font-black ${isCashShort ? "text-red-600" : "text-emerald-700"}`}>
-                      {isCashShort ? `−${money(totals.grand - currentCash)}` : money(changeToReturn)}
+                      {isCashShort ? `−Rs. ${money(balanceRemaining)}` : `Rs. ${money(changeToReturn)}`}
                     </p>
                   </div>
 
@@ -645,7 +766,7 @@ export function CheckoutStage({
                         ? "Insufficient cash"
                         : changeToReturn === 0
                           ? "Exact amount"
-                          : "Give change"}
+                          : "Give change to customer"}
                     </span>
                   </div>
                 </div>
@@ -662,7 +783,7 @@ export function CheckoutStage({
                     <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400">
                       Amount Due
                     </span>
-                    <p className="text-xl font-black text-slate-900">{money(totals.grand)}</p>
+                    <p className="text-xl font-black text-slate-900">Rs. {money(totals.grand)}</p>
                   </div>
                   <span className="inline-flex items-center gap-1 rounded-full bg-blue-100 px-2.5 py-0.5 text-[11px] font-bold text-blue-800">
                     <i className="fa-solid fa-credit-card" />
@@ -718,11 +839,11 @@ export function CheckoutStage({
                     <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400">
                       Amount Due
                     </span>
-                    <p className="text-xl font-black text-slate-900">{money(totals.grand)}</p>
+                    <p className="text-xl font-black text-slate-900">Rs. {money(totals.grand)}</p>
                   </div>
                   <span className="inline-flex items-center gap-1 rounded-full bg-indigo-100 px-2.5 py-0.5 text-[11px] font-bold text-indigo-800">
                     <i className="fa-solid fa-building-columns" />
-                    <span>Direct Transfer</span>
+                    <span>Direct IBFT</span>
                   </span>
                 </div>
 
@@ -758,7 +879,7 @@ export function CheckoutStage({
                     <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400">
                       Amount Due
                     </span>
-                    <p className="text-xl font-black text-slate-900">{money(totals.grand)}</p>
+                    <p className="text-xl font-black text-slate-900">Rs. {money(totals.grand)}</p>
                   </div>
                   <span className="inline-flex items-center gap-1 rounded-full bg-purple-100 px-2.5 py-0.5 text-[11px] font-bold text-purple-800">
                     <i className="fa-solid fa-qrcode" />
@@ -794,7 +915,7 @@ export function CheckoutStage({
             )}
 
             {/* ========================================================
-                E. MOBILE WALLET FORM (Reveals JazzCash, EasyPaisa, etc.)
+                E. MOBILE WALLET FORM (JazzCash, EasyPaisa, SadaPay, etc.)
                ======================================================== */}
             {selectedCategory === "wallet" && (
               <div className="space-y-3 rounded-2xl border border-amber-200 bg-white p-4 shadow-xs">
@@ -803,7 +924,7 @@ export function CheckoutStage({
                     <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400">
                       Amount Due
                     </span>
-                    <p className="text-xl font-black text-slate-900">{money(totals.grand)}</p>
+                    <p className="text-xl font-black text-slate-900">Rs. {money(totals.grand)}</p>
                   </div>
                   <span className="inline-flex items-center gap-1 rounded-full bg-amber-100 px-2.5 py-0.5 text-[11px] font-bold text-amber-800">
                     <i className="fa-solid fa-mobile-screen-button" />
@@ -873,96 +994,16 @@ export function CheckoutStage({
             )}
 
             {/* ========================================================
-                F. CREDIT / UDHAAR FORM
-               ======================================================== */}
-            {selectedCategory === "credit" && (
-              <div className="space-y-3 rounded-2xl border border-rose-200 bg-white p-4 shadow-xs">
-                <div className="flex items-center justify-between border-b border-slate-100 pb-2.5">
-                  <div>
-                    <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400">
-                      Amount Due
-                    </span>
-                    <p className="text-xl font-black text-slate-900">{money(totals.grand)}</p>
-                  </div>
-                  <span className="inline-flex items-center gap-1 rounded-full bg-rose-100 px-2.5 py-0.5 text-[11px] font-bold text-rose-800">
-                    <i className="fa-solid fa-book-bookmark" />
-                    <span>Udhaar Sale</span>
-                  </span>
-                </div>
-
-                {!customer.id ? (
-                  <div className="rounded-xl border border-amber-300 bg-amber-50 p-4 text-center space-y-2">
-                    <div className="mx-auto flex h-10 w-10 items-center justify-center rounded-full bg-amber-200 text-amber-800">
-                      <i className="fa-solid fa-triangle-exclamation text-base" />
-                    </div>
-                    <p className="text-xs font-bold text-amber-900">
-                      Customer is required for Credit / Udhaar sales
-                    </p>
-                    <button
-                      type="button"
-                      onClick={onSelectCustomer}
-                      className="rounded-lg bg-blue-600 px-4 py-2 text-xs font-bold text-white shadow-xs hover:bg-blue-700"
-                    >
-                      + Select or Create Customer
-                    </button>
-                  </div>
-                ) : (
-                  <div className="space-y-3">
-                    <div className="grid grid-cols-3 gap-2 rounded-xl border border-slate-200 bg-slate-50 p-3 text-center text-xs">
-                      <div>
-                        <span className="text-slate-400 text-[10px] block">Current Udhaar</span>
-                        <span className="text-base font-black text-amber-700">{money(customer.outstanding)}</span>
-                      </div>
-                      <div>
-                        <span className="text-slate-400 text-[10px] block">Credit Limit</span>
-                        <span className="text-base font-bold text-slate-800">{money(customer.creditLimit)}</span>
-                      </div>
-                      <div>
-                        <span className="text-slate-400 text-[10px] block">New Total Balance</span>
-                        <span className="text-base font-black text-slate-900">{money(newUdhaarBalance)}</span>
-                      </div>
-                    </div>
-
-                    {isCreditOverLimit ? (
-                      <p className="rounded-lg bg-red-100 p-2 text-xs font-bold text-red-700">
-                        Warning: Sale exceeds customer's credit limit by Rs. {money(newUdhaarBalance - customer.creditLimit)}.
-                      </p>
-                    ) : (
-                      <p className="text-[11px] text-emerald-700 font-medium">
-                        ✓ Credit available: Rs. {money(creditHeadroom)} remaining limit.
-                      </p>
-                    )}
-
-                    <div>
-                      <label className="block text-xs font-bold text-slate-700 mb-1">
-                        Optional Cash Down Payment Paid Today
-                      </label>
-                      <input
-                        type="number"
-                        min={0}
-                        max={totals.grand}
-                        value={creditDownPayment || ""}
-                        onChange={(e) => setCreditDownPayment(Number(e.target.value) || 0)}
-                        placeholder="0.00 (Full amount to Udhaar)"
-                        className="w-full rounded-lg border border-slate-200 bg-white p-2 text-xs text-right font-bold text-slate-900 focus:border-rose-500 focus:outline-none"
-                      />
-                    </div>
-                  </div>
-                )}
-              </div>
-            )}
-
-            {/* ========================================================
-                G. SPLIT PAYMENT FORM
+                F. SPLIT PAYMENT FORM
                ======================================================== */}
             {selectedCategory === "split" && (
-              <div className="space-y-3 rounded-2xl border border-blue-200 bg-white p-4 shadow-xs">
+              <div className="space-y-3 rounded-2xl border border-sky-200 bg-white p-4 shadow-xs">
                 <div className="flex items-center justify-between border-b border-slate-100 pb-2.5">
                   <div>
                     <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400">
                       Total Due to Split
                     </span>
-                    <p className="text-xl font-black text-slate-900">{money(totals.grand)}</p>
+                    <p className="text-xl font-black text-slate-900">Rs. {money(totals.grand)}</p>
                   </div>
                   <div className="flex items-center gap-1">
                     <span
@@ -1002,6 +1043,7 @@ export function CheckoutStage({
                           <option value="bank">Bank</option>
                           <option value="jazzcash">JazzCash</option>
                           <option value="easypaisa">Easypaisa</option>
+                          <option value="sadapay">SadaPay</option>
                           <option value="qr">QR Code</option>
                         </select>
                       </div>
@@ -1077,6 +1119,263 @@ export function CheckoutStage({
                 </div>
               </div>
             )}
+
+            {/* ========================================================
+                G. PARTIAL PAYMENT FORM
+               ======================================================== */}
+            {selectedCategory === "partial" && (
+              <div className="space-y-3 rounded-2xl border border-teal-200 bg-white p-4 shadow-xs">
+                <div className="flex items-center justify-between border-b border-slate-100 pb-2.5">
+                  <div>
+                    <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400">
+                      Total Invoice Amount
+                    </span>
+                    <p className="text-xl font-black text-slate-900">Rs. {money(totals.grand)}</p>
+                  </div>
+                  <span className="inline-flex items-center gap-1 rounded-full bg-teal-100 px-2.5 py-0.5 text-[11px] font-bold text-teal-800">
+                    <i className="fa-solid fa-calculator" />
+                    <span>Partial Settlement</span>
+                  </span>
+                </div>
+
+                {!customer.id ? (
+                  <div className="rounded-xl border border-amber-300 bg-amber-50 p-4 text-center space-y-2">
+                    <div className="mx-auto flex h-10 w-10 items-center justify-center rounded-full bg-amber-200 text-amber-800">
+                      <i className="fa-solid fa-triangle-exclamation text-base" />
+                    </div>
+                    <p className="text-xs font-bold text-amber-900">
+                      Customer is required for Partial Payments to record remaining balance due.
+                    </p>
+                    <button
+                      type="button"
+                      onClick={onSelectCustomer}
+                      className="rounded-lg bg-blue-600 px-4 py-2 text-xs font-bold text-white shadow-xs hover:bg-blue-700"
+                    >
+                      + Select or Create Customer
+                    </button>
+                  </div>
+                ) : (
+                  <div className="space-y-3">
+                    <div className="grid grid-cols-2 gap-2">
+                      <div>
+                        <label className="block text-xs font-bold text-slate-700 mb-1">
+                          Amount Paid Today (Rs.)
+                        </label>
+                        <input
+                          type="number"
+                          min={0}
+                          max={totals.grand}
+                          value={partialPaidAmount || ""}
+                          onChange={(e) => setPartialPaidAmount(Number(e.target.value) || 0)}
+                          placeholder="0.00"
+                          className="w-full rounded-lg border border-slate-300 bg-white p-2 text-sm font-black text-slate-900 focus:border-teal-500 focus:outline-none"
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-xs font-bold text-slate-700 mb-1">
+                          Payment Tender Used
+                        </label>
+                        <select
+                          value={partialMethod}
+                          onChange={(e) => setPartialMethod(e.target.value as PosPaymentKind)}
+                          className="w-full rounded-lg border border-slate-300 bg-white p-2 text-xs font-bold text-slate-800"
+                        >
+                          <option value="cash">Cash</option>
+                          <option value="card">Card POS</option>
+                          <option value="bank">Bank Transfer</option>
+                          <option value="jazzcash">JazzCash</option>
+                          <option value="easypaisa">Easypaisa</option>
+                        </select>
+                      </div>
+                    </div>
+
+                    {/* Breakdown of Partial + Ledger */}
+                    <div className="grid grid-cols-3 gap-2 rounded-xl border border-slate-200 bg-slate-50 p-3 text-center text-xs">
+                      <div>
+                        <span className="text-slate-400 text-[10px] block">Paid Today</span>
+                        <span className="text-base font-black text-emerald-700">Rs. {money(partialPaidAmount)}</span>
+                      </div>
+                      <div>
+                        <span className="text-slate-400 text-[10px] block">Remaining Due</span>
+                        <span className="text-base font-black text-amber-700">Rs. {money(partialBalanceDue)}</span>
+                      </div>
+                      <div>
+                        <span className="text-slate-400 text-[10px] block">New Total Udhaar</span>
+                        <span className="text-base font-black text-slate-900">Rs. {money(partialNewUdhaar)}</span>
+                      </div>
+                    </div>
+                  </div>
+                )}
+              </div>
+            )}
+
+            {/* ========================================================
+                H. CREDIT / UDHAAR FORM
+               ======================================================== */}
+            {selectedCategory === "credit" && (
+              <div className="space-y-3 rounded-2xl border border-rose-200 bg-white p-4 shadow-xs">
+                <div className="flex items-center justify-between border-b border-slate-100 pb-2.5">
+                  <div>
+                    <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400">
+                      Amount Due
+                    </span>
+                    <p className="text-xl font-black text-slate-900">Rs. {money(totals.grand)}</p>
+                  </div>
+                  <span className="inline-flex items-center gap-1 rounded-full bg-rose-100 px-2.5 py-0.5 text-[11px] font-bold text-rose-800">
+                    <i className="fa-solid fa-book-bookmark" />
+                    <span>Udhaar Sale</span>
+                  </span>
+                </div>
+
+                {!customer.id ? (
+                  <div className="rounded-xl border border-amber-300 bg-amber-50 p-4 text-center space-y-2">
+                    <div className="mx-auto flex h-10 w-10 items-center justify-center rounded-full bg-amber-200 text-amber-800">
+                      <i className="fa-solid fa-triangle-exclamation text-base" />
+                    </div>
+                    <p className="text-xs font-bold text-amber-900">
+                      Customer is required for Credit / Udhaar sales
+                    </p>
+                    <button
+                      type="button"
+                      onClick={onSelectCustomer}
+                      className="rounded-lg bg-blue-600 px-4 py-2 text-xs font-bold text-white shadow-xs hover:bg-blue-700"
+                    >
+                      + Select or Create Customer
+                    </button>
+                  </div>
+                ) : (
+                  <div className="space-y-3">
+                    <div className="grid grid-cols-3 gap-2 rounded-xl border border-slate-200 bg-slate-50 p-3 text-center text-xs">
+                      <div>
+                        <span className="text-slate-400 text-[10px] block">Current Udhaar</span>
+                        <span className="text-base font-black text-amber-700">{money(customer.outstanding)}</span>
+                      </div>
+                      <div>
+                        <span className="text-slate-400 text-[10px] block">Credit Limit</span>
+                        <span className="text-base font-bold text-slate-800">{money(customer.creditLimit)}</span>
+                      </div>
+                      <div>
+                        <span className="text-slate-400 text-[10px] block">New Total Balance</span>
+                        <span className="text-base font-black text-slate-900">{money(newUdhaarBalance)}</span>
+                      </div>
+                    </div>
+
+                    {isCreditOverLimit ? (
+                      <p className="rounded-lg bg-red-100 p-2 text-xs font-bold text-red-700">
+                        Warning: Sale exceeds customer's credit limit by Rs. {money(newUdhaarBalance - customer.creditLimit)}.
+                      </p>
+                    ) : (
+                      <p className="text-[11px] text-emerald-700 font-medium">
+                        ✓ Credit available: Rs. {money(creditHeadroom)} remaining limit.
+                      </p>
+                    )}
+
+                    <div>
+                      <label className="block text-xs font-bold text-slate-700 mb-1">
+                        Optional Cash Down Payment Paid Today
+                      </label>
+                      <input
+                        type="number"
+                        min={0}
+                        max={totals.grand}
+                        value={creditDownPayment || ""}
+                        onChange={(e) => setCreditDownPayment(Number(e.target.value) || 0)}
+                        placeholder="0.00 (Full amount to Udhaar)"
+                        className="w-full rounded-lg border border-slate-200 bg-white p-2 text-xs text-right font-bold text-slate-900 focus:border-rose-500 focus:outline-none"
+                      />
+                    </div>
+                  </div>
+                )}
+              </div>
+            )}
+
+            {/* ========================================================
+                I. INSTALLMENT PLAN FORM
+               ======================================================== */}
+            {selectedCategory === "installment" && (
+              <div className="space-y-3 rounded-2xl border border-violet-200 bg-white p-4 shadow-xs">
+                <div className="flex items-center justify-between border-b border-slate-100 pb-2.5">
+                  <div>
+                    <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400">
+                      Total Invoice Amount
+                    </span>
+                    <p className="text-xl font-black text-slate-900">Rs. {money(totals.grand)}</p>
+                  </div>
+                  <span className="inline-flex items-center gap-1 rounded-full bg-violet-100 px-2.5 py-0.5 text-[11px] font-bold text-violet-800">
+                    <i className="fa-solid fa-calendar-days" />
+                    <span>Installment Plan</span>
+                  </span>
+                </div>
+
+                {!customer.id ? (
+                  <div className="rounded-xl border border-amber-300 bg-amber-50 p-4 text-center space-y-2">
+                    <div className="mx-auto flex h-10 w-10 items-center justify-center rounded-full bg-amber-200 text-amber-800">
+                      <i className="fa-solid fa-triangle-exclamation text-base" />
+                    </div>
+                    <p className="text-xs font-bold text-amber-900">
+                      Customer is required for Installment Plan sales.
+                    </p>
+                    <button
+                      type="button"
+                      onClick={onSelectCustomer}
+                      className="rounded-lg bg-blue-600 px-4 py-2 text-xs font-bold text-white shadow-xs hover:bg-blue-700"
+                    >
+                      + Select or Create Customer
+                    </button>
+                  </div>
+                ) : (
+                  <div className="space-y-3">
+                    <div className="grid grid-cols-2 gap-2">
+                      <div>
+                        <label className="block text-xs font-bold text-slate-700 mb-1">
+                          Down Payment (Rs.)
+                        </label>
+                        <input
+                          type="number"
+                          min={0}
+                          max={totals.grand}
+                          value={installmentDownPayment || ""}
+                          onChange={(e) => setInstallmentDownPayment(Number(e.target.value) || 0)}
+                          placeholder="0.00"
+                          className="w-full rounded-lg border border-slate-300 bg-white p-2 text-sm font-black text-slate-900 focus:border-violet-500 focus:outline-none"
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-xs font-bold text-slate-700 mb-1">
+                          Installment Tenure
+                        </label>
+                        <select
+                          value={installmentCount}
+                          onChange={(e) => setInstallmentCount(Number(e.target.value))}
+                          className="w-full rounded-lg border border-slate-300 bg-white p-2 text-xs font-bold text-slate-800"
+                        >
+                          <option value={3}>3 Months Plan</option>
+                          <option value={6}>6 Months Plan</option>
+                          <option value={12}>12 Months Plan</option>
+                          <option value={18}>18 Months Plan</option>
+                          <option value={24}>24 Months Plan</option>
+                        </select>
+                      </div>
+                    </div>
+
+                    {/* Installment Summary Box */}
+                    <div className="rounded-xl border border-violet-100 bg-violet-50/70 p-3 text-xs space-y-1 text-violet-950">
+                      <div className="flex justify-between">
+                        <span>Financed Principal:</span>
+                        <span className="font-bold">Rs. {money(installmentPrincipal)}</span>
+                      </div>
+                      <div className="flex justify-between font-black text-sm text-violet-900 border-t border-violet-200/60 pt-1">
+                        <span>Monthly Installment:</span>
+                        <span>Rs. {money(monthlyInstallment)} / mo</span>
+                      </div>
+                      <p className="text-[10px] text-violet-700 pt-0.5">
+                        * Monthly schedule automatically created for {customer.label}.
+                      </p>
+                    </div>
+                  </div>
+                )}
+              </div>
+            )}
           </div>
 
           {/* 3. DOMINANT COMPLETE SALE ACTION FOOTER */}
@@ -1097,11 +1396,17 @@ export function CheckoutStage({
                 <i className="fa-solid fa-circle-check text-xl" />
                 <span>COMPLETE SALE</span>
               </span>
-              <span className="flex items-center gap-2 rounded-xl bg-black/25 px-3 py-1 text-sm font-black">
-                <span>Rs. {money(totals.grand)}</span>
-                <i className="fa-solid fa-arrow-right text-xs" />
+
+              <span className="rounded-xl bg-black/20 px-3 py-1 text-sm font-black">
+                {selectedCategory === "cash" && isCashShort
+                  ? `Short: Rs. ${money(balanceRemaining)}`
+                  : `Rs. ${money(totals.grand)}`}
               </span>
             </button>
+
+            <p className="mt-2 text-center text-[10px] text-slate-400">
+              Press <span className="font-bold text-slate-600">Ctrl + Enter</span> to finalize sale · <span className="font-bold text-slate-600">Esc</span> to return to cart
+            </p>
           </div>
         </section>
       </div>
