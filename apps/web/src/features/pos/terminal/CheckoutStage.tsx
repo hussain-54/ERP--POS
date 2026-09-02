@@ -475,11 +475,11 @@ export function CheckoutStage({
       </header>
 
       {/* 2. MAIN 2-COLUMN CHECKOUT PANEL */}
-      <div className="grid min-h-0 flex-1 grid-cols-1 overflow-hidden lg:grid-cols-[minmax(340px,1.15fr)_minmax(420px,1.35fr)]">
+      <div className="pos-checkout-overlay-body">
         {/* ========================================================
             LEFT COLUMN: ORDER SUMMARY & PROMINENT DUE CARD
            ======================================================== */}
-        <section className="flex min-h-0 flex-col border-r border-slate-200 bg-white" aria-label="Order summary">
+        <section className="flex min-h-0 min-w-0 flex-col overflow-hidden border-r border-slate-200 bg-white" aria-label="Order summary">
           {/* PROMINENT TOTAL DUE HERO BANNER */}
           <div className="shrink-0 bg-slate-900 p-4 text-white">
             <div className="flex items-center justify-between">
@@ -637,9 +637,9 @@ export function CheckoutStage({
         {/* ========================================================
             RIGHT COLUMN: PAYMENT METHOD & TRANSACTION SETTLEMENT
            ======================================================== */}
-        <section className="flex min-h-0 flex-col bg-slate-50" aria-label="Payment selection">
+        <section className="flex min-h-0 min-w-0 flex-col overflow-hidden bg-slate-50" aria-label="Payment selection">
           {/* Scrollable Middle Area */}
-          <div className="pos-zone-scroll flex-1 p-4 space-y-4">
+          <div className="pos-zone-scroll min-h-0 flex-1 p-4 space-y-4">
             {/* 1. SELECT PAYMENT METHOD GRID */}
             <div>
               <div className="mb-2 flex items-center justify-between">
@@ -1397,7 +1397,7 @@ export function CheckoutStage({
           </div>
 
           {/* 3. DOMINANT CONFIRM PAYMENT ACTION FOOTER */}
-          <div className="shrink-0 border-t border-slate-200 bg-white p-4 shadow-lg">
+          <div className="pos-zone-footer shrink-0 border-t border-slate-200 bg-white p-3 shadow-lg sm:p-4">
             {paymentFlowState === "processing" ? (
               <div className="mb-2 flex items-center justify-center gap-2 rounded-xl border border-blue-200 bg-blue-50 px-4 py-2 text-xs font-bold text-blue-800">
                 <i className="fa-solid fa-spinner fa-spin" />

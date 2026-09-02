@@ -79,7 +79,7 @@ export function CartZone({
   const isEmpty = lines.length === 0;
 
   return (
-    <section className="pos-zone pos-zone-cart flex h-full min-h-0 flex-1 flex-col bg-white" aria-label="Current sale cart">
+    <section className="pos-zone pos-zone-cart flex h-full min-h-0 flex-1 flex-col overflow-hidden bg-white" aria-label="Current sale cart">
       {/* 1. PROFESSIONAL CART HEADER */}
       <div className="pos-zone-header shrink-0 border-b border-slate-200 bg-slate-50/80 px-3 py-2">
         <div className="flex min-w-0 flex-1 items-center justify-between gap-2">

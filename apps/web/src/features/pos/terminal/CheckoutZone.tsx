@@ -75,7 +75,7 @@ export function CheckoutZone({
   ];
 
   return (
-    <section className="pos-zone pos-zone-checkout flex h-full flex-col" aria-label="Checkout summary">
+    <section className="pos-zone pos-zone-checkout flex h-full min-h-0 flex-col overflow-hidden" aria-label="Checkout summary">
       <div className="pos-zone-header shrink-0">
         <h2 className="pos-zone-title flex items-center gap-1.5">
           <i className="fa-solid fa-cash-register text-xs text-blue-600" aria-hidden />
@@ -307,7 +307,7 @@ export function CheckoutZone({
         </div>
       </div>
 
-      <div className="shrink-0 space-y-1.5 border-t border-slate-200 bg-slate-50 p-2.5">
+      <div className="pos-zone-footer shrink-0 space-y-1.5 border-t border-slate-200 bg-slate-50 p-2.5">
         <div className="grid grid-cols-2 gap-1">
           <button
             type="button"

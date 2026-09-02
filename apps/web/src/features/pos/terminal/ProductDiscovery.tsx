@@ -112,7 +112,7 @@ export function ProductDiscovery({
   ];
 
   return (
-    <section className="pos-zone pos-zone-products" aria-label="Product discovery">
+    <section className="pos-zone pos-zone-products flex h-full min-h-0 flex-col overflow-hidden" aria-label="Product discovery">
       {/* Zone Header */}
       <div className="pos-zone-header">
         <h2 className="pos-zone-title flex items-center gap-1.5">

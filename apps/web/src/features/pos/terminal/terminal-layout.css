@@ -26,31 +26,35 @@
   overflow: hidden;
 }
 
-/* 3-Zone Desktop Grid: Left (Catalog) | Center (Cart) | Right (Customer + Summary) */
+/* 3-Zone Desktop Grid: Left (Catalog) | Center (Cart) | Right (Customer + Summary)
+   Use fluid fr tracks (minmax(0, …)) so columns shrink inside ERP+POS chrome
+   instead of clipping the checkout rail at 1366×768. */
 .pos-terminal-grid-3col {
   display: grid;
-  grid-template-columns: minmax(0, 1.15fr) minmax(400px, 520px) minmax(340px, 400px);
+  grid-template-columns: minmax(0, 1.25fr) minmax(0, 1.1fr) minmax(0, 0.95fr);
   gap: 0;
   min-height: 0;
   height: 100%;
   max-height: 100%;
-  flex: 1;
+  flex: 1 1 0%;
   overflow: hidden;
+  width: 100%;
 }
 
-@media (max-width: 1400px) {
+@media (min-width: 1536px) {
   .pos-terminal-grid-3col {
-    grid-template-columns: minmax(0, 1fr) minmax(360px, 480px) minmax(320px, 380px);
+    grid-template-columns: minmax(0, 1.35fr) minmax(0, 1.05fr) minmax(0, 0.9fr);
   }
 }
 
-@media (max-width: 1140px) {
+@media (max-width: 1279px) and (min-width: 1024px) {
   .pos-terminal-grid-3col {
-    grid-template-columns: minmax(0, 0.95fr) minmax(320px, 420px) minmax(300px, 360px);
+    grid-template-columns: minmax(0, 1.15fr) minmax(0, 1fr) minmax(0, 0.92fr);
   }
 }
 
-@media (max-width: 1024px) {
+/* Align with Tailwind `lg` (1024px): below = mobile single-pane; at/above = 3-col */
+@media (max-width: 1023px) {
   .pos-terminal-grid-3col {
     display: flex;
     flex-direction: column;
@@ -59,15 +63,26 @@
   }
 }
 
+/* Grid/flex cell that fills the POS viewport and hosts a zone */
+.pos-zone-cell {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 0;
+  height: 100%;
+  max-height: 100%;
+  overflow: hidden;
+}
+
 /* Zone container: flex column with header, scrollable body, and optional pinned footer */
 .pos-zone {
   display: flex;
   flex-direction: column;
   min-height: 0;
   min-width: 0;
+  flex: 1 1 0%;
   height: 100%;
   max-height: 100%;
-  flex: 1;
   overflow: hidden;
   background: #ffffff;
   border-right: 1px solid #e2e8f0;
@@ -76,6 +91,12 @@
 .pos-zone-checkout {
   border-right: none;
   background: #ffffff;
+}
+
+/* Pinned checkout/payment actions — always visible at bottom of checkout rail */
+.pos-zone-footer {
+  flex-shrink: 0;
+  margin-top: auto;
 }
 
 .pos-zone-header {
@@ -263,16 +284,35 @@
   backdrop-filter: blur(2px);
 }
 
-/* Full-screen checkout overlay — keeps 3-column POS visible underneath */
+/* Full-screen checkout overlay — viewport-locked so confirm CTA stays on-screen */
 .pos-checkout-overlay {
   position: fixed;
   inset: 0;
   z-index: 55;
   display: flex;
   flex-direction: column;
+  width: 100%;
+  height: 100%;
+  height: 100dvh;
+  max-height: 100dvh;
   min-height: 0;
+  overflow: hidden;
   background: rgb(248 250 252 / 0.97);
   backdrop-filter: blur(4px);
+}
+
+.pos-checkout-overlay-body {
+  display: grid;
+  grid-template-columns: 1fr;
+  min-height: 0;
+  flex: 1 1 0%;
+  overflow: hidden;
+}
+
+@media (min-width: 1024px) {
+  .pos-checkout-overlay-body {
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1.25fr);
+  }
 }
 
 .pos-modal {
@@ -323,7 +363,7 @@
   }
 }
 
-@media (max-width: 1024px) {
+@media (max-width: 1023px) {
   .pos-terminal-grid {
     display: flex;
     flex-direction: column;
@@ -338,6 +378,11 @@
 
   .pos-zone-checkout {
     border-bottom: none;
+  }
+
+  .pos-zone-cell {
+    flex: 1 1 0%;
+    width: 100%;
   }
 }
 

@@ -844,7 +844,9 @@ export function PosTerminalPage() {
       {/* Main 3-Zone Desktop Grid: Left (Catalog) | Center (Cart) | Right (Customer + Summary + Pay) */}
       <div className="pos-terminal-grid-3col min-h-0 flex-1 overflow-hidden">
         {/* Zone 1: Product Discovery (Left) */}
-        <div className={`min-h-0 min-w-0 ${mobilePane === "products" ? "flex" : "hidden"} lg:flex`}>
+        <div
+          className={`pos-zone-cell ${mobilePane === "products" ? "flex" : "hidden"} lg:flex`}
+        >
           <ProductDiscovery
             search={search}
             onSearch={setSearch}
@@ -876,7 +878,7 @@ export function PosTerminalPage() {
         </div>
 
         {/* Zone 2: Cart Ledger (Center) */}
-        <div className={`min-h-0 min-w-0 ${mobilePane === "cart" ? "flex" : "hidden"} lg:flex`}>
+        <div className={`pos-zone-cell ${mobilePane === "cart" ? "flex" : "hidden"} lg:flex`}>
           <CartZone
             lines={lines}
             customer={customer}
@@ -909,7 +911,7 @@ export function PosTerminalPage() {
         </div>
 
         {/* Zone 3: Customer + Order Summary + Checkout CTA (Right) */}
-        <div className={`min-h-0 min-w-0 ${mobilePane === "checkout" ? "flex" : "hidden"} lg:flex`}>
+        <div className={`pos-zone-cell ${mobilePane === "checkout" ? "flex" : "hidden"} lg:flex`}>
           <CheckoutZone
             customer={customer}
             totals={totals}
