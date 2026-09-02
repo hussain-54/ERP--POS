@@ -26,6 +26,7 @@ export function CheckoutZone({
   onComplete,
   onProceedToCheckout,
   onDeliveryOrder,
+  onClearCart,
   deliveryCharges = 0,
   busy,
   recordOnlyHint,
@@ -61,8 +62,8 @@ export function CheckoutZone({
   onPayment: () => void;
   onComplete: () => void;
   onProceedToCheckout?: () => void;
-  /** Opens / toggles delivery charge using existing deliveryCharges state. */
   onDeliveryOrder?: () => void;
+  onClearCart?: () => void;
   deliveryCharges?: number;
   busy?: boolean;
   recordOnlyHint?: boolean;
@@ -245,12 +246,13 @@ export function CheckoutZone({
         </div>
 
         {paymentKind === "cash" ? (
-          <div className="space-y-2 rounded-xl border border-slate-200 bg-white p-2.5">
+          <div className="space-y-2 rounded-xl border border-emerald-200 bg-white p-2.5">
+            <p className="text-[11px] font-bold text-emerald-700">Payment Details (Cash)</p>
             <div className="flex items-center justify-between gap-2">
               <label htmlFor="pos-cash-received" className="text-[11px] font-bold text-slate-700">
                 Cash Received
               </label>
-              <div className="relative w-36">
+              <div className="relative w-40">
                 <span className="absolute left-2.5 top-1/2 -translate-y-1/2 text-xs font-bold text-slate-500">
                   Rs.
                 </span>
@@ -261,7 +263,7 @@ export function CheckoutZone({
                   value={cashValue}
                   placeholder={String(totals.grand)}
                   onChange={(e) => onCashReceived?.(Number(e.target.value) || 0)}
-                  className="w-full rounded-lg border border-slate-300 bg-white py-2 pl-8 pr-2 text-right text-sm font-black text-slate-900 focus:border-blue-500 focus:outline-none"
+                  className="w-full rounded-lg border border-slate-300 bg-white py-2 pl-8 pr-2 text-right text-sm font-black text-slate-900 focus:border-emerald-500 focus:outline-none focus:ring-2 focus:ring-emerald-500/20"
                   aria-label="Cash received amount"
                 />
               </div>
@@ -273,7 +275,7 @@ export function CheckoutZone({
                   key={q.label}
                   type="button"
                   onClick={() => onCashReceived?.(q.value)}
-                  className="rounded-full border border-slate-200 bg-slate-50 px-2.5 py-1 text-[10px] font-bold text-slate-700 transition hover:border-blue-400 hover:bg-blue-50 hover:text-blue-700"
+                  className="rounded-lg border border-slate-200 bg-white px-2.5 py-1.5 text-[10px] font-bold text-slate-700 shadow-xs transition hover:border-emerald-400 hover:bg-emerald-50 hover:text-emerald-800"
                 >
                   {q.label === "Exact" ? "Exact" : q.label}
                 </button>
@@ -286,15 +288,15 @@ export function CheckoutZone({
                   const n = Number(raw);
                   if (Number.isFinite(n) && n >= 0) onCashReceived?.(n);
                 }}
-                className="rounded-full border border-slate-200 bg-slate-50 px-2.5 py-1 text-[10px] font-bold text-slate-700 transition hover:border-blue-400 hover:bg-blue-50 hover:text-blue-700"
+                className="rounded-lg border border-slate-200 bg-white px-2.5 py-1.5 text-[10px] font-bold text-slate-700 shadow-xs transition hover:border-emerald-400 hover:bg-emerald-50 hover:text-emerald-800"
               >
                 Other
               </button>
             </div>
 
-            <div className="flex items-center justify-between rounded-lg bg-emerald-50 px-3 py-2 text-xs font-black text-emerald-800">
-              <span>Change to Return</span>
-              <span className="text-sm">Rs. {money(changeToReturn)}</span>
+            <div className="flex items-center justify-between border-t border-emerald-100 pt-2">
+              <span className="text-[11px] font-bold text-emerald-700">Change to Return</span>
+              <span className="text-base font-black text-emerald-600">Rs. {money(changeToReturn)}</span>
             </div>
           </div>
         ) : null}
@@ -323,33 +325,12 @@ export function CheckoutZone({
             value={notes}
             onChange={(e) => onNotes(e.target.value)}
             placeholder="Sale Note / Reference (optional)"
-            className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-[11px] text-slate-800 placeholder-slate-400 focus:border-blue-500 focus:outline-none"
+            className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2.5 text-[11px] text-slate-800 placeholder-slate-400 focus:border-blue-500 focus:outline-none"
           />
         </div>
       </div>
 
-      <div className="pos-zone-footer shrink-0 space-y-1.5 border-t border-slate-200 bg-white p-2.5">
-        <div className="grid grid-cols-2 gap-1.5">
-          <button
-            type="button"
-            disabled={busy || empty}
-            onClick={onDiscount}
-            className="flex items-center justify-center gap-1 rounded-lg border border-slate-200 bg-white py-1.5 text-[11px] font-bold text-slate-700 transition hover:bg-slate-50 disabled:opacity-40"
-          >
-            <i className="fa-solid fa-percent text-[10px]" aria-hidden />
-            Discount
-          </button>
-          <button
-            type="button"
-            disabled={busy || empty}
-            onClick={onHold}
-            className="flex items-center justify-center gap-1 rounded-lg border border-amber-300 bg-amber-50 py-1.5 text-[11px] font-bold text-amber-800 transition hover:bg-amber-100 disabled:opacity-40"
-          >
-            <i className="fa-solid fa-pause text-[10px]" aria-hidden />
-            Hold
-          </button>
-        </div>
-
+      <div className="pos-zone-footer shrink-0 space-y-2 border-t border-slate-200 bg-white p-2.5">
         <button
           type="button"
           disabled={busy || empty}
@@ -357,13 +338,60 @@ export function CheckoutZone({
           className="flex w-full items-center justify-center gap-2 rounded-xl bg-blue-600 px-4 py-3.5 text-sm font-black text-white shadow-md transition hover:bg-blue-700 active:scale-[0.99] disabled:cursor-not-allowed disabled:bg-slate-300 disabled:opacity-60"
         >
           <i className="fa-solid fa-cart-shopping" aria-hidden />
-          <span>{busy ? "Processing…" : "COMPLETE SALE"}</span>
-          <span className="opacity-90">Rs. {money(totals.grand)}</span>
+          <span>{busy ? "Processing…" : `COMPLETE SALE Rs. ${money(totals.grand)}`}</span>
         </button>
 
-        <p className="text-center text-[9px] font-medium text-slate-400">
-          F2 Pay · F4 Hold · F5 Discount · F7 Clear · F8 Customer
-        </p>
+        <div className="grid grid-cols-5 gap-1">
+          <button
+            type="button"
+            disabled={busy || empty}
+            onClick={onComplete}
+            title="Complete sale (F2)"
+            className="rounded-lg border border-slate-200 bg-white py-1.5 text-[10px] font-bold text-blue-700 shadow-xs transition hover:bg-blue-50 disabled:opacity-40"
+          >
+            F2 Pay
+          </button>
+          <button
+            type="button"
+            disabled={busy || empty}
+            onClick={onHold}
+            title="Hold sale (F4)"
+            className="rounded-lg border border-slate-200 bg-white py-1.5 text-[10px] font-bold text-blue-700 shadow-xs transition hover:bg-blue-50 disabled:opacity-40"
+          >
+            F4 Hold
+          </button>
+          <button
+            type="button"
+            disabled={!onDeliveryOrder}
+            onClick={() => onDeliveryOrder?.()}
+            title="Delivery order (F6)"
+            className="rounded-lg border border-slate-200 bg-white py-1.5 text-[10px] font-bold text-blue-700 shadow-xs transition hover:bg-blue-50 disabled:opacity-40"
+          >
+            F6 Delivery
+          </button>
+          <button
+            type="button"
+            onClick={onSelectCustomer}
+            title="Select customer (F8)"
+            className="rounded-lg border border-slate-200 bg-white py-1.5 text-[10px] font-bold text-blue-700 shadow-xs transition hover:bg-blue-50"
+          >
+            F8 Customer
+          </button>
+          <button
+            type="button"
+            disabled={busy || empty || !onClearCart}
+            onClick={() => onClearCart?.()}
+            title="Clear cart (Esc)"
+            className="rounded-lg border border-slate-200 bg-white py-1.5 text-[10px] font-bold text-blue-700 shadow-xs transition hover:bg-blue-50 disabled:opacity-40"
+          >
+            Esc Clear
+          </button>
+        </div>
+
+        <div className="flex items-center justify-end gap-1.5 text-[9px] font-medium text-slate-400">
+          <i className="fa-solid fa-shield-halved" aria-hidden />
+          <span>POS Version 2.0.0</span>
+        </div>
 
         {onProceedToCheckout ? (
           <button

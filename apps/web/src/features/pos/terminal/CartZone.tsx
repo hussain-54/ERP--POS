@@ -86,15 +86,16 @@ export function CartZone({
   const isEmpty = lines.length === 0;
 
   const actions = [
-    { id: "add", label: "Add Product", icon: "fa-plus", onClick: onAddProduct, disabled: false },
-    { id: "customer", label: "Customer", icon: "fa-user", onClick: onSelectCustomer, disabled: false },
-    { id: "discount", label: "Discount", icon: "fa-percent", onClick: onInvoiceDiscount, disabled: isEmpty || busy },
-    { id: "price", label: "Price Check", icon: "fa-tags", onClick: onPriceCheck, disabled: false },
-    { id: "hold", label: "Hold", icon: "fa-pause", onClick: onHold, disabled: isEmpty || busy },
+    { id: "add", label: "Add Product", icon: "fa-plus", color: "text-blue-600", onClick: onAddProduct, disabled: false },
+    { id: "customer", label: "Customer", icon: "fa-user", color: "text-violet-600", onClick: onSelectCustomer, disabled: false },
+    { id: "discount", label: "Discount", icon: "fa-tags", color: "text-emerald-600", onClick: onInvoiceDiscount, disabled: isEmpty || busy },
+    { id: "price", label: "Price Check", icon: "fa-magnifying-glass-plus", color: "text-orange-500", onClick: onPriceCheck, disabled: false },
+    { id: "hold", label: "Hold", icon: "fa-cart-plus", color: "text-amber-500", onClick: onHold, disabled: isEmpty || busy },
     {
       id: "more",
       label: "More",
       icon: "fa-ellipsis",
+      color: "text-slate-500",
       onClick: () => setMoreOpen((v) => !v),
       disabled: false,
     },
@@ -365,7 +366,7 @@ export function CartZone({
         )}
       </div>
 
-      <div className="shrink-0 border-t border-slate-200 bg-white px-3 py-2">
+      <div className="shrink-0 border-t border-slate-200 bg-slate-50 px-3 py-2">
         <div className="flex items-center justify-between gap-2 text-[11px]">
           <button
             type="button"
@@ -375,17 +376,16 @@ export function CartZone({
           >
             + Add Note
           </button>
-          <div className="flex items-center gap-3 font-bold text-slate-600">
+          <div className="flex items-center gap-3 text-slate-600">
             <span>
-              Total Items: <span className="text-slate-900">{lines.length}</span>
+              Total Items: <span className="font-black text-slate-900">{lines.length}</span>
             </span>
             <span>
-              Total Qty: <span className="text-slate-900">{totalUnits}</span>
+              Total Qty: <span className="font-black text-slate-900">{totalUnits}</span>
             </span>
           </div>
         </div>
-        {/* Kept for cashier glance + existing tests; payment totals live on the right */}
-        <div className="mt-1.5 flex items-center justify-between rounded-lg bg-slate-50 px-2.5 py-1.5 text-[11px]">
+        <div className="mt-1.5 flex items-center justify-between rounded-lg bg-white px-2.5 py-1.5 text-[11px] ring-1 ring-slate-200/80">
           <span className="font-bold uppercase tracking-wide text-slate-500">Grand Total</span>
           <span className="text-sm font-black text-slate-900">{money(totals.grand)}</span>
         </div>
@@ -401,7 +401,7 @@ export function CartZone({
         ) : null}
       </div>
 
-      <div className="relative shrink-0 border-t border-slate-200 bg-slate-50/90 p-2">
+      <div className="relative shrink-0 border-t border-slate-200 bg-white p-2">
         {moreOpen ? (
           <div className="absolute bottom-full left-2 right-2 z-10 mb-1 rounded-xl border border-slate-200 bg-white p-1.5 shadow-lg">
             <button
@@ -441,16 +441,16 @@ export function CartZone({
             </button>
           </div>
         ) : null}
-        <div className="grid grid-cols-6 gap-1">
+        <div className="grid grid-cols-6 gap-1.5">
           {actions.map((action) => (
             <button
               key={action.id}
               type="button"
               disabled={!action.onClick || action.disabled}
               onClick={() => action.onClick?.()}
-              className="flex flex-col items-center justify-center gap-1 rounded-xl border border-slate-200 bg-white px-1 py-2 text-[9px] font-bold text-slate-700 transition hover:border-blue-400 hover:bg-blue-50 hover:text-blue-700 disabled:opacity-35"
+              className="flex flex-col items-center justify-center gap-1 rounded-xl border border-slate-200 bg-white px-1 py-2.5 text-[9px] font-bold text-slate-700 shadow-xs transition hover:border-blue-300 hover:bg-blue-50/60 disabled:opacity-35"
             >
-              <i className={`fa-solid ${action.icon} text-sm text-blue-600`} aria-hidden />
+              <i className={`fa-solid ${action.icon} text-base ${action.color}`} aria-hidden />
               <span className="leading-tight">{action.label}</span>
             </button>
           ))}

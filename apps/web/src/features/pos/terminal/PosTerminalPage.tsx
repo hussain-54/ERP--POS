@@ -1002,6 +1002,7 @@ export function PosTerminalPage() {
                 tone: "info",
               });
             }}
+            onClearCart={clearCart}
             deliveryCharges={deliveryCharges}
             busy={busy}
             recordOnlyHint={
