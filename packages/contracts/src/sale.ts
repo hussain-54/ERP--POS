@@ -366,6 +366,9 @@ export const InvoiceViewSchema = z.object({
       name: z.string(),
       qty: z.union([z.number(), z.string()]),
       unit: z.string().nullable().optional(),
+      sku: z.string().nullable().optional(),
+      /** Catalog / list unit price before line discount or override. */
+      listPrice: MoneySchema.optional(),
       rate: MoneySchema,
       discount: MoneySchema,
       tax: MoneySchema,

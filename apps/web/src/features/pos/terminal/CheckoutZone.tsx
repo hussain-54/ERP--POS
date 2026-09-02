@@ -338,7 +338,7 @@ export function CheckoutZone({
           className="flex w-full items-center justify-center gap-2 rounded-xl bg-blue-600 px-4 py-3.5 text-sm font-black text-white shadow-md transition hover:bg-blue-700 active:scale-[0.99] disabled:cursor-not-allowed disabled:bg-slate-300 disabled:opacity-60"
         >
           <i className="fa-solid fa-cart-shopping" aria-hidden />
-          <span>{busy ? "Processing…" : `COMPLETE SALE Rs. ${money(totals.grand)}`}</span>
+          <span>{busy ? "Processing…" : `CHECKOUT / COMPLETE SALE  Rs. ${money(totals.grand)}`}</span>
         </button>
 
         <div className="grid grid-cols-5 gap-1">

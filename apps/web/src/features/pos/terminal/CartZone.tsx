@@ -394,9 +394,10 @@ export function CartZone({
             type="button"
             disabled={isEmpty || busy}
             onClick={onProceedToCheckout}
-            className="mt-2 flex w-full items-center justify-center gap-1.5 rounded-lg border border-blue-300 bg-blue-50 py-2 text-xs font-bold text-blue-800 transition hover:bg-blue-100 disabled:opacity-40 lg:hidden"
+            className="mt-2 flex w-full items-center justify-center gap-1.5 rounded-xl bg-blue-600 py-2.5 text-xs font-black text-white shadow-sm transition hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-40"
           >
-            Go to Payment
+            <i className="fa-solid fa-cash-register text-[11px]" aria-hidden />
+            Checkout / Complete Sale
           </button>
         ) : null}
       </div>

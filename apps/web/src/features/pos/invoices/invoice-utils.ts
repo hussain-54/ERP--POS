@@ -108,21 +108,29 @@ export function printInvoiceReceipt(
   const rowsHtmlA4 = (invoice.items ?? [])
     .map((item, idx) => {
       const rate = Number(item.rate ?? 0);
+      const listPrice = Number(item.listPrice ?? rate);
       const total = Number(item.total ?? (Number(item.qty) * rate));
       const itemDisc = Number(item.discount ?? 0);
       const itemTax = Number(item.tax ?? 0);
       const unitLabel = item.unit || "Pcs";
+      const sku = item.sku ? `<div style="font-size: 11px; color: #64748b;">SKU: ${item.sku}</div>` : "";
+      const original =
+        listPrice > rate + 0.009
+          ? `<div style="font-size: 11px; color: #94a3b8; text-decoration: line-through;">Rs. ${listPrice.toFixed(2)}</div>`
+          : "";
       return `
         <tr>
           <td style="padding: 8px; border-bottom: 1px solid #e2e8f0; vertical-align: top;">
             <div style="font-weight: 700; color: #0f172a;">${idx + 1}. ${item.name}</div>
+            ${sku}
             ${item.warrantyDays ? `<div style="font-size: 11px; color: #2563eb;">Warranty: ${item.warrantyDays} Days</div>` : ""}
           </td>
           <td style="padding: 8px; text-align: center; border-bottom: 1px solid #e2e8f0; vertical-align: top;">
             ${item.qty} ${unitLabel}
           </td>
           <td style="padding: 8px; text-align: right; border-bottom: 1px solid #e2e8f0; vertical-align: top;">
-            Rs. ${rate.toFixed(2)}
+            ${original}
+            <div>Rs. ${rate.toFixed(2)}</div>
           </td>
           <td style="padding: 8px; text-align: right; border-bottom: 1px solid #e2e8f0; vertical-align: top; color: #dc2626;">
             ${itemDisc > 0 ? `-Rs. ${itemDisc.toFixed(2)}` : "—"}
@@ -141,14 +149,21 @@ export function printInvoiceReceipt(
   const rowsHtmlThermal = (invoice.items ?? [])
     .map((item, idx) => {
       const rate = Number(item.rate ?? 0);
+      const listPrice = Number(item.listPrice ?? rate);
       const total = Number(item.total ?? (Number(item.qty) * rate));
       const itemDisc = Number(item.discount ?? 0);
       const unitLabel = item.unit || "Pcs";
+      const skuLine = item.sku ? `<div style="font-size: 10px; color: #444;">SKU: ${item.sku}</div>` : "";
+      const priceLine =
+        listPrice > rate + 0.009
+          ? `${item.qty} ${unitLabel} @ Rs. ${rate.toFixed(2)} (was ${listPrice.toFixed(2)})`
+          : `${item.qty} ${unitLabel} @ Rs. ${rate.toFixed(2)}`;
       return `
         <tr>
           <td style="padding: 3px 0; text-align: left; vertical-align: top;">
             <div style="font-weight: 700;">${idx + 1}. ${item.name}</div>
-            <div style="font-size: 10px; color: #444;">${item.qty} ${unitLabel} @ Rs. ${rate.toFixed(2)}${itemDisc > 0 ? ` (Disc: -${itemDisc.toFixed(2)})` : ""}</div>
+            ${skuLine}
+            <div style="font-size: 10px; color: #444;">${priceLine}${itemDisc > 0 ? ` (Disc: -${itemDisc.toFixed(2)})` : ""}</div>
           </td>
           <td style="padding: 3px 0; text-align: right; vertical-align: top; font-weight: 700; white-space: nowrap;">
             Rs. ${total.toFixed(2)}

@@ -58,6 +58,10 @@ export function ProductDiscovery({
   onOpenScanner,
   onUnknownBarcode,
   onManualEntry,
+  onCheckout,
+  checkoutDisabled,
+  cartItemCount = 0,
+  cartGrandTotal = 0,
 }: {
   search: string;
   onSearch: (v: string) => void;
@@ -77,6 +81,10 @@ export function ProductDiscovery({
   onOpenScanner?: () => void;
   onUnknownBarcode?: (code: string) => void;
   onManualEntry?: () => void;
+  onCheckout?: () => void;
+  checkoutDisabled?: boolean;
+  cartItemCount?: number;
+  cartGrandTotal?: number;
 }) {
   const localRef = useRef<HTMLInputElement>(null);
   const inputRef = searchRef ?? localRef;
@@ -363,6 +371,25 @@ export function ProductDiscovery({
           >
             Load more
             <i className="fa-solid fa-chevron-right text-[9px]" aria-hidden />
+          </button>
+        </div>
+      ) : null}
+
+      {onCheckout ? (
+        <div className="pos-zone-footer shrink-0 border-t border-slate-200 bg-white p-2">
+          <button
+            type="button"
+            disabled={checkoutDisabled}
+            onClick={onCheckout}
+            className="flex w-full items-center justify-between rounded-xl bg-blue-600 px-3 py-2.5 text-xs font-black text-white shadow-sm transition hover:bg-blue-700 disabled:cursor-not-allowed disabled:bg-slate-300 disabled:opacity-60"
+          >
+            <span className="inline-flex items-center gap-1.5">
+              <i className="fa-solid fa-cash-register" aria-hidden />
+              Checkout / Complete Sale
+            </span>
+            <span className="rounded-lg bg-blue-800/50 px-2 py-0.5 tabular-nums">
+              {cartItemCount} · Rs. {money(cartGrandTotal)}
+            </span>
           </button>
         </div>
       ) : null}

@@ -89,22 +89,24 @@ export function PostSaleDialog({
   const customerPhone = enrichedInvoice.customerMobile ?? "";
 
   function handleShareWhatsApp() {
-    if (!customerPhone && !phoneInput) {
+    const phone = (phoneInput || customerPhone || "").trim();
+    if (!phone) {
       setShowPhonePrompt(true);
       return;
     }
-    openWhatsAppReceipt(enrichedInvoice, phoneInput || customerPhone);
+    openWhatsAppReceipt(enrichedInvoice, phone);
     setWhatsappState("sent");
   }
 
   function handleSendEmail() {
-    if (!emailInput && !enrichedInvoice.customerEmail) {
+    const email = (emailInput || enrichedInvoice.customerEmail || "").trim();
+    if (!email) {
       setShowEmailPrompt(true);
       return;
     }
     setEmailState("sending");
     try {
-      openEmailReceipt(enrichedInvoice, emailInput || enrichedInvoice.customerEmail);
+      openEmailReceipt(enrichedInvoice, email);
       setTimeout(() => setEmailState("opened"), 400);
     } catch {
       setEmailState("failed");
@@ -270,11 +272,16 @@ export function PostSaleDialog({
                 <button
                   type="button"
                   onClick={() => {
-                    openWhatsAppReceipt(enrichedInvoice, phoneInput);
+                    if (!phoneInput.trim()) return;
+                    openWhatsAppReceipt(
+                      { ...enrichedInvoice, customerMobile: phoneInput.trim() },
+                      phoneInput.trim(),
+                    );
                     setShowPhonePrompt(false);
                     setWhatsappState("sent");
                   }}
-                  className="rounded-lg bg-emerald-600 px-3 py-1.5 text-xs font-bold text-white shadow-xs hover:bg-emerald-700"
+                  disabled={!phoneInput.trim()}
+                  className="rounded-lg bg-emerald-600 px-3 py-1.5 text-xs font-bold text-white shadow-xs hover:bg-emerald-700 disabled:opacity-40"
                 >
                   Send
                 </button>
@@ -307,10 +314,21 @@ export function PostSaleDialog({
                 <button
                   type="button"
                   onClick={() => {
-                    handleSendEmail();
-                    setShowEmailPrompt(false);
+                    if (!emailInput.trim()) return;
+                    setEmailState("sending");
+                    try {
+                      openEmailReceipt(
+                        { ...enrichedInvoice, customerEmail: emailInput.trim() },
+                        emailInput.trim(),
+                      );
+                      setShowEmailPrompt(false);
+                      setTimeout(() => setEmailState("opened"), 400);
+                    } catch {
+                      setEmailState("failed");
+                    }
                   }}
-                  className="rounded-lg bg-indigo-600 px-3 py-1.5 text-xs font-bold text-white shadow-xs hover:bg-indigo-700"
+                  disabled={!emailInput.trim()}
+                  className="rounded-lg bg-indigo-600 px-3 py-1.5 text-xs font-bold text-white shadow-xs hover:bg-indigo-700 disabled:opacity-40"
                 >
                   Send
                 </button>
@@ -346,9 +364,8 @@ export function PostSaleDialog({
             </div>
           ) : null}
 
-          {/* 5 MAIN ACTION BUTTONS */}
+          {/* 5 MAIN ACTION BUTTONS — only after confirmed payment */}
           <div className="mt-3 space-y-2">
-            {/* 1. PRINT RECEIPT (Thermal 80mm) */}
             <button
               type="button"
               autoFocus
@@ -358,25 +375,22 @@ export function PostSaleDialog({
               className="flex w-full items-center justify-center gap-2 rounded-xl bg-blue-600 py-3 text-sm font-black text-white shadow-sm transition hover:bg-blue-700 active:scale-98"
             >
               <i className="fa-solid fa-print text-base" />
-              <span>PRINT RECEIPT (80mm Thermal)</span>
+              <span>Print Receipt</span>
             </button>
 
-            {/* Secondary Actions Grid */}
             <div className="grid grid-cols-3 gap-1.5">
-              {/* 2. DOWNLOAD PDF */}
               <button
                 type="button"
                 onClick={() => {
                   downloadPdfInvoice(enrichedInvoice);
                 }}
                 className="flex items-center justify-center gap-1.5 rounded-lg border border-slate-300 bg-white py-2 text-xs font-bold text-slate-700 transition hover:bg-slate-50 active:scale-98"
-                title="Print A4 tax invoice (browser print dialog)"
+                title="Download / print A4 tax invoice PDF"
               >
                 <i className="fa-solid fa-file-pdf text-red-600" />
-                <span>PRINT A4</span>
+                <span>Download PDF</span>
               </button>
 
-              {/* 3. SHARE ON WHATSAPP */}
               <button
                 type="button"
                 onClick={handleShareWhatsApp}
@@ -384,28 +398,28 @@ export function PostSaleDialog({
                 title="Share bill via WhatsApp"
               >
                 <i className="fa-brands fa-whatsapp text-emerald-600 text-sm" />
-                <span>{whatsappState === "sent" ? "WHATSAPP ✓" : "WHATSAPP"}</span>
+                <span>{whatsappState === "sent" ? "WhatsApp ✓" : "WhatsApp"}</span>
               </button>
 
-              {/* 4. SEND BY EMAIL */}
               <button
                 type="button"
                 onClick={handleSendEmail}
                 className="flex items-center justify-center gap-1.5 rounded-lg border border-indigo-300 bg-indigo-50 py-2 text-xs font-bold text-indigo-800 transition hover:bg-indigo-100 active:scale-98"
-                title="Send receipt to customer email"
+                title="Email receipt to customer"
               >
                 <i className="fa-regular fa-envelope text-indigo-600 text-sm" />
-                <span>{emailState === "opened" ? "EMAIL ✓" : emailState === "sending" ? "OPENING…" : "EMAIL"}</span>
+                <span>
+                  {emailState === "opened" ? "Email ✓" : emailState === "sending" ? "Opening…" : "Email Receipt"}
+                </span>
               </button>
             </div>
 
-            {/* 5. NEW SALE (Reset Workspace) */}
             <button
               type="button"
               onClick={onNewSale}
               className="mt-2.5 flex w-full items-center justify-center gap-2 rounded-xl bg-slate-900 py-3 text-xs font-bold text-white transition hover:bg-slate-800 active:scale-98"
             >
-              <span>START NEW SALE</span>
+              <span>Start New Sale</span>
               <kbd className="rounded bg-slate-800 px-1.5 py-0.5 text-[10px] text-slate-300">Esc</kbd>
             </button>
           </div>

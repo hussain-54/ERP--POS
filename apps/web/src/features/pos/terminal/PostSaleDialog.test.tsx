@@ -93,11 +93,11 @@ describe("PostSaleDialog (POS Phase 3 - Professional Invoice & Receipt)", () => 
       />,
     );
 
-    const printBtn = screen.getByRole("button", { name: /PRINT RECEIPT/i });
+    const printBtn = screen.getByRole("button", { name: /Print Receipt/i });
     fireEvent.click(printBtn);
     expect(printSpy).toHaveBeenCalled();
 
-    const pdfBtn = screen.getByRole("button", { name: /PRINT A4/i });
+    const pdfBtn = screen.getByRole("button", { name: /Download PDF/i });
     fireEvent.click(pdfBtn);
     expect(pdfSpy).toHaveBeenCalled();
   });
@@ -118,12 +118,10 @@ describe("PostSaleDialog (POS Phase 3 - Professional Invoice & Receipt)", () => 
       />,
     );
 
-    const waBtn = screen.getByRole("button", { name: /WHATSAPP/i });
-    fireEvent.click(waBtn);
+    fireEvent.click(screen.getByRole("button", { name: /^WhatsApp$/i }));
     expect(waSpy).toHaveBeenCalled();
 
-    const emailBtn = screen.getByRole("button", { name: /EMAIL/i });
-    fireEvent.click(emailBtn);
+    fireEvent.click(screen.getByRole("button", { name: /Email Receipt/i }));
     expect(emailSpy).toHaveBeenCalled();
   });
 
@@ -141,7 +139,7 @@ describe("PostSaleDialog (POS Phase 3 - Professional Invoice & Receipt)", () => 
       />,
     );
 
-    const newSaleBtn = screen.getByRole("button", { name: /START NEW SALE/i });
+    const newSaleBtn = screen.getByRole("button", { name: /Start New Sale/i });
     fireEvent.click(newSaleBtn);
     expect(onNewSale).toHaveBeenCalledTimes(1);
   });

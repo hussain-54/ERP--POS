@@ -175,8 +175,8 @@ describe("CartZone", () => {
       />,
     );
 
-    expect(screen.getByText(/Grand Total/i)).toBeInTheDocument();
-    const proceedBtn = screen.getByRole("button", { name: /Go to Payment/i });
+    expect(screen.getByText(/Go to Payment|Checkout \/ Complete Sale/i)).toBeInTheDocument();
+    const proceedBtn = screen.getByRole("button", { name: /Checkout \/ Complete Sale|Go to Payment/i });
     fireEvent.click(proceedBtn);
     expect(onProceed).toHaveBeenCalledTimes(1);
   });

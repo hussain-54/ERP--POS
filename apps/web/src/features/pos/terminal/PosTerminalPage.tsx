@@ -57,7 +57,7 @@ interface CompletedSaleMeta {
 }
 
 export function PosTerminalPage() {
-  const { branchId, organizationId, permissions, hasPermission } = useAuth();
+  const { branchId, organizationId, permissions, hasPermission, user } = useAuth();
   const { push } = useToast();
   const navigate = useNavigate();
   const location = useLocation();
@@ -653,72 +653,40 @@ export function PosTerminalPage() {
       })) as { id?: string; invoiceNumber?: string } | undefined;
 
       const invoiceNum = postRes?.invoiceNumber ?? `INV-${Date.now().toString().slice(-6)}`;
+      const cashierName = user?.fullName ?? "Counter Cashier";
+      const terminalId = "POS-01";
+      const paymentStatus = paymentKind === "credit" ? ("unpaid" as const) : ("paid" as const);
+      const invoiceItems = lines.map((l) => ({
+        name: l.name,
+        sku: l.sku || null,
+        unit: l.unitLabel,
+        qty: l.qty,
+        listPrice: l.listPrice,
+        rate: l.rate,
+        discount: l.discount,
+        tax: l.tax * l.qty,
+        total: l.rate * l.qty - l.discount,
+      }));
+      const invoicePayments = payments.map((p) => ({
+        method: p.methodKind,
+        amount: p.amount,
+        reference: "reference" in p ? (p.reference ?? null) : null,
+      }));
 
-      // Build authoritative invoice object
-      let invView: InvoiceView;
-      if (postRes?.id) {
-        try {
-          invView = await posApi.getInvoice(postRes.id);
-        } catch {
-          push({
-            title: "Receipt loaded from sale totals",
-            description: "Server invoice fetch failed — verify amounts before sharing or printing.",
-            tone: "info",
-          });
-          invView = {
-            invoiceNumber: invoiceNum,
-            customerName: customer.label,
-            customerMobile: customer.mobile ?? null,
-            customerEmail: customer.email ?? null,
-            branchName: "Main Branch",
-            dateTime: new Date().toISOString(),
-            sale: {
-              id: postRes.id,
-              organizationId: organizationId ?? uuid(),
-              branchId: branchId ?? uuid(),
-              warehouseId: branchId ?? uuid(),
-              invoiceNumber: invoiceNum,
-              subtotal: totals.subtotal,
-              discountTotal: totals.totalDiscount,
-              taxTotal: totals.tax,
-              grandTotal: totals.grand,
-              paidTotal: currentTenderReceived,
-              remainingTotal: Math.max(0, totals.grand - currentTenderReceived),
-              posMode: "easy",
-              localeMode: "en",
-              status: "posted",
-              paymentStatus: paymentKind === "credit" ? "unpaid" : "paid",
-              idempotencyKey: uuid(),
-              createdAt: new Date().toISOString(),
-              updatedAt: new Date().toISOString(),
-              version: 1,
-            },
-            items: lines.map((l) => ({
-              name: l.name,
-              unit: l.unitLabel,
-              qty: l.qty,
-              rate: l.rate,
-              discount: l.discount,
-              tax: l.tax * l.qty,
-              total: (l.rate * l.qty) - l.discount,
-            })),
-            payments: payments.map((p) => ({
-              method: p.methodKind,
-              amount: p.amount,
-              reference: "reference" in p ? (p.reference ?? null) : null,
-            })),
-          };
-        }
-      } else {
-        invView = {
+      function buildLocalInvoice(saleId: string): InvoiceView {
+        return {
           invoiceNumber: invoiceNum,
           customerName: customer.label,
           customerMobile: customer.mobile ?? null,
           customerEmail: customer.email ?? null,
           branchName: "Main Branch",
+          terminalId,
+          cashierName,
           dateTime: new Date().toISOString(),
+          paidAmount: currentTenderReceived,
+          remainingAmount: Math.max(0, totals.grand - currentTenderReceived),
           sale: {
-            id: uuid(),
+            id: saleId,
             organizationId: organizationId ?? uuid(),
             branchId: branchId ?? uuid(),
             warehouseId: branchId ?? uuid(),
@@ -732,27 +700,60 @@ export function PosTerminalPage() {
             posMode: "easy",
             localeMode: "en",
             status: "posted",
-            paymentStatus: paymentKind === "credit" ? "unpaid" : "paid",
-            idempotencyKey: uuid(),
+            paymentStatus,
+            idempotencyKey: saleIdempotencyKey,
             createdAt: new Date().toISOString(),
             updatedAt: new Date().toISOString(),
             version: 1,
           },
-          items: lines.map((l) => ({
-            name: l.name,
-            unit: l.unitLabel,
-            qty: l.qty,
-            rate: l.rate,
-            discount: l.discount,
-            tax: l.tax * l.qty,
-            total: (l.rate * l.qty) - l.discount,
-          })),
-          payments: payments.map((p) => ({
-            method: p.methodKind,
-            amount: p.amount,
-            reference: "reference" in p ? (p.reference ?? null) : null,
-          })),
+          items: invoiceItems,
+          payments: invoicePayments,
         };
+      }
+
+      // Build authoritative invoice object (after confirmed post only)
+      let invView: InvoiceView;
+      if (postRes?.id) {
+        try {
+          const serverInv = await posApi.getInvoice(postRes.id);
+          invView = {
+            ...serverInv,
+            customerName: serverInv.customerName ?? customer.label,
+            customerMobile: serverInv.customerMobile ?? customer.mobile ?? null,
+            customerEmail: serverInv.customerEmail ?? customer.email ?? null,
+            cashierName: serverInv.cashierName ?? cashierName,
+            terminalId: serverInv.terminalId ?? terminalId,
+            branchName: serverInv.branchName ?? "Main Branch",
+            paidAmount: serverInv.paidAmount ?? currentTenderReceived,
+            remainingAmount:
+              serverInv.remainingAmount ?? Math.max(0, totals.grand - currentTenderReceived),
+            items:
+              serverInv.items?.length > 0
+                ? serverInv.items.map((item, idx) => ({
+                    ...item,
+                    sku: item.sku ?? invoiceItems[idx]?.sku ?? null,
+                    listPrice: item.listPrice ?? invoiceItems[idx]?.listPrice,
+                  }))
+                : invoiceItems,
+            payments: serverInv.payments?.length ? serverInv.payments : invoicePayments,
+            sale: serverInv.sale
+              ? {
+                  ...serverInv.sale,
+                  paymentStatus: serverInv.sale.paymentStatus ?? paymentStatus,
+                  paidTotal: serverInv.sale.paidTotal ?? currentTenderReceived,
+                }
+              : buildLocalInvoice(postRes.id).sale,
+          };
+        } catch {
+          push({
+            title: "Receipt loaded from sale totals",
+            description: "Server invoice fetch failed — verify amounts before sharing or printing.",
+            tone: "info",
+          });
+          invView = buildLocalInvoice(postRes.id);
+        }
+      } else {
+        invView = buildLocalInvoice(uuid());
       }
 
       setCompletedSaleMeta({
@@ -880,6 +881,16 @@ export function PosTerminalPage() {
               setUnknownBarcode("");
               setUnknownBarcodeOpen(true);
             }}
+            onCheckout={() => {
+              if (lines.length === 0) {
+                push({ title: "Cart is empty", description: "Add products before checkout.", tone: "info" });
+                return;
+              }
+              setMobilePane("checkout");
+            }}
+            checkoutDisabled={lines.length === 0 || busy}
+            cartItemCount={lines.length}
+            cartGrandTotal={totals.grand}
           />
         </div>
 
