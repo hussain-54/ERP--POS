@@ -845,7 +845,7 @@ export function PosTerminalPage() {
       <div className="pos-terminal-grid-3col min-h-0 flex-1 overflow-hidden">
         {/* Zone 1: Product Discovery (Left) */}
         <div
-          className={`pos-zone-cell ${mobilePane === "products" ? "flex" : "hidden"} lg:flex`}
+          className={`pos-zone-cell min-h-0 overflow-hidden ${mobilePane === "products" ? "flex" : "hidden"} lg:flex`}
         >
           <ProductDiscovery
             search={search}

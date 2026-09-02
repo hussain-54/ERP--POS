@@ -18,7 +18,7 @@ function stockBadge(stock: number | null | undefined, unitName?: string | null) 
   if (stock == null) {
     return (
       <span className="text-[9px] font-medium text-slate-400" title={`Unit: ${unit}`}>
-        — · {unit}
+        Stock — · {unit}
       </span>
     );
   }
@@ -31,13 +31,19 @@ function stockBadge(stock: number | null | undefined, unitName?: string | null) 
   }
   if (stock <= 5) {
     return (
-      <span className="inline-flex items-center rounded bg-amber-100 px-1 py-px text-[8px] font-bold text-amber-800">
+      <span
+        className="inline-flex items-center rounded bg-amber-100 px-1 py-px text-[8px] font-bold text-amber-800"
+        title={`Low stock: ${stock} ${unit}`}
+      >
         {stock} {unit}
       </span>
     );
   }
   return (
-    <span className="inline-flex items-center rounded bg-emerald-100 px-1 py-px text-[8px] font-bold text-emerald-800">
+    <span
+      className="inline-flex items-center rounded bg-emerald-100 px-1 py-px text-[8px] font-bold text-emerald-800"
+      title={`In stock: ${stock} ${unit}`}
+    >
       {stock} {unit}
     </span>
   );
@@ -129,8 +135,8 @@ export function ProductDiscovery({
   ];
 
   return (
-    <section className="pos-zone pos-zone-products h-full min-h-0" aria-label="Product discovery">
-      {/* Pinned zone header */}
+    <section className="pos-zone pos-zone-products flex h-full min-h-0 flex-1 flex-col overflow-hidden" aria-label="Product discovery">
+      {/* Pinned zone header — stays visible while grid scrolls */}
       <div className="pos-zone-header shrink-0">
         <h2 className="pos-zone-title flex items-center gap-1.5">
           <i className="fa-solid fa-boxes-stacked text-xs text-blue-600" aria-hidden />
@@ -141,7 +147,7 @@ export function ProductDiscovery({
         </span>
       </div>
 
-      {/* Pinned search & filters */}
+      {/* Pinned search & filters — stays visible while grid scrolls */}
       <div className="pos-products-toolbar shrink-0 space-y-1.5 p-2">
         <div className="flex gap-1.5">
           <div className="relative min-w-0 flex-1">
@@ -238,15 +244,15 @@ export function ProductDiscovery({
         ) : null}
       </div>
 
-      {/* Independently scrollable product grid */}
-      <div className="pos-products-grid min-h-0">
+      {/* Independently scrollable product grid — only this region scrolls */}
+      <div className="pos-products-grid min-h-0 flex-1">
         {loading && products.length === 0 ? (
-          <div className="flex h-28 flex-col items-center justify-center text-xs text-slate-400">
+          <div className="flex h-24 flex-col items-center justify-center text-xs text-slate-400">
             <i className="fa-solid fa-circle-notch fa-spin mb-1 text-base text-blue-500" />
             Loading catalog…
           </div>
         ) : products.length === 0 ? (
-          <div className="flex h-28 flex-col items-center justify-center p-3 text-center">
+          <div className="flex h-24 flex-col items-center justify-center p-3 text-center">
             <i className="fa-solid fa-magnifying-glass mb-1 text-lg text-slate-300" />
             <p className="text-xs font-bold text-slate-600">No products found</p>
             <p className="text-[10px] text-slate-400">Search by SKU, barcode, or name</p>
@@ -277,7 +283,7 @@ export function ProductDiscovery({
                     }}
                     className={`group min-w-0 ${zero ? "cursor-not-allowed" : "cursor-pointer"}`}
                   >
-                    <div className="flex gap-2">
+                    <div className="flex gap-1.5">
                       <div className="pos-product-thumb" aria-hidden>
                         {p.imageUrl ? (
                           <img src={p.imageUrl} alt="" loading="lazy" />
@@ -287,7 +293,7 @@ export function ProductDiscovery({
                       </div>
 
                       <div className="min-w-0 flex-1">
-                        <div className="flex items-start gap-1">
+                        <div className="flex items-start gap-0.5">
                           <h3
                             className="line-clamp-2 min-w-0 flex-1 text-[11px] font-bold leading-snug text-slate-900 group-hover:text-blue-600"
                             title={p.name}
@@ -309,23 +315,25 @@ export function ProductDiscovery({
                           </button>
                         </div>
 
-                        <p className="mt-0.5 truncate text-[9px] font-medium text-slate-500">
-                          {p.sku || "—"}
+                        <p className="mt-0.5 truncate text-[9px] font-medium text-slate-500" title={p.sku || undefined}>
+                          SKU: {p.sku || "—"}
                         </p>
 
-                        <div className="mt-1 flex items-center justify-between gap-1">
-                          {stockBadge(stock, p.unitName)}
-                          <div className="min-w-0 text-right leading-none">
+                        <div className="mt-1 flex items-end justify-between gap-1">
+                          <div className="min-w-0 shrink">{stockBadge(stock, p.unitName)}</div>
+                          <div className="min-w-0 text-right leading-tight">
                             {hasDiscount ? (
-                              <div className="flex flex-wrap items-center justify-end gap-x-1 gap-y-0">
-                                <span className="pos-price-original">{money(retail)}</span>
-                                <span className="pos-price-selling">{money(selling)}</span>
-                                {discountPct > 0 ? (
-                                  <span className="pos-price-discount-badge">-{discountPct}%</span>
-                                ) : null}
-                              </div>
+                              <>
+                                <div className="flex flex-wrap items-center justify-end gap-x-1">
+                                  <span className="pos-price-original">{money(retail)}</span>
+                                  {discountPct > 0 ? (
+                                    <span className="pos-price-discount-badge">-{discountPct}%</span>
+                                  ) : null}
+                                </div>
+                                <div className="pos-price-selling">{money(selling)}</div>
+                              </>
                             ) : (
-                              <span className="pos-price-selling">{money(selling)}</span>
+                              <div className="pos-price-selling">{money(selling)}</div>
                             )}
                             {isPromo ? (
                               <span className="mt-0.5 block text-[8px] font-bold uppercase tracking-wide text-emerald-600">
@@ -349,10 +357,16 @@ export function ProductDiscovery({
                       e.stopPropagation();
                       handleAddProduct(p);
                     }}
-                    className="flex w-full items-center justify-center gap-1 rounded-md bg-blue-600 py-1.5 text-[11px] font-bold text-white transition hover:bg-blue-700 active:scale-[0.98] disabled:cursor-not-allowed disabled:bg-slate-200 disabled:text-slate-400"
+                    className="mt-auto flex w-full items-center justify-center gap-1 rounded-md bg-blue-600 py-1.5 text-[11px] font-bold text-white shadow-xs transition hover:bg-blue-700 active:scale-[0.98] disabled:cursor-not-allowed disabled:bg-slate-200 disabled:text-slate-400 disabled:shadow-none"
                   >
-                    <i className="fa-solid fa-plus text-[9px]" aria-hidden />
-                    {zero ? "Out of stock" : "Add to Cart"}
+                    {zero ? (
+                      "Out of stock"
+                    ) : (
+                      <>
+                        <i className="fa-solid fa-plus text-[9px]" aria-hidden />
+                        Add to Cart
+                      </>
+                    )}
                   </button>
                 </article>
               );
