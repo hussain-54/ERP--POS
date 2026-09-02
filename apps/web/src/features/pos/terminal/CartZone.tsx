@@ -176,7 +176,7 @@ export function CartZone({
 
       <div className="pos-zone-scroll min-h-0 flex-1 p-1.5">
         {isEmpty ? (
-          <div className="flex h-full min-h-[10rem] flex-col items-center justify-center p-5 text-center">
+          <div className="flex h-full min-h-0 flex-col items-center justify-center p-5 text-center">
             <div className="mb-2 flex h-12 w-12 items-center justify-center rounded-2xl bg-blue-50 text-blue-500">
               <i className="fa-solid fa-cart-arrow-down text-xl" aria-hidden />
             </div>

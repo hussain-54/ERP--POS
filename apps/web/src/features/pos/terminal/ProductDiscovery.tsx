@@ -171,7 +171,7 @@ export function ProductDiscovery({
     { id: "categories", label: "Categories", icon: "fa-layer-group" },
   ];
 
-  const showPager = products.length > 0 || Boolean(hasMore);
+  const showPager = true;
 
   return (
     <section

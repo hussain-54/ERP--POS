@@ -1,11 +1,9 @@
 import { useEffect, useState, type ReactNode } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
 import { useAuth } from "@/features/auth/AuthContext";
-import { POS_TERMINAL_PATHS } from "../ownership";
 import { POS_TOGGLE_SIDEBAR } from "./events";
 import { PosHeader } from "./PosHeader";
 import { PosSidebar } from "./PosSidebar";
-import { PosShortcutBar } from "./PosShortcutBar";
 import { PosShellProvider, usePosShellState } from "./PosShellContext";
 import "../tokens.css";
 
@@ -16,7 +14,6 @@ function PosShellFrame({ children }: { children: ReactNode }) {
   const { holdCount, shiftOpen, drawer, terminalId } = usePosShellState();
   const [mobileNavOpen, setMobileNavOpen] = useState(false);
   const commandCenter = pathname === "/pos";
-  const showShortcuts = POS_TERMINAL_PATHS.has(pathname);
   const branchLabel = branchId
     ? branches.find((b) => b === branchId)
       ? `Branch ${branchId.slice(0, 8)}`
@@ -40,7 +37,6 @@ function PosShellFrame({ children }: { children: ReactNode }) {
       if (!event.key.startsWith("F")) return;
       const target = event.target as HTMLElement | null;
       if (target && (target.tagName === "INPUT" || target.tagName === "TEXTAREA" || target.isContentEditable)) {
-        // Allow F2 even in inputs to jump search; block others while typing
         if (event.key !== "F2") return;
       }
       const map: Record<string, () => void> = {
@@ -89,7 +85,6 @@ function PosShellFrame({ children }: { children: ReactNode }) {
         />
         <div className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden">{children}</div>
       </div>
-      {showShortcuts ? <PosShortcutBar /> : null}
     </div>
   );
 }

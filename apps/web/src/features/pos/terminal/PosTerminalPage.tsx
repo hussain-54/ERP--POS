@@ -848,7 +848,7 @@ export function PosTerminalPage() {
       <div className="pos-terminal-grid-3col min-h-0 flex-1 overflow-hidden">
         {/* Zone 1: Product Discovery (Left) */}
         <div
-          className={`pos-zone-cell min-h-0 overflow-hidden ${mobilePane === "products" ? "flex" : "hidden"} lg:flex`}
+          className={`pos-zone-cell min-h-0 min-w-0 overflow-hidden ${mobilePane === "products" ? "flex" : "hidden"} lg:flex`}
         >
           <ProductDiscovery
             search={search}
@@ -886,7 +886,7 @@ export function PosTerminalPage() {
 
         {/* Zone 2: Cart Ledger (Center) */}
         <div
-          className={`pos-zone-cell min-h-0 overflow-hidden ${mobilePane === "cart" ? "flex" : "hidden"} lg:flex`}
+          className={`pos-zone-cell min-h-0 min-w-0 overflow-hidden ${mobilePane === "cart" ? "flex" : "hidden"} lg:flex`}
         >
           <CartZone
             lines={lines}
@@ -944,7 +944,7 @@ export function PosTerminalPage() {
 
         {/* Zone 3: Customer + Order Summary + Checkout CTA (Right) */}
         <div
-          className={`pos-zone-cell min-h-0 overflow-hidden ${mobilePane === "checkout" ? "flex" : "hidden"} lg:flex`}
+          className={`pos-zone-cell min-h-0 min-w-0 overflow-hidden ${mobilePane === "checkout" ? "flex" : "hidden"} lg:flex`}
         >
           <CheckoutZone
             customer={customer}
