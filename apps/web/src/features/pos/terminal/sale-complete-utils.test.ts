@@ -21,6 +21,31 @@ const baseLine: CartLine = {
 };
 
 describe("sale-complete-utils", () => {
+  it("blocks out-of-stock products", () => {
+    const result = validateSaleBeforeComplete({
+      lines: [{ ...baseLine, stockAvailable: 0 }],
+      customer: emptyCustomer(),
+      paymentKind: "cash",
+      cashReceived: 1170,
+      grandTotal: 1170,
+      defaultUnitId: null,
+    });
+    expect(result.ok).toBe(false);
+    if (!result.ok) expect(result.title).toMatch(/out of stock/i);
+  });
+
+  it("requires cash received amount", () => {
+    const result = validateSaleBeforeComplete({
+      lines: [baseLine],
+      customer: emptyCustomer(),
+      paymentKind: "cash",
+      grandTotal: 1170,
+      defaultUnitId: null,
+    });
+    expect(result.ok).toBe(false);
+    if (!result.ok) expect(result.title).toMatch(/Enter cash received/i);
+  });
+
   it("blocks insufficient cash", () => {
     const result = validateSaleBeforeComplete({
       lines: [baseLine],

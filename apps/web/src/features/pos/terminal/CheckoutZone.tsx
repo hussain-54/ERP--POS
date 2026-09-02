@@ -349,10 +349,10 @@ export function CheckoutZone({
           disabled={busy || empty}
           onClick={onComplete}
           className="flex w-full items-center justify-center gap-1.5 rounded-lg border border-emerald-400 bg-emerald-50 py-1.5 text-xs font-bold text-emerald-800 transition hover:bg-emerald-100 active:scale-99 disabled:cursor-not-allowed disabled:opacity-40"
-          title="Instantly complete cash sale (F8)"
+          title="Complete exact cash sale for the payable total (F8)"
         >
           <i className="fa-solid fa-bolt text-emerald-600" />
-          <span>Quick Cash Sale (F8)</span>
+          <span>Exact Cash Sale (F8)</span>
         </button>
       </div>
     </section>

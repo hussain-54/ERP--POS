@@ -393,6 +393,8 @@ export function PosTerminalPage() {
       if (detail === "pay") {
         if (stage === "terminal" && lines.length > 0) {
           setStage("checkout");
+        } else if (paymentKind === "cash") {
+          void completeSale(undefined, { cashReceived: cashReceived ?? totals.grand });
         } else {
           void completeSale();
         }
@@ -492,7 +494,7 @@ export function PosTerminalPage() {
     push({ title: "Sale resumed into cart", tone: "success" });
   }
 
-  function buildPaymentsForPost(override?: PosPaymentLine[]) {
+  function buildPaymentsForPost(override?: PosPaymentLine[], cashTender?: number) {
     if (override !== undefined) {
       return override
         .filter((p) => p.paymentMethodId && p.amount > 0)
@@ -538,11 +540,12 @@ export function PosTerminalPage() {
     const kind = tenderToMethodKind(paymentKind);
     const id = methodsByKind[kind] ?? methodsByKind.cash;
     if (!id) return [];
+    const tender = cashTender ?? cashReceived;
     return [
       {
         paymentMethodId: id,
         amount: totals.grand,
-        amountReceived: paymentKind === "cash" && cashReceived != null ? cashReceived : totals.grand,
+        amountReceived: paymentKind === "cash" && tender != null ? tender : totals.grand,
         methodKind: kind,
       },
     ];
@@ -550,10 +553,18 @@ export function PosTerminalPage() {
 
   async function completeSale(
     overridePayments?: PosPaymentLine[],
-    options?: { installment?: { downPayment: string; installmentCount: number } },
+    options?: {
+      installment?: { downPayment: string; installmentCount: number };
+      /** Explicit cash tender (Quick Cash / Exact) — avoids stale React state. */
+      cashReceived?: number;
+    },
   ) {
     if (busy || !branchId || !organizationId || lines.length === 0) return;
-    const payments = buildPaymentsForPost(overridePayments);
+    const effectiveCashReceived = options?.cashReceived ?? cashReceived;
+    if (options?.cashReceived != null) {
+      setCashReceived(options.cashReceived);
+    }
+    const payments = buildPaymentsForPost(overridePayments, effectiveCashReceived);
     if (!customer.id && payments.length === 0) {
       push({
         title: "Payment required",
@@ -574,14 +585,14 @@ export function PosTerminalPage() {
       lines,
       customer,
       paymentKind,
-      cashReceived,
+      cashReceived: effectiveCashReceived,
       grandTotal: totals.grand,
       overridePayments,
       defaultUnitId,
     });
     if (!preCheck.ok) {
       push({ title: preCheck.title, description: preCheck.description, tone: "danger" });
-      if (preCheck.title === "Insufficient cash received") setStage("checkout");
+      if (preCheck.title.includes("cash")) setStage("checkout");
       return;
     }
 
@@ -590,8 +601,8 @@ export function PosTerminalPage() {
         ? overridePayments.reduce((acc, p) => acc + (p.amountReceived ?? p.amount), 0)
         : paymentKind === "credit"
           ? 0
-          : paymentKind === "cash" && cashReceived != null
-            ? cashReceived
+          : paymentKind === "cash" && effectiveCashReceived != null
+            ? effectiveCashReceived
             : totals.grand;
     const currentChange = Math.max(0, currentTenderReceived - totals.grand);
 
@@ -926,7 +937,7 @@ export function PosTerminalPage() {
             }}
             onHold={() => void onHold()}
             onPayment={() => setPaymentOpen(true)}
-            onComplete={() => void completeSale()}
+            onComplete={() => void completeSale(undefined, { cashReceived: cashReceived ?? totals.grand })}
             onProceedToCheckout={() => setStage("checkout")}
             busy={busy}
           />
@@ -1035,7 +1046,7 @@ export function PosTerminalPage() {
         hasCustomer={Boolean(customer.id)}
         walkIn={!customer.id}
         onClose={() => setPaymentOpen(false)}
-        confirmLabel="Record payment"
+        confirmLabel="PAY & COMPLETE SALE"
         onConfirm={(linesPay, meta) => {
           setPaymentLines(linesPay);
           if (meta) {
@@ -1045,11 +1056,7 @@ export function PosTerminalPage() {
             });
           }
           setPaymentOpen(false);
-          push({
-            title: "Payment recorded",
-            description: "Cart preserved — tap Complete Sale when ready.",
-            tone: "success",
-          });
+          void completeSale(linesPay, meta ? { installment: meta } : undefined);
         }}
       />
 

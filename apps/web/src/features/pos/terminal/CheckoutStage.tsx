@@ -65,7 +65,10 @@ export interface CheckoutStageProps {
   onBackToCart: () => void;
   onComplete: (
     overridePayments?: PosPaymentLine[],
-    options?: { installment?: { downPayment: string; installmentCount: number } },
+    options?: {
+      installment?: { downPayment: string; installmentCount: number };
+      cashReceived?: number;
+    },
   ) => void;
   methodsByKind: Record<string, string>;
   busy?: boolean;
@@ -250,7 +253,7 @@ export function CheckoutStage({
         );
         return;
       }
-      onComplete();
+      onComplete(undefined, { cashReceived: currentCash });
       return;
     }
 
@@ -1422,7 +1425,7 @@ export function CheckoutStage({
             >
               <span className="flex items-center gap-2">
                 <i className={`fa-solid ${busy ? "fa-spinner fa-spin" : "fa-lock"} text-xl`} />
-                <span>{busy ? "Processing…" : "CONFIRM PAYMENT"}</span>
+                <span>{busy ? "Processing…" : "PAY & COMPLETE SALE"}</span>
               </span>
 
               <span className="rounded-xl bg-black/20 px-3 py-1 text-sm font-black">

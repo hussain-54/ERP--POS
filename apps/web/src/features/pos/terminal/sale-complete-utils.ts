@@ -24,13 +24,15 @@ export function validateSaleBeforeComplete(input: {
     if (
       !isManualCartLine(line) &&
       line.stockAvailable != null &&
-      line.stockAvailable > 0 &&
       line.qty > line.stockAvailable
     ) {
       return {
         ok: false,
-        title: "Insufficient stock",
-        description: `${line.name} — only ${line.stockAvailable} available.`,
+        title: line.stockAvailable <= 0 ? "Product is out of stock" : "Insufficient stock",
+        description:
+          line.stockAvailable <= 0
+            ? `${line.name} has no stock available.`
+            : `${line.name} — only ${line.stockAvailable} available.`,
       };
     }
     if (isManualCartLine(line) && !input.defaultUnitId && !line.unitId.match(/^[0-9a-f-]{36}$/i)) {
@@ -44,8 +46,14 @@ export function validateSaleBeforeComplete(input: {
 
   const usingOverride = Boolean(input.overridePayments && input.overridePayments.length > 0);
   if (!usingOverride && input.paymentKind === "cash") {
-    const received = input.cashReceived ?? input.grandTotal;
-    if (received + 0.001 < input.grandTotal) {
+    if (input.cashReceived == null || !Number.isFinite(input.cashReceived)) {
+      return {
+        ok: false,
+        title: "Enter cash received",
+        description: "Enter the amount received from the customer, or use Exact / Quick Cash.",
+      };
+    }
+    if (input.cashReceived + 0.001 < input.grandTotal) {
       return {
         ok: false,
         title: "Insufficient cash received",
