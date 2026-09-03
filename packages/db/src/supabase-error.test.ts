@@ -26,9 +26,18 @@ describe("mapSupabaseError", () => {
   it("maps missing FK to a validation error", () => {
     const err = mapSupabaseError({
       code: "23503",
-      message: "insert or update on table \"products\" violates foreign key constraint",
+      message: 'insert or update on table "products" violates foreign key constraint',
     });
     expect(err).toBeInstanceOf(ValidationDomainError);
+  });
+
+  it("maps PostgREST single-row mismatch to a validation error", () => {
+    const err = mapSupabaseError({
+      code: "PGRST116",
+      message: "JSON object requested, multiple (or no) rows returned",
+    });
+    expect(err).toBeInstanceOf(ValidationDomainError);
+    expect(err.message).toMatch(/unique SKU/i);
   });
 
   it("does not swallow unknown database errors", () => {

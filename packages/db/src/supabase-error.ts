@@ -60,6 +60,15 @@ export function mapSupabaseError(error: unknown): Error {
   if (code === "23502") {
     return new ValidationDomainError("A required database field is missing");
   }
+  if (
+    code === "PGRST116" ||
+    message.toLowerCase().includes("json object requested") ||
+    message.toLowerCase().includes("multiple (or no) rows")
+  ) {
+    return new ValidationDomainError(
+      "Could not save this product because more than one matching SKU, product code, or barcode was found. Use a unique SKU.",
+    );
+  }
   if (error instanceof Error) return error;
   return new Error(message);
 }

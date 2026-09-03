@@ -373,6 +373,49 @@ export class CatalogRepository {
     return created;
   }
 
+  private idsFromRows(data: unknown): string[] {
+    const rows = Array.isArray(data) ? data : data ? [data] : [];
+    return rows.map((r) => String((r as Row).id ?? "")).filter(Boolean);
+  }
+
+  /** Never use maybeSingle() here — duplicate SKUs/codes make PostgREST throw PGRST116. */
+  private async listActiveProductIdsByField(
+    organizationId: string,
+    field: "sku" | "product_code",
+    value: string,
+  ): Promise<string[]> {
+    const trimmed = value.trim();
+    if (!trimmed) return [];
+    const { data, error } = await this.db
+      .from("products")
+      .select("id")
+      .eq("organization_id", organizationId)
+      .eq(field, trimmed)
+      .is("deleted_at", null)
+      .limit(20);
+    throwIfDbError(error);
+    return this.idsFromRows(data);
+  }
+
+  private async listBarcodeOwners(
+    organizationId: string,
+    code: string,
+  ): Promise<Array<{ id: string; productId: string }>> {
+    const trimmed = code.trim();
+    if (!trimmed) return [];
+    const { data, error } = await this.db
+      .from("barcodes")
+      .select("id,product_id")
+      .eq("organization_id", organizationId)
+      .eq("code", trimmed)
+      .limit(20);
+    throwIfDbError(error);
+    return (data ?? []).map((r) => ({
+      id: String((r as Row).id),
+      productId: String((r as Row).product_id ?? ""),
+    }));
+  }
+
   private async assertProductIdentityAvailable(input: {
     organizationId: string;
     sku: string;
@@ -380,40 +423,19 @@ export class CatalogRepository {
     barcode: string;
     excludeProductId?: string;
   }): Promise<void> {
-    const skuQuery = this.db
-      .from("products")
-      .select("id")
-      .eq("organization_id", input.organizationId)
-      .eq("sku", input.sku)
-      .maybeSingle();
-    const codeQuery = this.db
-      .from("products")
-      .select("id")
-      .eq("organization_id", input.organizationId)
-      .eq("product_code", input.productCode)
-      .maybeSingle();
-    const barcodeQuery = this.db
-      .from("barcodes")
-      .select("id,product_id")
-      .eq("organization_id", input.organizationId)
-      .eq("code", input.barcode)
-      .maybeSingle();
+    const [skuIds, codeIds, barcodeOwners] = await Promise.all([
+      this.listActiveProductIdsByField(input.organizationId, "sku", input.sku),
+      this.listActiveProductIdsByField(input.organizationId, "product_code", input.productCode),
+      this.listBarcodeOwners(input.organizationId, input.barcode),
+    ]);
 
-    const [skuRes, codeRes, barcodeRes] = await Promise.all([skuQuery, codeQuery, barcodeQuery]);
-    throwIfDbError(skuRes.error);
-    throwIfDbError(codeRes.error);
-    throwIfDbError(barcodeRes.error);
-
-    if (skuRes.data && String(skuRes.data.id) !== input.excludeProductId) {
+    if (skuIds.some((id) => id !== input.excludeProductId)) {
       throw new ConflictDomainError("A product with this SKU already exists");
     }
-    if (codeRes.data && String(codeRes.data.id) !== input.excludeProductId) {
+    if (codeIds.some((id) => id !== input.excludeProductId)) {
       throw new ConflictDomainError("A product with this product code already exists");
     }
-    if (
-      barcodeRes.data &&
-      String((barcodeRes.data as { product_id?: string }).product_id) !== input.excludeProductId
-    ) {
+    if (barcodeOwners.some((row) => row.productId && row.productId !== input.excludeProductId)) {
       throw new ConflictDomainError("A product with this barcode already exists");
     }
   }
@@ -486,25 +508,15 @@ export class CatalogRepository {
       const sku = String(input.sku ?? current.sku).trim();
       const productCode = String(input.productCode ?? current.productCode).trim();
       if (input.sku != null || input.productCode != null) {
-        const skuQuery = this.db
-          .from("products")
-          .select("id")
-          .eq("organization_id", input.organizationId ?? current.organizationId)
-          .eq("sku", sku)
-          .maybeSingle();
-        const codeQuery = this.db
-          .from("products")
-          .select("id")
-          .eq("organization_id", input.organizationId ?? current.organizationId)
-          .eq("product_code", productCode)
-          .maybeSingle();
-        const [skuRes, codeRes] = await Promise.all([skuQuery, codeQuery]);
-        throwIfDbError(skuRes.error);
-        throwIfDbError(codeRes.error);
-        if (skuRes.data && String(skuRes.data.id) !== id) {
+        const orgId = input.organizationId ?? current.organizationId;
+        const [skuIds, codeIds] = await Promise.all([
+          this.listActiveProductIdsByField(orgId, "sku", sku),
+          this.listActiveProductIdsByField(orgId, "product_code", productCode),
+        ]);
+        if (skuIds.some((otherId) => otherId !== id)) {
           throw new ConflictDomainError("A product with this SKU already exists");
         }
-        if (codeRes.data && String(codeRes.data.id) !== id) {
+        if (codeIds.some((otherId) => otherId !== id)) {
           throw new ConflictDomainError("A product with this product code already exists");
         }
       }
@@ -519,9 +531,11 @@ export class CatalogRepository {
       }
     }
 
-    const { data, error } = await this.db.from("products").update(patch).eq("id", id).select("*").single();
+    const { data, error } = await this.db.from("products").update(patch).eq("id", id).select("*");
     if (error) throw mapSupabaseError(error);
-    const product = mapProduct(data);
+    const updatedRow = Array.isArray(data) ? data[0] : data;
+    if (!updatedRow) throw new ValidationDomainError("Product not found");
+    const product = mapProduct(updatedRow as Row);
 
     if (input.specifications) {
       const s = input.specifications;
@@ -544,12 +558,13 @@ export class CatalogRepository {
         weight: s.weight ?? null,
         updated_at: new Date().toISOString(),
       };
-      const { data: existing, error: existingErr } = await this.db
+      const { data: existingRows, error: existingErr } = await this.db
         .from("product_specifications")
         .select("id")
         .eq("product_id", id)
-        .maybeSingle();
+        .limit(5);
       throwIfDbError(existingErr);
+      const existing = (existingRows ?? [])[0] as { id?: string } | undefined;
       if (existing?.id) {
         const { error: specErr } = await this.db
           .from("product_specifications")
@@ -568,13 +583,14 @@ export class CatalogRepository {
 
     if (input.primaryBarcode != null && String(input.primaryBarcode).trim()) {
       const code = normalizeBarcode(String(input.primaryBarcode));
-      const { data: primary, error: barErr } = await this.db
+      const { data: primaryRows, error: barErr } = await this.db
         .from("barcodes")
         .select("id")
         .eq("product_id", id)
         .eq("is_primary", true)
-        .maybeSingle();
+        .limit(5);
       throwIfDbError(barErr);
+      const primary = (primaryRows ?? [])[0] as { id?: string } | undefined;
       if (primary?.id) {
         const { error: updErr } = await this.db
           .from("barcodes")
@@ -727,10 +743,10 @@ export class CatalogRepository {
       .from("product_specifications")
       .select("*")
       .eq("product_id", productId)
-      .maybeSingle();
-    if (error) throw error;
-    if (!data) return null;
-    const row = data as Row;
+      .limit(1);
+    if (error) throw mapSupabaseError(error);
+    const row = ((Array.isArray(data) ? data[0] : data) ?? null) as Row | null;
+    if (!row) return null;
     return {
       size: (row.size as string | null) ?? null,
       color: (row.color as string | null) ?? null,
@@ -1118,11 +1134,11 @@ export class CatalogRepository {
       .eq("organization_id", organizationId)
       .eq("sku", sku)
       .is("deleted_at", null)
-      .select("*")
-      .maybeSingle();
-    if (error) throw error;
-    if (!data) throw new Error(`Product sku not found: ${sku}`);
-    return mapProduct(data);
+      .select("*");
+    if (error) throw mapSupabaseError(error);
+    const row = (Array.isArray(data) ? data[0] : data) ?? null;
+    if (!row) throw new ValidationDomainError(`Product sku not found: ${sku}`);
+    return mapProduct(row as Row);
   }
 }
 
