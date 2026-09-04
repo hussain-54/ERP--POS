@@ -116,15 +116,38 @@
   background: #ffffff;
 }
 
+.pos-zone-checkout .pos-zone-scroll {
+  /* Keep payment methods + cash block usable; footer stays pinned below */
+  padding-bottom: 0.25rem;
+}
+
+@media (max-height: 820px) {
+  .pos-zone-checkout .pos-zone-scroll {
+    padding-top: 0.35rem;
+    padding-bottom: 0.15rem;
+  }
+
+  .pos-complete-sale-btn {
+    min-height: 2.75rem;
+    padding: 0.7rem 0.85rem;
+    font-size: 0.8125rem;
+  }
+
+  .pos-fkey-chips {
+    display: none;
+  }
+}
+
 /* Pinned section footers — always visible at bottom of each rail */
 .pos-zone-footer {
-  flex: 0 0 auto;
-  flex-shrink: 0;
+  flex: 0 0 auto !important;
+  flex-shrink: 0 !important;
   margin-top: auto;
-  position: relative;
-  z-index: 12;
+  position: sticky;
+  bottom: 0;
+  z-index: 20;
   background: #ffffff;
-  box-shadow: 0 -4px 12px rgb(15 23 42 / 0.04);
+  box-shadow: 0 -4px 12px rgb(15 23 42 / 0.06);
 }
 
 /* Products pagination footer */
@@ -270,12 +293,13 @@
   gap: 0.5rem;
   border-radius: 0.75rem;
   background: #2563eb;
-  padding: 0.9rem 1rem;
-  font-size: 0.875rem;
+  padding: 0.95rem 1rem;
+  min-height: 3.15rem;
+  font-size: 0.9375rem;
   font-weight: 900;
-  letter-spacing: 0.01em;
+  letter-spacing: 0.02em;
   color: #ffffff;
-  box-shadow: 0 4px 12px rgb(37 99 235 / 0.28);
+  box-shadow: 0 4px 14px rgb(37 99 235 / 0.32);
   transition: background-color 0.12s ease, transform 0.1s ease;
 }
 

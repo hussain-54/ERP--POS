@@ -387,7 +387,7 @@ export function CartZone({
             className="mt-2 flex w-full items-center justify-center gap-1.5 rounded-xl bg-blue-600 py-2.5 text-xs font-black text-white shadow-sm transition hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-40 lg:hidden"
           >
             <i className="fa-solid fa-cash-register text-[11px]" aria-hidden />
-            Checkout / Complete Sale
+            Go to Payment / COMPLETE SALE
           </button>
         ) : null}
 

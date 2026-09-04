@@ -187,6 +187,6 @@ describe("CartZone", () => {
     expect(screen.getByRole("button", { name: /^Customer$/i })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: /^Discount$/i })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: /Price Check/i })).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: /Checkout \/ Complete Sale/i })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /Go to Payment \/ COMPLETE SALE/i })).toBeInTheDocument();
   });
 });

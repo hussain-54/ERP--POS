@@ -12,6 +12,7 @@ import {
 import { useAuth } from "@/features/auth/AuthContext";
 import { useToast } from "@electronic-erp/ui";
 import { partiesApi } from "@/features/customers/parties-api";
+import { inventoryApi } from "@/features/inventory/inventory-api";
 import { enrichCustomerForPos } from "../customers/customer-utils";
 import { CATALOG_CHANGED_EVENT } from "@/features/product-management/catalog-api";
 import { posApi } from "../api";
@@ -80,6 +81,7 @@ export function PosTerminalPage() {
   const [installmentPlan, setInstallmentPlan] = useState({ downPayment: "0", installmentCount: 3 });
   const [methodsByKind, setMethodsByKind] = useState<Record<string, string>>({});
   const [cashReceived, setCashReceived] = useState<number | undefined>(undefined);
+  const [warehouseId, setWarehouseId] = useState<string | null>(null);
 
   // Post-sale completion state
   const [completedInvoice, setCompletedInvoice] = useState<InvoiceView | null>(null);
@@ -165,15 +167,42 @@ export function PosTerminalPage() {
     };
   }, []);
 
+  useEffect(() => {
+    let cancelled = false;
+    void (async () => {
+      if (!branchId) {
+        setWarehouseId(null);
+        return;
+      }
+      try {
+        const res = await inventoryApi.listWarehouses();
+        if (cancelled) return;
+        const items = res.items ?? [];
+        const match =
+          items.find((w) => w.is_default === true || w.isDefault === true) ||
+          items.find((w) => String(w.branch_id ?? w.branchId ?? "") === branchId) ||
+          items[0];
+        setWarehouseId(match?.id ? String(match.id) : branchId);
+      } catch {
+        if (!cancelled) setWarehouseId(branchId);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [branchId]);
+
+  const resolvedWarehouseId = warehouseId ?? branchId;
+
   const loadProducts = useCallback(async () => {
-    if (!branchId) return;
+    if (!resolvedWarehouseId) return;
     setLoadingProducts(true);
     try {
       const q = search.trim() || " ";
       const res = await posApi.searchProducts({
         q,
         limit,
-        warehouseId: branchId,
+        warehouseId: resolvedWarehouseId,
         customerId: customer.id ?? undefined,
       });
       setProducts(res.items);
@@ -182,7 +211,7 @@ export function PosTerminalPage() {
     } finally {
       setLoadingProducts(false);
     }
-  }, [branchId, search, limit, customer.id, setProducts]);
+  }, [resolvedWarehouseId, search, limit, customer.id, setProducts]);
 
   useEffect(() => {
     const id = window.setTimeout(() => void loadProducts(), 250);
@@ -299,12 +328,12 @@ export function PosTerminalPage() {
         return;
       }
 
-      if (branchId) {
+      if (resolvedWarehouseId) {
         try {
           const res = await posApi.searchProducts({
             q: trimmed,
             limit: 5,
-            warehouseId: branchId,
+            warehouseId: resolvedWarehouseId,
             customerId: customer.id ?? undefined,
           });
           const serverMatch =
@@ -329,7 +358,7 @@ export function PosTerminalPage() {
       setUnknownBarcode(trimmed);
       setUnknownBarcodeOpen(true);
     },
-    [products, addProduct, push, branchId, customer.id, setSearch],
+    [products, addProduct, push, resolvedWarehouseId, customer.id, setSearch],
   );
 
   // Subscribe to hardware keyboard wedge barcode scanner
@@ -494,7 +523,7 @@ export function PosTerminalPage() {
       await posApi.holdSale({
         organizationId,
         branchId,
-        warehouseId: branchId,
+        warehouseId: resolvedWarehouseId ?? branchId,
         customerId: customer.id,
         notes: combinedNotes,
         holdLabel: data.customerName || customer.label || "Held Sale",
@@ -600,9 +629,13 @@ export function PosTerminalPage() {
     },
   ) {
     if (busy || !branchId || !organizationId || lines.length === 0) return;
-    const effectiveCashReceived = options?.cashReceived ?? cashReceived;
-    if (options?.cashReceived != null) {
-      setCashReceived(options.cashReceived);
+    // Cashier-friendly: COMPLETE SALE with no cash entry implies Exact amount.
+    const effectiveCashReceived =
+      options?.cashReceived ??
+      cashReceived ??
+      (paymentKind === "cash" && !overridePayments?.length ? totals.grand : undefined);
+    if (effectiveCashReceived != null && paymentKind === "cash") {
+      setCashReceived(effectiveCashReceived);
     }
     const payments = buildPaymentsForPost(overridePayments, effectiveCashReceived);
     if (!customer.id && payments.length === 0) {
@@ -667,7 +700,7 @@ export function PosTerminalPage() {
 
       const postRes = (await posApi.postSale({
         branchId,
-        warehouseId: branchId,
+        warehouseId: resolvedWarehouseId ?? branchId,
         customerId: customer.id ?? undefined,
         idempotencyKey: saleIdempotencyKey,
         notes: notes || undefined,
@@ -728,7 +761,7 @@ export function PosTerminalPage() {
             id: saleId,
             organizationId: organizationId ?? uuid(),
             branchId: branchId ?? uuid(),
-            warehouseId: branchId ?? uuid(),
+            warehouseId: resolvedWarehouseId ?? branchId ?? uuid(),
             invoiceNumber: invoiceNum,
             subtotal: totals.subtotal,
             discountTotal: totals.totalDiscount,
@@ -1021,6 +1054,14 @@ export function PosTerminalPage() {
             }}
             onHold={() => void onHold()}
             onPayment={() => setPaymentOpen(true)}
+            onSplitPayment={() => {
+              setPaymentKind("split");
+              setPaymentOpen(true);
+            }}
+            onInstallment={() => {
+              setPaymentKind("installment");
+              setPaymentOpen(true);
+            }}
             onComplete={() => void completeSale(undefined, { cashReceived })}
             onDeliveryOrder={() => {
               const current = deliveryCharges > 0 ? String(deliveryCharges) : "";

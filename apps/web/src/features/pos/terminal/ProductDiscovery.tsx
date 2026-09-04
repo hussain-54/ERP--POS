@@ -1,7 +1,9 @@
-import { useEffect, useRef, type KeyboardEvent, type RefObject } from "react";
+import { useEffect, useMemo, useRef, useState, type KeyboardEvent, type RefObject } from "react";
 import type { ProductSearchResult } from "@electronic-erp/contracts";
 import { money } from "../format";
 import type { ProductTab } from "../types";
+
+const PAGE_SIZE = 9;
 
 function productDisplayPrices(p: ProductSearchResult) {
   const retail = Number(p.retailPrice ?? 0);
@@ -11,10 +13,9 @@ function productDisplayPrices(p: ProductSearchResult) {
   return { retail, selling, hasDiscount, discountPct };
 }
 
-function stockLine(stock: number | null | undefined, unitName?: string | null) {
-  const unit = unitName || "Pcs";
+function stockLine(stock: number | null | undefined) {
   if (stock == null) {
-    return <span className="text-[10px] font-medium text-slate-400">Stock — · {unit}</span>;
+    return <span className="text-[10px] font-medium text-slate-400">Stock —</span>;
   }
   if (stock <= 0) {
     return (
@@ -28,15 +29,26 @@ function stockLine(stock: number | null | undefined, unitName?: string | null) {
     return (
       <span className="inline-flex items-center gap-1 text-[10px] font-bold text-amber-600">
         <i className="fa-solid fa-triangle-exclamation text-[9px]" aria-hidden />
-        Low Stock: {stock} {unit}
+        Low Stock: {stock}
       </span>
     );
   }
-  return (
-    <span className="text-[10px] font-bold text-emerald-600">
-      Stock: {stock} {unit}
-    </span>
-  );
+  return <span className="text-[10px] font-bold text-emerald-600">Stock: {stock}</span>;
+}
+
+/** Build compact page number list: 1 2 3 … N */
+function pageWindow(current: number, total: number): Array<number | "ellipsis"> {
+  if (total <= 5) return Array.from({ length: total }, (_, i) => i + 1);
+  const pages: Array<number | "ellipsis"> = [];
+  const push = (v: number | "ellipsis") => {
+    if (pages[pages.length - 1] !== v) pages.push(v);
+  };
+  push(1);
+  if (current > 3) push("ellipsis");
+  for (let p = Math.max(2, current - 1); p <= Math.min(total - 1, current + 1); p++) push(p);
+  if (current < total - 2) push("ellipsis");
+  push(total);
+  return pages;
 }
 
 export function ProductDiscovery({
@@ -89,6 +101,7 @@ export function ProductDiscovery({
   const localRef = useRef<HTMLInputElement>(null);
   const inputRef = searchRef ?? localRef;
   const gridRef = useRef<HTMLDivElement>(null);
+  const [page, setPage] = useState(1);
 
   useEffect(() => {
     function onFocusSearch() {
@@ -98,6 +111,10 @@ export function ProductDiscovery({
     window.addEventListener("pos:focus-search", onFocusSearch);
     return () => window.removeEventListener("pos:focus-search", onFocusSearch);
   }, [inputRef]);
+
+  useEffect(() => {
+    setPage(1);
+  }, [search, tab, categoryFilter]);
 
   useEffect(() => {
     const el = gridRef.current;
@@ -113,6 +130,22 @@ export function ProductDiscovery({
     el.addEventListener("scroll", onScroll, { passive: true });
     return () => el.removeEventListener("scroll", onScroll);
   }, [hasMore, loading, onLoadMore]);
+
+  const loadedPages = Math.max(1, Math.ceil(Math.max(products.length, 1) / PAGE_SIZE));
+  const totalPages = hasMore ? loadedPages + 1 : Math.max(1, Math.ceil(products.length / PAGE_SIZE) || 1);
+  const safePage = Math.min(page, Math.max(totalPages, 1));
+  const pageProducts = useMemo(
+    () => products.slice((safePage - 1) * PAGE_SIZE, safePage * PAGE_SIZE),
+    [products, safePage],
+  );
+
+  useEffect(() => {
+    if (page > totalPages) setPage(totalPages);
+  }, [page, totalPages]);
+
+  useEffect(() => {
+    gridRef.current?.scrollTo({ top: 0 });
+  }, [safePage]);
 
   function onKeyDown(e: KeyboardEvent<HTMLInputElement>) {
     if (e.key !== "Enter") return;
@@ -142,6 +175,18 @@ export function ProductDiscovery({
     inputRef.current?.focus();
   }
 
+  function goToPage(next: number) {
+    if (next < 1) return;
+    if (next <= loadedPages) {
+      setPage(next);
+      return;
+    }
+    if (hasMore && next === loadedPages + 1) {
+      onLoadMore();
+      setPage(next);
+    }
+  }
+
   const tabs: Array<{ id: ProductTab; label: string; icon?: string }> = [
     { id: "all", label: "All" },
     { id: "favorites", label: "Favorites", icon: "fa-star" },
@@ -157,7 +202,8 @@ export function ProductDiscovery({
       <div className="flex shrink-0 items-center justify-between gap-2 border-b border-slate-200 bg-white px-3 py-2">
         <h2 className="text-sm font-black text-slate-900">Products</h2>
         <span className="inline-flex items-center rounded-full bg-blue-600 px-2.5 py-0.5 text-[10px] font-bold text-white">
-          {products.length} Items
+          {products.length}
+          {hasMore ? "+" : ""} Items
         </span>
       </div>
 
@@ -292,10 +338,11 @@ export function ProductDiscovery({
           </div>
         ) : (
           <div className="pos-products-grid-inner">
-            {products.map((p) => {
+            {pageProducts.map((p) => {
               const fav = favoriteIds.includes(p.productId);
               const stock = p.stockAvailable != null ? Number(p.stockAvailable) : null;
               const zero = stock != null && stock <= 0;
+              const unit = p.unitName || "Pcs";
               const { retail, selling, hasDiscount, discountPct } = productDisplayPrices(p);
 
               return (
@@ -334,10 +381,10 @@ export function ProductDiscovery({
                       {p.name}
                     </h3>
                     <p className="mt-0.5 truncate text-[10px] font-medium text-slate-500">
-                      SKU: {p.sku || "—"}
+                      SKU: {p.sku || "—"} · Unit: {unit}
                     </p>
                     <div className="mt-1.5 flex items-end justify-between gap-1">
-                      <div className="min-w-0">{stockLine(stock, p.unitName)}</div>
+                      <div className="min-w-0">{stockLine(stock)}</div>
                       <div className="shrink-0 text-right leading-tight">
                         {hasDiscount ? (
                           <>
@@ -378,24 +425,49 @@ export function ProductDiscovery({
         )}
       </div>
 
-      <nav className="pos-zone-footer pos-products-pager" aria-label="Product catalog status">
-        <p className="px-2 text-[10px] font-bold uppercase tracking-wider text-slate-500">
-          Showing {products.length}
-          {hasMore ? "+" : ""} products
-          {loading ? " · Loading…" : ""}
-        </p>
-        {hasMore ? (
-          <button
-            type="button"
-            className="pos-pager-page is-active"
-            disabled={loading}
-            onClick={onLoadMore}
-          >
-            Load more
-          </button>
-        ) : (
-          <span className="text-[10px] font-semibold text-slate-400">End of list</span>
-        )}
+      <nav className="pos-zone-footer pos-products-pager shrink-0" aria-label="Product pages">
+        <button
+          type="button"
+          className="pos-pager-arrow"
+          disabled={safePage <= 1}
+          onClick={() => goToPage(safePage - 1)}
+          aria-label="Previous page"
+        >
+          <i className="fa-solid fa-chevron-left" aria-hidden />
+        </button>
+        <div className="pos-pager-pages">
+          {pageWindow(safePage, totalPages).map((item, idx) =>
+            item === "ellipsis" ? (
+              <span key={`e-${idx}`} className="pos-pager-ellipsis">
+                …
+              </span>
+            ) : (
+              <button
+                key={item}
+                type="button"
+                className={`pos-pager-page ${item === safePage ? "is-active" : ""}`}
+                onClick={() => goToPage(item)}
+                aria-current={item === safePage ? "page" : undefined}
+                aria-label={`Page ${item}`}
+              >
+                {item}
+              </button>
+            ),
+          )}
+        </div>
+        <button
+          type="button"
+          className="pos-pager-arrow"
+          disabled={safePage >= totalPages && !hasMore}
+          onClick={() => goToPage(safePage + 1)}
+          aria-label="Next page"
+        >
+          <i className="fa-solid fa-chevron-right" aria-hidden />
+        </button>
+        <span className="ml-1 text-[10px] font-semibold text-slate-400">
+          {safePage}/{totalPages}
+          {loading ? " · …" : ""}
+        </span>
       </nav>
 
       {onCheckout ? (
@@ -408,7 +480,7 @@ export function ProductDiscovery({
           >
             <span className="inline-flex items-center gap-1.5">
               <i className="fa-solid fa-cash-register" aria-hidden />
-              Checkout / Complete Sale
+              Go to Payment
             </span>
             <span className="rounded-lg bg-blue-800/50 px-2 py-0.5 tabular-nums">
               {cartItemCount} · Rs. {money(cartGrandTotal)}

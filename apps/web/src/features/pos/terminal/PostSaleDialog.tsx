@@ -398,7 +398,7 @@ export function PostSaleDialog({
                 title="Share bill via WhatsApp"
               >
                 <i className="fa-brands fa-whatsapp text-emerald-600 text-sm" />
-                <span>{whatsappState === "opened" ? "WhatsApp opened" : "WhatsApp Receipt"}</span>
+                <span>{whatsappState === "opened" ? "WhatsApp opened" : "Send Receipt on WhatsApp"}</span>
               </button>
 
               <button

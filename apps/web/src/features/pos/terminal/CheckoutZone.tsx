@@ -26,6 +26,8 @@ export function CheckoutZone({
   onComplete,
   onDeliveryOrder,
   onClearCart,
+  onSplitPayment,
+  onInstallment,
   deliveryCharges = 0,
   busy,
   recordOnlyHint,
@@ -63,6 +65,8 @@ export function CheckoutZone({
   onProceedToCheckout?: () => void;
   onDeliveryOrder?: () => void;
   onClearCart?: () => void;
+  onSplitPayment?: () => void;
+  onInstallment?: () => void;
   deliveryCharges?: number;
   busy?: boolean;
   recordOnlyHint?: boolean;
@@ -81,6 +85,8 @@ export function CheckoutZone({
   const deliveryActive = deliveryCharges > 0 || Boolean(totals.deliveryCharges && totals.deliveryCharges > 0);
   const selectedGrid = GRID_TENDERS.find((m) => m.id === paymentKind);
   const showRecordHint = Boolean(recordOnlyHint || selectedGrid?.recordOnly);
+  const cashShort =
+    paymentKind === "cash" && currentCash != null && currentCash + 0.009 < totals.grand && totals.grand > 0;
 
   const quickAmounts = [
     { label: "Exact", value: totals.grand },
@@ -89,6 +95,19 @@ export function CheckoutZone({
     { label: "2,000", value: 2000 },
     { label: "5,000", value: 5000 },
   ];
+
+  function openSplit() {
+    if (onSplitPayment) onSplitPayment();
+    else onPayment();
+  }
+
+  function openInstallment() {
+    if (onInstallment) onInstallment();
+    else {
+      onPaymentKind("installment");
+      onPayment();
+    }
+  }
 
   return (
     <section
@@ -227,23 +246,9 @@ export function CheckoutZone({
             </button>
             <button
               type="button"
-              onClick={onPayment}
-              className={`flex items-center justify-center gap-1.5 rounded-xl border-2 px-2 py-2.5 text-[11px] font-bold transition ${
-                paymentKind === "split" || paymentKind === "partial"
-                  ? "border-cyan-600 bg-cyan-50 text-cyan-900"
-                  : "border-cyan-300 bg-white text-cyan-700 hover:bg-cyan-50"
-              }`}
-            >
-              <i className="fa-solid fa-scissors" aria-hidden />
-              Split Payment
-            </button>
-          </div>
-          <div className="mt-1.5">
-            <button
-              type="button"
               onClick={() => onDeliveryOrder?.()}
               disabled={!onDeliveryOrder}
-              className={`flex w-full items-center justify-center gap-1.5 rounded-xl border-2 px-2 py-2.5 text-[11px] font-bold transition disabled:opacity-40 ${
+              className={`flex items-center justify-center gap-1.5 rounded-xl border-2 px-2 py-2.5 text-[11px] font-bold transition disabled:opacity-40 ${
                 deliveryActive
                   ? "border-orange-500 bg-orange-50 text-orange-900"
                   : "border-orange-300 bg-white text-orange-700 hover:bg-orange-50"
@@ -253,7 +258,33 @@ export function CheckoutZone({
               Delivery Order
             </button>
           </div>
-          {showRecordHint ? (
+          <div className="mt-1.5 grid grid-cols-2 gap-1.5">
+            <button
+              type="button"
+              onClick={openSplit}
+              className={`flex items-center justify-center gap-1.5 rounded-xl border-2 px-2 py-2 text-[11px] font-bold transition ${
+                paymentKind === "split" || paymentKind === "partial"
+                  ? "border-cyan-600 bg-cyan-50 text-cyan-900"
+                  : "border-cyan-300 bg-white text-cyan-700 hover:bg-cyan-50"
+              }`}
+            >
+              <i className="fa-solid fa-scissors" aria-hidden />
+              Split Payment
+            </button>
+            <button
+              type="button"
+              onClick={openInstallment}
+              className={`flex items-center justify-center gap-1.5 rounded-xl border-2 px-2 py-2 text-[11px] font-bold transition ${
+                paymentKind === "installment"
+                  ? "border-slate-700 bg-slate-100 text-slate-900"
+                  : "border-slate-300 bg-white text-slate-700 hover:bg-slate-50"
+              }`}
+            >
+              <i className="fa-solid fa-calendar" aria-hidden />
+              Installment
+            </button>
+          </div>
+          {showRecordHint && paymentKind !== "cash" && paymentKind !== "credit" && paymentKind !== "installment" ? (
             <p className="mt-1 text-[9px] text-slate-400">
               * Card / wallet / QR recorded in POS (no live PSP terminal)
             </p>
@@ -313,6 +344,11 @@ export function CheckoutZone({
               <span className="text-[11px] font-bold text-emerald-700">Change to Return</span>
               <span className="text-base font-black text-emerald-600">Rs. {money(changeToReturn)}</span>
             </div>
+            {cashShort ? (
+              <p className="text-[10px] font-bold text-red-600">
+                Cash received is less than total payable. Enter Exact or a higher amount before COMPLETE SALE.
+              </p>
+            ) : null}
           </div>
         ) : null}
 
@@ -348,12 +384,15 @@ export function CheckoutZone({
       <div className="pos-zone-footer pos-checkout-footer shrink-0">
         <button
           type="button"
-          disabled={busy || empty}
+          disabled={busy || empty || cashShort}
           onClick={onComplete}
           className="pos-complete-sale-btn"
+          aria-label={`Complete sale Rs. ${money(totals.grand)}`}
         >
           <i className="fa-solid fa-cart-shopping" aria-hidden />
-          <span>{busy ? "Processing…" : `COMPLETE SALE  Rs. ${money(totals.grand)}`}</span>
+          <span>
+            {busy ? "Processing…" : `COMPLETE SALE  Rs. ${money(totals.grand)}`}
+          </span>
         </button>
 
         <div className="pos-fkey-chips" role="group" aria-label="Keyboard shortcuts">

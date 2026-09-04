@@ -118,7 +118,7 @@ describe("PostSaleDialog (POS Phase 3 - Professional Invoice & Receipt)", () => 
       />,
     );
 
-    fireEvent.click(screen.getByRole("button", { name: /WhatsApp Receipt/i }));
+    fireEvent.click(screen.getByRole("button", { name: /Send Receipt on WhatsApp|WhatsApp Receipt/i }));
     expect(waSpy).toHaveBeenCalled();
 
     fireEvent.click(screen.getByRole("button", { name: /Email Receipt/i }));
