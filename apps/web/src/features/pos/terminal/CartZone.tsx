@@ -34,6 +34,7 @@ export interface CartZoneProps {
   canOverridePrice: boolean;
   selectedLineId: string | null;
   onSelectLine: (id: string | null) => void;
+  onProceedToCheckout?: () => void;
   busy?: boolean;
 }
 
@@ -56,6 +57,7 @@ export function CartZone({
   canOverridePrice,
   selectedLineId,
   onSelectLine,
+  onProceedToCheckout,
   busy = false,
 }: CartZoneProps) {
   const [moreOpen, setMoreOpen] = useState(false);
@@ -97,7 +99,7 @@ export function CartZone({
               type="button"
               onClick={onHold}
               disabled={isEmpty || busy}
-              title="Hold / Suspend sale (F6)"
+              title="Hold / Suspend sale (F4)"
               className="inline-flex items-center gap-1 rounded-lg border border-amber-400 bg-white px-2.5 py-1 text-[11px] font-bold text-amber-700 transition hover:bg-amber-50 disabled:opacity-30"
             >
               Hold
@@ -139,6 +141,11 @@ export function CartZone({
               </div>
               {customer.id && customer.outstanding > 0 ? (
                 <p className="text-[10px] font-bold text-amber-700">Due {money(customer.outstanding)}</p>
+              ) : null}
+              {customer.mobile || customer.email ? (
+                <p className="truncate text-[10px] text-slate-500">
+                  {[customer.mobile, customer.email].filter(Boolean).join(" · ")}
+                </p>
               ) : null}
             </div>
           </div>
@@ -300,7 +307,7 @@ export function CartZone({
                     {canOverridePrice ? (
                       <button
                         type="button"
-                        title="Override item price (F4)"
+                        title="Override item price"
                         onClick={(e) => {
                           e.stopPropagation();
                           onEditPrice(line);
@@ -372,6 +379,17 @@ export function CartZone({
             </span>
           </div>
         </div>
+        {onProceedToCheckout ? (
+          <button
+            type="button"
+            disabled={isEmpty || busy}
+            onClick={onProceedToCheckout}
+            className="mt-2 flex w-full items-center justify-center gap-1.5 rounded-xl bg-blue-600 py-2.5 text-xs font-black text-white shadow-sm transition hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-40 lg:hidden"
+          >
+            <i className="fa-solid fa-cash-register text-[11px]" aria-hidden />
+            Checkout / Complete Sale
+          </button>
+        ) : null}
 
         <div className="relative border-t border-slate-200 bg-white p-2">
           {moreOpen ? (

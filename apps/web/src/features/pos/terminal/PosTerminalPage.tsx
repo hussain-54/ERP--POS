@@ -27,7 +27,6 @@ import { CheckoutZone } from "./CheckoutZone";
 import { CustomerDialog } from "./CustomerDialog";
 import { DiscountDialog } from "./DiscountDialog";
 import { PostSaleDialog } from "./PostSaleDialog";
-import { CheckoutStage } from "./CheckoutStage";
 import { HoldSaleDialog } from "../sales/HoldSaleDialog";
 import { ResumeSaleDialog } from "../sales/ResumeSaleDialog";
 import { CameraScannerDialog } from "../hardware/CameraScannerDialog";
@@ -47,7 +46,6 @@ import {
 
 type MobilePane = "products" | "cart" | "checkout";
 type PosStage = "terminal" | "checkout";
-type PaymentFlowState = "idle" | "processing" | "success" | "failed";
 
 interface CompletedSaleMeta {
   customerName: string;
@@ -68,7 +66,6 @@ export function PosTerminalPage() {
 
   const [stage, setStage] = useState<PosStage>("terminal");
   const [busy, setBusy] = useState(false);
-  const [paymentFlowState, setPaymentFlowState] = useState<PaymentFlowState>("idle");
   const [limit, setLimit] = useState(30);
   const [loadingProducts, setLoadingProducts] = useState(false);
   const [mobilePane, setMobilePane] = useState<MobilePane>("products");
@@ -368,7 +365,21 @@ export function PosTerminalPage() {
     function onShortcut(e: Event) {
       const detail = (e as CustomEvent<string>).detail;
       if (detail === "new-sale") newSale();
-      if (detail === "clear-cart") clearCart();
+      if (detail === "clear-cart") {
+        if (
+          postSaleOpen ||
+          customerOpen ||
+          discountOpen ||
+          paymentOpen ||
+          holdOpen ||
+          resumeOpen ||
+          cameraScannerOpen ||
+          unknownBarcodeOpen
+        ) {
+          return;
+        }
+        clearCart();
+      }
       if (detail === "cancel-sale") newSale();
       if (detail === "focus-search") {
         searchRef.current?.focus();
@@ -393,13 +404,25 @@ export function PosTerminalPage() {
       if (detail === "hold") void onHold();
       if (detail === "resume-held") setResumeOpen(true);
       if (detail === "pay") {
-        if (stage === "terminal" && lines.length > 0) {
-          setStage("checkout");
-        } else if (paymentKind === "cash") {
-          void completeSale(undefined, { cashReceived: cashReceived ?? totals.grand });
-        } else {
-          void completeSale();
+        if (lines.length === 0) return;
+        setMobilePane("checkout");
+        void completeSale(undefined, { cashReceived });
+        return;
+      }
+      if (detail === "delivery") {
+        const current = deliveryCharges > 0 ? String(deliveryCharges) : "";
+        const raw = window.prompt("Delivery charges (Rs). Enter 0 to clear delivery order.", current || "0");
+        if (raw == null) return;
+        const n = Number(raw);
+        if (!Number.isFinite(n) || n < 0) {
+          push({ title: "Invalid delivery charge", tone: "danger" });
+          return;
         }
+        setDeliveryCharges(n);
+        push({
+          title: n > 0 ? `Delivery charges: Rs. ${n.toFixed(2)}` : "Delivery charges cleared",
+          tone: "info",
+        });
       }
       if (detail === "customers") {
         setCustomerMode("select");
@@ -409,7 +432,22 @@ export function PosTerminalPage() {
     window.addEventListener("pos:shortcut", onShortcut);
     return () => window.removeEventListener("pos:shortcut", onShortcut);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [newSale, clearCart, lines, totals, customer, paymentKind, stage]);
+  }, [
+    newSale,
+    clearCart,
+    lines,
+    totals,
+    customer,
+    paymentKind,
+    postSaleOpen,
+    customerOpen,
+    discountOpen,
+    paymentOpen,
+    holdOpen,
+    resumeOpen,
+    cameraScannerOpen,
+    unknownBarcodeOpen,
+  ]);
 
   useEffect(() => {
     if (stage !== "checkout") return;
@@ -594,7 +632,7 @@ export function PosTerminalPage() {
     });
     if (!preCheck.ok) {
       push({ title: preCheck.title, description: preCheck.description, tone: "danger" });
-      if (preCheck.title.includes("cash")) setStage("checkout");
+      if (preCheck.title.includes("cash")) setMobilePane("checkout");
       return;
     }
 
@@ -609,7 +647,6 @@ export function PosTerminalPage() {
     const currentChange = Math.max(0, currentTenderReceived - totals.grand);
 
     setBusy(true);
-    setPaymentFlowState("processing");
     const saleIdempotencyKey = idempotencyKeyRef.current;
     const installmentMeta = options?.installment ?? installmentPlan;
 
@@ -655,7 +692,9 @@ export function PosTerminalPage() {
       const invoiceNum = postRes?.invoiceNumber ?? `INV-${Date.now().toString().slice(-6)}`;
       const cashierName = user?.fullName ?? "Counter Cashier";
       const terminalId = "POS-01";
-      const paymentStatus = paymentKind === "credit" ? ("unpaid" as const) : ("paid" as const);
+      const remaining = Math.max(0, totals.grand - currentTenderReceived);
+      const paymentStatus =
+        remaining <= 0.009 ? ("paid" as const) : currentTenderReceived > 0.009 ? ("partial" as const) : ("unpaid" as const);
       const invoiceItems = lines.map((l) => ({
         name: l.name,
         sku: l.sku || null,
@@ -765,7 +804,6 @@ export function PosTerminalPage() {
       setCompletedInvoice(invView);
       setLastPaid(currentTenderReceived);
       setLastChange(currentChange);
-      setPaymentFlowState("success");
       setPostSaleOpen(true);
       idempotencyKeyRef.current = uuid();
 
@@ -791,7 +829,6 @@ export function PosTerminalPage() {
       setMobilePane("products");
       push({ title: `Payment successful · Sale #${invoiceNum}`, tone: "success" });
     } catch (err) {
-      setPaymentFlowState("failed");
       push({
         title: "Payment could not be completed",
         description: err instanceof Error ? err.message : "Please try again.",
@@ -881,6 +918,16 @@ export function PosTerminalPage() {
               setUnknownBarcode("");
               setUnknownBarcodeOpen(true);
             }}
+            onCheckout={() => {
+              if (lines.length === 0) {
+                push({ title: "Cart is empty", description: "Add products before checkout.", tone: "info" });
+                return;
+              }
+              setMobilePane("checkout");
+            }}
+            checkoutDisabled={lines.length === 0 || busy}
+            cartItemCount={lines.length}
+            cartGrandTotal={totals.grand}
           />
         </div>
 
@@ -938,6 +985,7 @@ export function PosTerminalPage() {
             canOverridePrice={allowPriceOverride}
             selectedLineId={selectedLineId}
             onSelectLine={setSelectedLineId}
+            onProceedToCheckout={() => setMobilePane("checkout")}
             busy={busy}
           />
         </div>
@@ -1013,42 +1061,6 @@ export function PosTerminalPage() {
           />
         </div>
       </div>
-
-      {stage === "checkout" ? (
-        <CheckoutStage
-          lines={lines}
-          customer={customer}
-          totals={totals}
-          paymentKind={paymentKind}
-          onPaymentKind={setPaymentKind}
-          cashReceived={cashReceived}
-          onCashReceived={setCashReceived}
-          couponCode={couponCode}
-          notes={notes}
-          onNotes={setNotes}
-          onSelectCustomer={() => {
-            setCustomerMode("select");
-            setCustomerOpen(true);
-          }}
-          onWalkIn={() => setCustomer(emptyCustomer())}
-          onNewCustomer={() => {
-            setCustomerMode("create");
-            setCustomerOpen(true);
-          }}
-          onDiscount={() => {
-            setDiscountScope("invoice");
-            setDiscountSection("invoice");
-            setDiscountLine(null);
-            setDiscountOpen(true);
-          }}
-          onHold={() => void onHold()}
-          onBackToCart={() => setStage("terminal")}
-          onComplete={(overridePayments, options) => void completeSale(overridePayments, options)}
-          methodsByKind={methodsByKind}
-          busy={busy}
-          paymentFlowState={paymentFlowState}
-        />
-      ) : null}
 
       {/* Customer Dialog Modal */}
       <CustomerDialog
@@ -1142,17 +1154,23 @@ export function PosTerminalPage() {
         paymentMethod={completedSaleMeta?.paymentMethod ?? paymentKind}
         onClose={() => {
           setPostSaleOpen(false);
-          setPaymentFlowState("idle");
         }}
         onNewSale={() => {
           newSale();
           setPostSaleOpen(false);
-          setPaymentFlowState("idle");
           setCompletedSaleMeta(null);
           setCompletedInvoice(null);
           setStage("terminal");
           searchRef.current?.focus();
         }}
+        onViewSale={
+          completedInvoice?.sale?.id
+            ? () => {
+                setPostSaleOpen(false);
+                navigate(`/pos/sales/completed?saleId=${completedInvoice.sale!.id}`);
+              }
+            : undefined
+        }
       />
 
       {/* Camera & QR Scanner Modal */}

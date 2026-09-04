@@ -1,4 +1,5 @@
 import type { InvoiceView } from "@electronic-erp/contracts";
+import { buildInvoicePdfBytes } from "./invoice-pdf";
 
 export type InvoiceWorkspaceMode =
   | "invoices"
@@ -69,32 +70,17 @@ export function formatInvoiceDateTime(isoString?: string | null): { date: string
   };
 }
 
-/**
- * Print 80mm Thermal Receipt or A4 Tax Invoice with dedicated print styling.
- */
-export function printInvoiceReceipt(
-  invoice: InvoiceView,
-  kind: "receipt" | "thermal" | "a4" | "invoice" = "thermal",
-  companyName = "Electronic & Electrical Store",
-  isReprint = false
-): boolean {
-  const isA4 = kind === "a4" || kind === "invoice";
-  const w = window.open(
-    "",
-    "_blank",
-    isA4 ? "noopener,noreferrer,width=840,height=920" : "noopener,noreferrer,width=440,height=760"
-  );
-  if (!w) return false;
-
+function invoiceTotals(invoice: InvoiceView) {
   const invNum = invoice.invoiceNumber ?? `INV-${Date.now()}`;
   const dt = formatInvoiceDateTime(invoice.dateTime ?? invoice.sale?.createdAt);
   const grand = Number(invoice.sale?.grandTotal ?? 0);
   const tax = Number(invoice.sale?.taxTotal ?? 0);
   const disc = Number(invoice.sale?.discountTotal ?? 0);
-  const subtotal = Number(invoice.sale?.subtotal ?? (grand + disc - tax));
+  const subtotal = Number(invoice.sale?.subtotal ?? grand + disc - tax);
   const paid = Number(invoice.sale?.paidTotal ?? invoice.paidAmount ?? grand);
   const remaining = Number(invoice.sale?.remainingTotal ?? invoice.remainingAmount ?? Math.max(0, grand - paid));
   const change = Math.max(0, paid - grand);
+  const taxable = Math.max(0, Number((subtotal - disc).toFixed(2)));
   const customer = invoice.customerName ?? "Walk-in Customer";
   const customerPhone = invoice.customerMobile ?? "";
   const customerEmail = invoice.customerEmail ?? "";
@@ -104,6 +90,53 @@ export function printInvoiceReceipt(
   const paymentMethod = invoice.payments?.length
     ? invoice.payments.map((p) => `${p.method}${p.reference ? ` (${p.reference})` : ""}`).join(", ")
     : "Cash";
+  return {
+    invNum,
+    dt,
+    grand,
+    tax,
+    disc,
+    subtotal,
+    paid,
+    remaining,
+    change,
+    taxable,
+    customer,
+    customerPhone,
+    customerEmail,
+    branch,
+    cashier,
+    terminal,
+    paymentMethod,
+  };
+}
+
+export function buildInvoiceHtml(
+  invoice: InvoiceView,
+  kind: "receipt" | "thermal" | "a4" | "invoice" = "thermal",
+  companyName = "Electronic & Electrical Store",
+  isReprint = false,
+): string {
+  const isA4 = kind === "a4" || kind === "invoice";
+  const {
+    invNum,
+    dt,
+    grand,
+    tax,
+    disc,
+    subtotal,
+    paid,
+    remaining,
+    change,
+    customer,
+    customerPhone,
+    customerEmail,
+    branch,
+    cashier,
+    terminal,
+    paymentMethod,
+    taxable,
+  } = invoiceTotals(invoice);
 
   const rowsHtmlA4 = (invoice.items ?? [])
     .map((item, idx) => {
@@ -203,6 +236,7 @@ export function printInvoiceReceipt(
             ${isReprint ? `<div class="reprint-badge">★ DUPLICATE / REPRINT</div>` : ""}
             <div class="title">${companyName}</div>
             <div style="color: #64748b; font-size: 11px; margin-top: 2px;">Retail POS & Distribution ERP · NTN: 8934211-7 · GST: 17-00-9821-001</div>
+            <div style="color: #64748b; font-size: 11px;">Address: Main Market · Contact: 0300-0000000</div>
             <div style="color: #64748b; font-size: 11px;">Branch: <strong>${branch}</strong> | Terminal: <strong>${terminal}</strong> | Cashier: <strong>${cashier}</strong></div>
           </div>
           <div style="text-align: right;">
@@ -253,6 +287,7 @@ export function printInvoiceReceipt(
           <div class="totals-table">
             <div class="total-row"><span>Subtotal:</span><span>Rs. ${subtotal.toFixed(2)}</span></div>
             ${disc > 0 ? `<div class="total-row" style="color: #dc2626;"><span>Total Discounts:</span><span>-Rs. ${disc.toFixed(2)}</span></div>` : ""}
+            <div class="total-row"><span>Taxable Amount:</span><span>Rs. ${taxable.toFixed(2)}</span></div>
             ${tax > 0 ? `<div class="total-row"><span>GST / Tax:</span><span>Rs. ${tax.toFixed(2)}</span></div>` : ""}
             <div class="total-row grand"><span>Grand Total:</span><span>Rs. ${grand.toFixed(2)}</span></div>
             <div class="total-row" style="margin-top: 4px; font-weight: 700;"><span>Amount Paid:</span><span>Rs. ${paid.toFixed(2)}</span></div>
@@ -319,6 +354,7 @@ export function printInvoiceReceipt(
         <div class="double-divider"></div>
         <div class="flex-between"><span>Subtotal:</span><span>Rs. ${subtotal.toFixed(2)}</span></div>
         ${disc > 0 ? `<div class="flex-between"><span>Discount:</span><span>-Rs. ${disc.toFixed(2)}</span></div>` : ""}
+        <div class="flex-between"><span>Taxable:</span><span>Rs. ${taxable.toFixed(2)}</span></div>
         ${tax > 0 ? `<div class="flex-between"><span>GST / Tax:</span><span>Rs. ${tax.toFixed(2)}</span></div>` : ""}
         <div class="divider"></div>
         <div class="flex-between grand"><span>TOTAL PAYABLE:</span><span>Rs. ${grand.toFixed(2)}</span></div>
@@ -340,8 +376,27 @@ export function printInvoiceReceipt(
       </html>
     `;
 
+  return content;
+}
+
+/**
+ * Print 80mm Thermal Receipt or A4 Tax Invoice with dedicated print styling.
+ */
+export function printInvoiceReceipt(
+  invoice: InvoiceView,
+  kind: "receipt" | "thermal" | "a4" | "invoice" = "thermal",
+  companyName = "Electronic & Electrical Store",
+  isReprint = false,
+): boolean {
+  const isA4 = kind === "a4" || kind === "invoice";
+  const w = window.open(
+    "",
+    "_blank",
+    isA4 ? "noopener,noreferrer,width=840,height=920" : "noopener,noreferrer,width=440,height=760",
+  );
+  if (!w) return false;
   w.document.open();
-  w.document.write(content);
+  w.document.write(buildInvoiceHtml(invoice, kind, companyName, isReprint));
   w.document.close();
   return true;
 }
@@ -406,12 +461,17 @@ export function buildWhatsAppReceiptText(invoice: InvoiceView, companyName = "El
  */
 export function openWhatsAppReceipt(invoice: InvoiceView, phone?: string | null, companyName?: string): boolean {
   const rawText = buildWhatsAppReceiptText(invoice, companyName);
-  const cleanPhone = (phone ?? "").replace(/\D/g, "");
-  const url = cleanPhone
-    ? `https://wa.me/${cleanPhone}?text=${encodeURIComponent(rawText)}`
-    : `https://wa.me/?text=${encodeURIComponent(rawText)}`;
-  window.open(url, "_blank", "noopener,noreferrer");
-  return true;
+  const digits = (phone ?? "").replace(/\D/g, "");
+  let cleanPhone = digits;
+  if (cleanPhone.length === 11 && cleanPhone.startsWith("0")) {
+    cleanPhone = `92${cleanPhone.slice(1)}`;
+  } else if (cleanPhone.length === 10 && cleanPhone.startsWith("3")) {
+    cleanPhone = `92${cleanPhone}`;
+  }
+  if (cleanPhone.length < 10) return false;
+  const url = `https://wa.me/${cleanPhone}?text=${encodeURIComponent(rawText)}`;
+  const opened = window.open(url, "_blank", "noopener,noreferrer");
+  return Boolean(opened);
 }
 
 /**
@@ -426,20 +486,32 @@ export function buildEmailReceiptSubject(invoice: InvoiceView, companyName = "El
  * Open default email client with formatted invoice text.
  */
 export function openEmailReceipt(invoice: InvoiceView, email?: string | null, companyName = "Electronic Store"): boolean {
+  const to = (email ?? "").trim();
+  if (!to || !to.includes("@")) return false;
   const subject = buildEmailReceiptSubject(invoice, companyName);
   const rawBody = buildWhatsAppReceiptText(invoice, companyName);
-  const mailtoUrl = email
-    ? `mailto:${encodeURIComponent(email)}?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(rawBody)}`
-    : `mailto:?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(rawBody)}`;
-  window.open(mailtoUrl, "_blank", "noopener,noreferrer");
+  const mailtoUrl = `mailto:${encodeURIComponent(to)}?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(rawBody)}`;
+  window.location.href = mailtoUrl;
   return true;
 }
 
 /**
- * Trigger PDF invoice download/print dialog.
+ * Download a real A4 PDF invoice file (application/pdf), not an HTML stub.
  */
 export function downloadPdfInvoice(invoice: InvoiceView, companyName = "Electronic & Electrical Store"): boolean {
-  return printInvoiceReceipt(invoice, "a4", companyName);
+  const bytes = buildInvoicePdfBytes(invoice, companyName);
+  const blob = new Blob([bytes as unknown as BlobPart], { type: "application/pdf" });
+  const url = URL.createObjectURL(blob);
+  const invNum = invoice.invoiceNumber ?? `INV-${Date.now()}`;
+  const link = document.createElement("a");
+  link.href = url;
+  link.download = `${invNum}.pdf`;
+  link.rel = "noopener";
+  document.body.appendChild(link);
+  link.click();
+  link.remove();
+  window.setTimeout(() => URL.revokeObjectURL(url), 1500);
+  return true;
 }
 
 export function docField(row: Record<string, unknown>, ...keys: string[]): string {

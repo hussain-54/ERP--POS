@@ -20,6 +20,7 @@ export function PostSaleDialog({
   paymentMethod = "Cash",
   onClose,
   onNewSale,
+  onViewSale,
 }: {
   open: boolean;
   invoice: InvoiceView | null;
@@ -31,6 +32,7 @@ export function PostSaleDialog({
   paymentMethod?: string;
   onClose: () => void;
   onNewSale: () => void;
+  onViewSale?: () => void;
 }) {
   // Inline sharing input states
   const [phoneInput, setPhoneInput] = useState("");
@@ -38,7 +40,7 @@ export function PostSaleDialog({
   const [showPhonePrompt, setShowPhonePrompt] = useState(false);
   const [showEmailPrompt, setShowEmailPrompt] = useState(false);
   const [emailState, setEmailState] = useState<"idle" | "sending" | "opened" | "failed">("idle");
-  const [whatsappState, setWhatsappState] = useState<"idle" | "sent">("idle");
+  const [whatsappState, setWhatsappState] = useState<"idle" | "opened" | "blocked">("idle");
 
   useEffect(() => {
     if (!open) return;
@@ -94,8 +96,8 @@ export function PostSaleDialog({
       setShowPhonePrompt(true);
       return;
     }
-    openWhatsAppReceipt(enrichedInvoice, phone);
-    setWhatsappState("sent");
+    const opened = openWhatsAppReceipt(enrichedInvoice, phone);
+    setWhatsappState(opened ? "opened" : "blocked");
   }
 
   function handleSendEmail() {
@@ -105,12 +107,8 @@ export function PostSaleDialog({
       return;
     }
     setEmailState("sending");
-    try {
-      openEmailReceipt(enrichedInvoice, email);
-      setTimeout(() => setEmailState("opened"), 400);
-    } catch {
-      setEmailState("failed");
-    }
+    const opened = openEmailReceipt(enrichedInvoice, email);
+    setEmailState(opened ? "opened" : "failed");
   }
 
   return (
@@ -153,7 +151,7 @@ export function PostSaleDialog({
           </div>
 
           <h2 className="text-xl font-black tracking-tight text-slate-900">
-            Sale Completed
+            SALE COMPLETED ✓
           </h2>
           <p className="mt-0.5 text-xs text-slate-500">
             Invoice: <span className="font-bold text-slate-900">#{invNum}</span> · {dt.date} at {dt.time}
@@ -273,12 +271,12 @@ export function PostSaleDialog({
                   type="button"
                   onClick={() => {
                     if (!phoneInput.trim()) return;
-                    openWhatsAppReceipt(
+                    const opened = openWhatsAppReceipt(
                       { ...enrichedInvoice, customerMobile: phoneInput.trim() },
                       phoneInput.trim(),
                     );
                     setShowPhonePrompt(false);
-                    setWhatsappState("sent");
+                    setWhatsappState(opened ? "opened" : "blocked");
                   }}
                   disabled={!phoneInput.trim()}
                   className="rounded-lg bg-emerald-600 px-3 py-1.5 text-xs font-bold text-white shadow-xs hover:bg-emerald-700 disabled:opacity-40"
@@ -316,16 +314,12 @@ export function PostSaleDialog({
                   onClick={() => {
                     if (!emailInput.trim()) return;
                     setEmailState("sending");
-                    try {
-                      openEmailReceipt(
-                        { ...enrichedInvoice, customerEmail: emailInput.trim() },
-                        emailInput.trim(),
-                      );
-                      setShowEmailPrompt(false);
-                      setTimeout(() => setEmailState("opened"), 400);
-                    } catch {
-                      setEmailState("failed");
-                    }
+                    const opened = openEmailReceipt(
+                      { ...enrichedInvoice, customerEmail: emailInput.trim() },
+                      emailInput.trim(),
+                    );
+                    setShowEmailPrompt(false);
+                    setEmailState(opened ? "opened" : "failed");
                   }}
                   disabled={!emailInput.trim()}
                   className="rounded-lg bg-indigo-600 px-3 py-1.5 text-xs font-bold text-white shadow-xs hover:bg-indigo-700 disabled:opacity-40"
@@ -336,7 +330,17 @@ export function PostSaleDialog({
             </div>
           ) : null}
 
-          {/* Email Status Indicator */}
+          {whatsappState === "opened" ? (
+            <p className="my-1.5 text-xs font-bold text-emerald-800">
+              WhatsApp opened — send the message in WhatsApp to deliver the receipt.
+            </p>
+          ) : null}
+          {whatsappState === "blocked" ? (
+            <p className="my-1.5 text-xs font-bold text-amber-800">
+              WhatsApp did not open. Allow pop-ups or check the customer number.
+            </p>
+          ) : null}
+
           {emailState !== "idle" ? (
             <div
               className={`my-1.5 rounded-lg p-2 text-xs font-bold ${
@@ -347,16 +351,12 @@ export function PostSaleDialog({
                     : "bg-red-50 text-red-800"
               }`}
             >
-              {emailState === "sending" && "Opening email client…"}
-              {emailState === "opened" && "✓ Email client opened — send manually to customer"}
+              {emailState === "sending" && "Sending… opening email client"}
+              {emailState === "opened" && "Email client opened — send the message to deliver the receipt."}
               {emailState === "failed" && (
                 <div className="flex items-center justify-between">
-                  <span>Failed to send email.</span>
-                  <button
-                    type="button"
-                    onClick={handleSendEmail}
-                    className="underline text-red-900 ml-2"
-                  >
+                  <span>Failed — Retry</span>
+                  <button type="button" onClick={handleSendEmail} className="ml-2 underline text-red-900">
                     Retry
                   </button>
                 </div>
@@ -398,7 +398,7 @@ export function PostSaleDialog({
                 title="Share bill via WhatsApp"
               >
                 <i className="fa-brands fa-whatsapp text-emerald-600 text-sm" />
-                <span>{whatsappState === "sent" ? "WhatsApp ✓" : "WhatsApp"}</span>
+                <span>{whatsappState === "opened" ? "WhatsApp opened" : "WhatsApp Receipt"}</span>
               </button>
 
               <button
@@ -409,10 +409,21 @@ export function PostSaleDialog({
               >
                 <i className="fa-regular fa-envelope text-indigo-600 text-sm" />
                 <span>
-                  {emailState === "opened" ? "Email ✓" : emailState === "sending" ? "Opening…" : "Email Receipt"}
+                  {emailState === "opened" ? "Email opened" : emailState === "sending" ? "Sending…" : emailState === "failed" ? "Failed — Retry" : "Email Receipt"}
                 </span>
               </button>
             </div>
+
+            {onViewSale ? (
+              <button
+                type="button"
+                onClick={onViewSale}
+                className="flex w-full items-center justify-center gap-2 rounded-xl border border-slate-300 bg-white py-2.5 text-xs font-bold text-slate-800 transition hover:bg-slate-50"
+              >
+                <i className="fa-regular fa-file-lines" aria-hidden />
+                View Sale
+              </button>
+            ) : null}
 
             <button
               type="button"

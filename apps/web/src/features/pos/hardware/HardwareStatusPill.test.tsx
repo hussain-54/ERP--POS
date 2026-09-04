@@ -3,26 +3,23 @@ import { render, screen, fireEvent } from "@testing-library/react";
 import { HardwareStatusPill } from "./HardwareStatusPill";
 
 describe("HardwareStatusPill (POS Phase 5 - Scanning & Hardware)", () => {
-  it("renders compact hardware pill without cluttering the screen", () => {
+  it("renders compact hardware pill from live statuses", () => {
     render(<HardwareStatusPill />);
-    expect(screen.getByRole("button", { name: /Hardware \(6 Ready\)/i })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /Hardware \(/i })).toBeInTheDocument();
   });
 
-  it("opens popover with all 6 peripherals on click", () => {
+  it("opens popover with live peripheral statuses", () => {
     const onOpenScanner = vi.fn();
     render(<HardwareStatusPill onOpenScanner={onOpenScanner} />);
 
-    fireEvent.click(screen.getByRole("button", { name: /Hardware \(6 Ready\)/i }));
+    fireEvent.click(screen.getByRole("button", { name: /Hardware \(/i }));
 
-    expect(screen.getByText(/Connected Peripherals/i)).toBeInTheDocument();
-    expect(screen.getByText(/Barcode \/ QR Scanner/i)).toBeInTheDocument();
-    expect(screen.getByText(/Receipt Printer \(80mm\)/i)).toBeInTheDocument();
-    expect(screen.getByText(/A4 Tax Invoice Printer/i)).toBeInTheDocument();
-    expect(screen.getAllByText(/Cash Drawer/i).length).toBeGreaterThanOrEqual(1);
-    expect(screen.getByText(/Customer Pole Display/i)).toBeInTheDocument();
-    expect(screen.getByText(/Payment Terminal \/ Card POS/i)).toBeInTheDocument();
+    expect(screen.getByText(/Peripherals/i)).toBeInTheDocument();
+    expect(screen.getByText(/Barcode Scanner/i)).toBeInTheDocument();
+    expect(screen.getByText(/Receipt Printer/i)).toBeInTheDocument();
+    expect(screen.getByText("Cash Drawer")).toBeInTheDocument();
+    expect(screen.getByText("Camera")).toBeInTheDocument();
 
-    // Trigger Open Camera Scanner
     fireEvent.click(screen.getByRole("button", { name: /Open Camera Scanner/i }));
     expect(onOpenScanner).toHaveBeenCalled();
   });

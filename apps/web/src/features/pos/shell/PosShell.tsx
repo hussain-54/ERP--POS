@@ -34,10 +34,10 @@ function PosShellFrame({ children }: { children: ReactNode }) {
 
   useEffect(() => {
     function onKey(event: KeyboardEvent) {
-      if (!event.key.startsWith("F")) return;
+      if (!event.key.startsWith("F") && event.key !== "Escape") return;
       const target = event.target as HTMLElement | null;
       if (target && (target.tagName === "INPUT" || target.tagName === "TEXTAREA" || target.isContentEditable)) {
-        if (event.key !== "F2") return;
+        if (event.key !== "F2" && event.key !== "Escape") return;
       }
       const map: Record<string, () => void> = {
         F1: () => {
@@ -46,14 +46,15 @@ function PosShellFrame({ children }: { children: ReactNode }) {
         },
         F2: () => {
           if (!pathname.startsWith("/pos/sales/")) navigate("/pos/sales/new");
-          window.dispatchEvent(new CustomEvent("pos:shortcut", { detail: "focus-search" }));
+          window.dispatchEvent(new CustomEvent("pos:shortcut", { detail: "pay" }));
         },
         F3: () => window.dispatchEvent(new CustomEvent("pos:shortcut", { detail: "customers" })),
-        F4: () => window.dispatchEvent(new CustomEvent("pos:shortcut", { detail: "price-override" })),
+        F4: () => window.dispatchEvent(new CustomEvent("pos:shortcut", { detail: "hold" })),
         F5: () => window.dispatchEvent(new CustomEvent("pos:shortcut", { detail: "discount" })),
-        F6: () => window.dispatchEvent(new CustomEvent("pos:shortcut", { detail: "hold" })),
+        F6: () => window.dispatchEvent(new CustomEvent("pos:shortcut", { detail: "delivery" })),
         F7: () => window.dispatchEvent(new CustomEvent("pos:shortcut", { detail: "clear-cart" })),
-        F8: () => window.dispatchEvent(new CustomEvent("pos:shortcut", { detail: "pay" })),
+        F8: () => window.dispatchEvent(new CustomEvent("pos:shortcut", { detail: "customers" })),
+        Escape: () => window.dispatchEvent(new CustomEvent("pos:shortcut", { detail: "clear-cart" })),
       };
       const action = map[event.key];
       if (action) {

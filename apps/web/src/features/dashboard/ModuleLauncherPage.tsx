@@ -340,20 +340,26 @@ export function ModuleLauncherPage() {
         {query.trim() && suggestions.length > 0 ? (
           <div className="rounded-xl border border-blue-200 bg-blue-50/40 p-3">
             <p className="text-xs font-bold text-blue-900 mb-2">Direct section matches:</p>
-            <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-2">
+            <ul
+              role="list"
+              aria-label="Module search results"
+              className="grid grid-cols-1 gap-2 sm:grid-cols-2 md:grid-cols-3"
+            >
               {suggestions.slice(0, 6).map((item) => (
-                <Link
-                  key={item.id}
-                  to={item.href}
-                  className="flex items-center justify-between rounded-lg bg-white p-2.5 text-xs font-semibold text-slate-800 border border-slate-200 shadow-xs hover:border-blue-400 hover:text-blue-700 transition"
-                >
-                  <span className="truncate">
-                    #{item.moduleNumber} {item.moduleName} {item.childTitle ? `→ ${item.childTitle}` : ""}
-                  </span>
-                  <i className="fa-solid fa-arrow-right text-[10px] text-blue-600" />
-                </Link>
+                <li key={item.id}>
+                  <Link
+                    to={item.href}
+                    className="flex items-center justify-between rounded-lg border border-slate-200 bg-white p-2.5 text-xs font-semibold text-slate-800 shadow-xs transition hover:border-blue-400 hover:text-blue-700"
+                  >
+                    <span className="truncate">
+                      {item.moduleNumber} {item.moduleName}
+                      {item.childTitle ? ` → ${item.childTitle}` : ""}
+                    </span>
+                    <i className="fa-solid fa-arrow-right text-[10px] text-blue-600" aria-hidden />
+                  </Link>
+                </li>
               ))}
-            </div>
+            </ul>
           </div>
         ) : null}
 

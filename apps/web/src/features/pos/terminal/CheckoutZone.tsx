@@ -223,13 +223,27 @@ export function CheckoutZone({
               }`}
             >
               <i className="fa-solid fa-hand-holding-dollar" aria-hidden />
-              Credit / Udhar
+              Credit / Udhaar
             </button>
+            <button
+              type="button"
+              onClick={onPayment}
+              className={`flex items-center justify-center gap-1.5 rounded-xl border-2 px-2 py-2.5 text-[11px] font-bold transition ${
+                paymentKind === "split" || paymentKind === "partial"
+                  ? "border-cyan-600 bg-cyan-50 text-cyan-900"
+                  : "border-cyan-300 bg-white text-cyan-700 hover:bg-cyan-50"
+              }`}
+            >
+              <i className="fa-solid fa-scissors" aria-hidden />
+              Split Payment
+            </button>
+          </div>
+          <div className="mt-1.5">
             <button
               type="button"
               onClick={() => onDeliveryOrder?.()}
               disabled={!onDeliveryOrder}
-              className={`flex items-center justify-center gap-1.5 rounded-xl border-2 px-2 py-2.5 text-[11px] font-bold transition disabled:opacity-40 ${
+              className={`flex w-full items-center justify-center gap-1.5 rounded-xl border-2 px-2 py-2.5 text-[11px] font-bold transition disabled:opacity-40 ${
                 deliveryActive
                   ? "border-orange-500 bg-orange-50 text-orange-900"
                   : "border-orange-300 bg-white text-orange-700 hover:bg-orange-50"

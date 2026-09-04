@@ -80,13 +80,12 @@ export interface PosShortcutAction {
 
 export const POS_SHORTCUTS: PosShortcutAction[] = [
   { key: "new-sale", label: "New Sale", fnKey: "F1" },
-  { key: "focus-search", label: "Search", fnKey: "F2" },
-  { key: "customers", label: "Customers", fnKey: "F3" },
-  { key: "price-override", label: "Price Override", fnKey: "F4" },
+  { key: "pay", label: "Pay", fnKey: "F2" },
+  { key: "customers", label: "Customers", fnKey: "F3 / F8" },
+  { key: "hold", label: "Hold", fnKey: "F4" },
   { key: "discount", label: "Discount", fnKey: "F5" },
-  { key: "hold", label: "Hold", fnKey: "F6" },
-  { key: "clear-cart", label: "Clear Cart", fnKey: "F7" },
-  { key: "pay", label: "Pay", fnKey: "F8" },
+  { key: "delivery", label: "Delivery", fnKey: "F6" },
+  { key: "clear-cart", label: "Clear Cart", fnKey: "F7 / Esc" },
 ];
 
 export const PAYMENT_METHODS: Array<{
@@ -106,7 +105,7 @@ export const PAYMENT_METHODS: Array<{
   { id: "wallet", label: "Other Wallet", icon: "fa-wallet", color: "text-blue-500", recordOnly: true },
   { id: "split", label: "Split", icon: "fa-scissors", color: "text-cyan-600" },
   { id: "partial", label: "Partial", icon: "fa-chart-pie", color: "text-orange-500" },
-  { id: "credit", label: "Credit / Udhar", icon: "fa-hand-holding-dollar", color: "text-amber-600" },
+  { id: "credit", label: "Credit / Udhaar", icon: "fa-hand-holding-dollar", color: "text-amber-600" },
   { id: "installment", label: "Installment", icon: "fa-calendar", color: "text-gray-500" },
 ];
 
@@ -119,6 +118,7 @@ export function emptyCustomer(): PosCustomerView {
     outstanding: 0,
     loyaltyPoints: 0,
     mobile: null,
+    email: null,
   };
 }
 

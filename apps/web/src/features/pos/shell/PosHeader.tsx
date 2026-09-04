@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { Link, useLocation } from "react-router-dom";
 import { POS_TERMINAL_PATHS } from "../ownership";
 import { POS_TOGGLE_ERP_NAV, POS_TOGGLE_SIDEBAR } from "./events";
+import { HardwareStatusPill } from "../hardware/HardwareStatusPill";
 
 export { POS_TOGGLE_ERP_NAV };
 
@@ -122,6 +123,7 @@ export function PosHeader({
             <span className="text-xs font-bold text-slate-800">{holdCount}</span>
           </Link>
         )}
+        {onTerminal ? <HardwareStatusPill /> : null}
         <Link
           to="/notifications"
           className="relative rounded-xl border border-slate-200 bg-slate-50 p-2.5 transition hover:bg-slate-100"

@@ -27,8 +27,8 @@ export function CustomerDeliveryModal({
   const [tab, setTab] = useState<DeliveryTab>(initialTab);
   const [phone, setPhone] = useState(invoice?.customerMobile ?? "");
   const [email, setEmail] = useState(invoice?.customerEmail ?? "");
-  const [emailStatus, setEmailStatus] = useState<"idle" | "sending" | "sent" | "failed">("idle");
-  const [whatsappStatus, setWhatsappStatus] = useState<"idle" | "opening" | "sent">("idle");
+  const [emailStatus, setEmailStatus] = useState<"idle" | "sending" | "opened" | "failed">("idle");
+  const [whatsappStatus, setWhatsappStatus] = useState<"idle" | "opening" | "opened" | "blocked">("idle");
 
   if (!open || !invoice) return null;
 
@@ -41,20 +41,30 @@ export function CustomerDeliveryModal({
   const emailSubject = buildEmailReceiptSubject(invoice);
 
   function handleSendWhatsApp() {
+    const target = (phone || invoice?.customerMobile || "").trim();
+    if (!target) {
+      setWhatsappStatus("blocked");
+      return;
+    }
     setWhatsappStatus("opening");
     try {
-      openWhatsAppReceipt(invoice!, phone || undefined);
-      setTimeout(() => setWhatsappStatus("sent"), 800);
+      const opened = openWhatsAppReceipt(invoice!, target);
+      setWhatsappStatus(opened ? "opened" : "blocked");
     } catch {
-      setWhatsappStatus("idle");
+      setWhatsappStatus("blocked");
     }
   }
 
   function handleSendEmail() {
+    const to = (email || invoice?.customerEmail || "").trim();
+    if (!to || !to.includes("@")) {
+      setEmailStatus("failed");
+      return;
+    }
     setEmailStatus("sending");
     try {
-      openEmailReceipt(invoice!, email || undefined);
-      setTimeout(() => setEmailStatus("sent"), 800);
+      const opened = openEmailReceipt(invoice!, to);
+      setEmailStatus(opened ? "opened" : "failed");
     } catch {
       setEmailStatus("failed");
     }
@@ -160,12 +170,22 @@ export function CustomerDeliveryModal({
                   className="flex items-center gap-1.5 whitespace-nowrap rounded-lg bg-emerald-600 px-4 py-2 text-xs font-bold text-white shadow-xs transition hover:bg-emerald-700 active:scale-98"
                 >
                   <i className="fa-brands fa-whatsapp text-sm" />
-                  {whatsappStatus === "opening" ? "Opening…" : whatsappStatus === "sent" ? "Sent / Opened ✓" : "Send WhatsApp"}
+                  {whatsappStatus === "opening" ? "Opening…" : whatsappStatus === "opened" ? "WhatsApp opened" : "Send WhatsApp"}
                 </button>
               </div>
               <p className="mt-1 text-[10px] text-slate-400">
-                * Opens verified direct WhatsApp dispatch URL with formatted invoice breakdown.
+                Opens WhatsApp with the receipt text. The message is not sent until you tap Send in WhatsApp.
               </p>
+              {whatsappStatus === "blocked" ? (
+                <p className="mt-1 text-[11px] font-bold text-amber-800">
+                  WhatsApp did not open. Enter a valid mobile number and allow pop-ups. Server WhatsApp API is not configured — this only opens wa.me.
+                </p>
+              ) : null}
+              {whatsappStatus === "opened" ? (
+                <p className="mt-1 text-[11px] font-bold text-emerald-800">
+                  WhatsApp opened. Send the message in WhatsApp to deliver the receipt.
+                </p>
+              ) : null}
             </div>
 
             {/* Message Preview */}
@@ -203,8 +223,8 @@ export function CustomerDeliveryModal({
                   <i className="fa-regular fa-paper-plane text-xs" />
                   {emailStatus === "sending"
                     ? "Sending…"
-                    : emailStatus === "sent"
-                      ? "Sent / Opened ✓"
+                    : emailStatus === "opened"
+                      ? "Mail client opened"
                       : emailStatus === "failed"
                         ? "Failed — Retry"
                         : "Send Email"}
