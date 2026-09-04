@@ -5,6 +5,7 @@ import {
   canOverridePrice,
   emptyCustomer,
   tenderToMethodKind,
+  PAYMENT_METHODS,
   type CartLine,
   type DiscountScope,
   type PosPaymentLine,
@@ -53,6 +54,12 @@ interface CompletedSaleMeta {
   customerMobile: string | null;
   customerEmail: string | null;
   paymentMethod: string;
+  installmentSummary?: {
+    downPayment: number;
+    remaining: number;
+    count: number;
+    frequency?: string;
+  } | null;
 }
 
 export function PosTerminalPage() {
@@ -78,9 +85,21 @@ export function PosTerminalPage() {
   const [discountSection, setDiscountSection] = useState<DiscountSection>("invoice");
   const [discountLine, setDiscountLine] = useState<CartLine | null>(null);
   const [paymentOpen, setPaymentOpen] = useState(false);
-  const [installmentPlan, setInstallmentPlan] = useState({ downPayment: "0", installmentCount: 3 });
+  const [installmentPlan, setInstallmentPlan] = useState<{
+    downPayment: string;
+    installmentCount: number;
+    frequency?: "weekly" | "biweekly" | "monthly" | "quarterly";
+    startDate?: string;
+  }>({ downPayment: "0", installmentCount: 3, frequency: "monthly" });
+  const [installmentConfirmed, setInstallmentConfirmed] = useState(false);
   const [methodsByKind, setMethodsByKind] = useState<Record<string, string>>({});
   const [cashReceived, setCashReceived] = useState<number | undefined>(undefined);
+  const [paymentReference, setPaymentReference] = useState("");
+  const [creditDueDate, setCreditDueDate] = useState(() => {
+    const d = new Date();
+    d.setDate(d.getDate() + 30);
+    return d.toISOString().slice(0, 10);
+  });
   const [warehouseId, setWarehouseId] = useState<string | null>(null);
 
   // Post-sale completion state
@@ -616,6 +635,7 @@ export function PosTerminalPage() {
         amount: totals.grand,
         amountReceived: paymentKind === "cash" && tender != null ? tender : totals.grand,
         methodKind: kind,
+        reference: paymentReference.trim() || undefined,
       },
     ];
   }
@@ -623,7 +643,12 @@ export function PosTerminalPage() {
   async function completeSale(
     overridePayments?: PosPaymentLine[],
     options?: {
-      installment?: { downPayment: string; installmentCount: number };
+      installment?: {
+        downPayment: string;
+        installmentCount: number;
+        frequency?: "weekly" | "biweekly" | "monthly" | "quarterly";
+        startDate?: string;
+      };
       /** Explicit cash tender (Quick Cash / Exact) — avoids stale React state. */
       cashReceived?: number;
     },
@@ -661,11 +686,20 @@ export function PosTerminalPage() {
       cashReceived: effectiveCashReceived,
       grandTotal: totals.grand,
       overridePayments,
+      paymentLines,
+      paymentReference,
+      installmentConfirmed,
       defaultUnitId,
     });
     if (!preCheck.ok) {
       push({ title: preCheck.title, description: preCheck.description, tone: "danger" });
-      if (preCheck.title.includes("cash")) setMobilePane("checkout");
+      if (preCheck.title.toLowerCase().includes("cash") || preCheck.title.toLowerCase().includes("split") || preCheck.title.toLowerCase().includes("installment") || preCheck.title.toLowerCase().includes("reference")) {
+        setMobilePane("checkout");
+      }
+      if (preCheck.title.toLowerCase().includes("customer")) {
+        setCustomerMode("select");
+        setCustomerOpen(true);
+      }
       return;
     }
 
@@ -703,7 +737,6 @@ export function PosTerminalPage() {
         warehouseId: resolvedWarehouseId ?? branchId,
         customerId: customer.id ?? undefined,
         idempotencyKey: saleIdempotencyKey,
-        notes: notes || undefined,
         couponCode: couponCode || undefined,
         discountTotal: invoiceDiscount,
         invoiceDiscountKind: couponCode ? "coupon" : "fixed",
@@ -716,10 +749,24 @@ export function PosTerminalPage() {
             ? {
                 downPayment: installmentMeta.downPayment,
                 installmentCount: installmentMeta.installmentCount,
-                startDate: new Date().toISOString().slice(0, 10),
-                frequency: "monthly" as const,
+                startDate:
+                  ("startDate" in installmentMeta && installmentMeta.startDate) ||
+                  new Date().toISOString().slice(0, 10),
+                frequency:
+                  ("frequency" in installmentMeta && installmentMeta.frequency) ||
+                  installmentPlan.frequency ||
+                  "monthly",
               }
             : undefined,
+        dueDate: paymentKind === "credit" ? creditDueDate : undefined,
+        notes:
+          [
+            notes || undefined,
+            paymentKind === "credit" && creditDueDate ? `Credit due: ${creditDueDate}` : undefined,
+            paymentReference.trim() ? `Pay ref: ${paymentReference.trim()}` : undefined,
+          ]
+            .filter(Boolean)
+            .join(" · ") || undefined,
       })) as { id?: string; invoiceNumber?: string } | undefined;
 
       const invoiceNum = postRes?.invoiceNumber ?? `INV-${Date.now().toString().slice(-6)}`;
@@ -828,11 +875,32 @@ export function PosTerminalPage() {
         invView = buildLocalInvoice(uuid());
       }
 
+      const paymentMethodLabel =
+        paymentKind === "split"
+          ? "Split Payment"
+          : paymentKind === "installment"
+            ? "Installment"
+            : paymentKind === "credit"
+              ? "Credit / Udhaar"
+              : PAYMENT_METHODS.find((m) => m.id === paymentKind)?.label ?? paymentKind;
+
       setCompletedSaleMeta({
         customerName: customer.label,
         customerMobile: customer.mobile ?? invView.customerMobile ?? null,
         customerEmail: customer.email ?? invView.customerEmail ?? null,
-        paymentMethod: paymentKind,
+        paymentMethod: paymentMethodLabel,
+        installmentSummary:
+          paymentKind === "installment"
+            ? {
+                downPayment: Number(installmentMeta.downPayment) || 0,
+                remaining: Math.max(0, totals.grand - (Number(installmentMeta.downPayment) || 0)),
+                count: installmentMeta.installmentCount,
+                frequency:
+                  ("frequency" in installmentMeta && installmentMeta.frequency) ||
+                  installmentPlan.frequency ||
+                  "monthly",
+              }
+            : null,
       });
       setCompletedInvoice(invView);
       setLastPaid(currentTenderReceived);
@@ -859,6 +927,9 @@ export function PosTerminalPage() {
       newSale();
       setStage("terminal");
       setCashReceived(undefined);
+      setPaymentReference("");
+      setInstallmentConfirmed(false);
+      setInstallmentPlan({ downPayment: "0", installmentCount: 3, frequency: "monthly" });
       setMobilePane("products");
       push({ title: `Payment successful · Sale #${invoiceNum}`, tone: "success" });
     } catch (err) {
@@ -1034,6 +1105,13 @@ export function PosTerminalPage() {
             onPaymentKind={setPaymentKind}
             cashReceived={cashReceived}
             onCashReceived={setCashReceived}
+            paymentReference={paymentReference}
+            onPaymentReference={setPaymentReference}
+            creditDueDate={creditDueDate}
+            onCreditDueDate={setCreditDueDate}
+            paymentLines={paymentLines}
+            installmentPlan={installmentPlan}
+            installmentConfirmed={installmentConfirmed}
             couponCode={couponCode}
             notes={notes}
             onNotes={setNotes}
@@ -1061,6 +1139,12 @@ export function PosTerminalPage() {
             onInstallment={() => {
               setPaymentKind("installment");
               setPaymentOpen(true);
+            }}
+            onClearSplit={() => {
+              setPaymentLines([]);
+            }}
+            onClearInstallment={() => {
+              setInstallmentConfirmed(false);
             }}
             onComplete={() => void completeSale(undefined, { cashReceived })}
             onDeliveryOrder={() => {
@@ -1171,12 +1255,43 @@ export function PosTerminalPage() {
         onClose={() => setPaymentOpen(false)}
         confirmLabel="PAY & COMPLETE SALE"
         onConfirm={(linesPay, meta) => {
+          if (paymentKind === "split") {
+            setPaymentLines(linesPay);
+            setPaymentKind("split");
+            setPaymentOpen(false);
+            push({
+              title: "Split payment confirmed",
+              description: "Allocated amount matches total due. Press COMPLETE SALE to post.",
+              tone: "success",
+            });
+            return;
+          }
+          if (paymentKind === "installment" && meta) {
+            setInstallmentPlan({
+              downPayment: meta.downPayment,
+              installmentCount: meta.installmentCount,
+              frequency: meta.frequency,
+              startDate: meta.startDate,
+            });
+            setInstallmentConfirmed(true);
+            setPaymentKind("installment");
+            setPaymentOpen(false);
+            push({
+              title: "Installment plan confirmed",
+              description: "Review the plan summary, then press COMPLETE SALE.",
+              tone: "success",
+            });
+            return;
+          }
           setPaymentLines(linesPay);
           if (meta) {
             setInstallmentPlan({
               downPayment: meta.downPayment,
               installmentCount: meta.installmentCount,
+              frequency: meta.frequency,
+              startDate: meta.startDate,
             });
+            setInstallmentConfirmed(true);
           }
           setPaymentOpen(false);
           void completeSale(linesPay, meta ? { installment: meta } : undefined);
@@ -1193,6 +1308,7 @@ export function PosTerminalPage() {
         customerEmail={completedSaleMeta?.customerEmail ?? completedInvoice?.customerEmail}
         customerName={completedSaleMeta?.customerName}
         paymentMethod={completedSaleMeta?.paymentMethod ?? paymentKind}
+        installmentSummary={completedSaleMeta?.installmentSummary}
         onClose={() => {
           setPostSaleOpen(false);
         }}
@@ -1201,6 +1317,8 @@ export function PosTerminalPage() {
           setPostSaleOpen(false);
           setCompletedSaleMeta(null);
           setCompletedInvoice(null);
+          setPaymentReference("");
+          setInstallmentConfirmed(false);
           setStage("terminal");
           searchRef.current?.focus();
         }}

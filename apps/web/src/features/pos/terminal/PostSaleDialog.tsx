@@ -18,6 +18,7 @@ export function PostSaleDialog({
   customerEmail,
   customerName,
   paymentMethod = "Cash",
+  installmentSummary = null,
   onClose,
   onNewSale,
   onViewSale,
@@ -30,6 +31,12 @@ export function PostSaleDialog({
   customerEmail?: string | null;
   customerName?: string;
   paymentMethod?: string;
+  installmentSummary?: {
+    downPayment: number;
+    remaining: number;
+    count: number;
+    frequency?: string;
+  } | null;
   onClose: () => void;
   onNewSale: () => void;
   onViewSale?: () => void;
@@ -220,20 +227,20 @@ export function PostSaleDialog({
 
             {/* Paid & Change / Udhaar Row */}
             <div className="grid grid-cols-2 gap-2 text-xs pt-1">
-              <div className="rounded-lg bg-white p-2 border border-slate-200">
+              <div className="rounded-lg bg-white p-2 border border-slate-200 text-left">
                 <span className="text-[10px] font-bold uppercase text-slate-400 block">Amount Paid</span>
-                <p className="text-base font-black text-slate-900">Rs. {money(paid)}</p>
+                <p className="text-base font-black tabular-nums text-slate-900">Rs. {money(paid)}</p>
               </div>
               <div className="rounded-lg bg-white p-2 border border-slate-200 text-right">
                 {change > 0 ? (
                   <>
                     <span className="text-[10px] font-bold uppercase text-emerald-700 block">Change Returned</span>
-                    <p className="text-base font-black text-emerald-600">Rs. {money(change)}</p>
+                    <p className="text-base font-black tabular-nums text-emerald-600">Rs. {money(change)}</p>
                   </>
                 ) : remaining > 0 ? (
                   <>
-                    <span className="text-[10px] font-bold uppercase text-amber-700 block">Balance Due (Udhaar)</span>
-                    <p className="text-base font-black text-amber-600">Rs. {money(remaining)}</p>
+                    <span className="text-[10px] font-bold uppercase text-amber-700 block">Outstanding</span>
+                    <p className="text-base font-black tabular-nums text-amber-600">Rs. {money(remaining)}</p>
                   </>
                 ) : (
                   <>
@@ -243,6 +250,44 @@ export function PostSaleDialog({
                 )}
               </div>
             </div>
+
+            {(enrichedInvoice.payments?.length ?? 0) > 1 ? (
+              <div className="rounded-lg border border-cyan-200 bg-cyan-50/70 p-2 text-left text-xs space-y-1">
+                <p className="text-[10px] font-bold uppercase tracking-wide text-cyan-800">Split Payment</p>
+                {enrichedInvoice.payments!.map((p, idx) => (
+                  <div key={idx} className="flex justify-between gap-2 text-cyan-950">
+                    <span className="font-semibold capitalize">{p.method}</span>
+                    <span className="font-black tabular-nums">Rs. {money(Number(p.amount) || 0)}</span>
+                  </div>
+                ))}
+                <div className="flex justify-between gap-2 border-t border-cyan-200 pt-1 font-black text-cyan-950">
+                  <span>Total</span>
+                  <span className="tabular-nums">
+                    Rs. {money(enrichedInvoice.payments!.reduce((s, p) => s + (Number(p.amount) || 0), 0))}
+                  </span>
+                </div>
+              </div>
+            ) : null}
+
+            {installmentSummary ? (
+              <div className="rounded-lg border border-slate-300 bg-slate-50 p-2 text-left text-xs space-y-1">
+                <p className="text-[10px] font-bold uppercase tracking-wide text-slate-600">Installment Plan</p>
+                <div className="flex justify-between gap-2">
+                  <span className="text-slate-600">Down Payment</span>
+                  <span className="font-black tabular-nums">Rs. {money(installmentSummary.downPayment)}</span>
+                </div>
+                <div className="flex justify-between gap-2">
+                  <span className="text-slate-600">Remaining</span>
+                  <span className="font-bold tabular-nums text-amber-700">Rs. {money(installmentSummary.remaining)}</span>
+                </div>
+                <div className="flex justify-between gap-2">
+                  <span className="text-slate-600">Plan</span>
+                  <span className="font-semibold text-slate-800">
+                    {installmentSummary.count} {installmentSummary.frequency ?? "monthly"} installments
+                  </span>
+                </div>
+              </div>
+            ) : null}
           </div>
 
           {/* Inline Phone Prompt for WhatsApp (if missing) */}
@@ -364,7 +409,7 @@ export function PostSaleDialog({
             </div>
           ) : null}
 
-          {/* 5 MAIN ACTION BUTTONS — only after confirmed payment */}
+          {/* Receipt actions */}
           <div className="mt-3 space-y-2">
             <button
               type="button"
@@ -372,47 +417,53 @@ export function PostSaleDialog({
               onClick={() => {
                 printInvoiceReceipt(enrichedInvoice, "thermal");
               }}
-              className="flex w-full items-center justify-center gap-2 rounded-xl bg-blue-600 py-3 text-sm font-black text-white shadow-sm transition hover:bg-blue-700 active:scale-98"
+              className="flex w-full items-center justify-center gap-2 rounded-xl bg-blue-600 py-3 text-sm font-black uppercase tracking-wide text-white shadow-sm transition hover:bg-blue-700 active:scale-98"
             >
               <i className="fa-solid fa-print text-base" />
               <span>Print Receipt</span>
             </button>
 
-            <div className="grid grid-cols-3 gap-1.5">
+            <div className="grid grid-cols-2 gap-1.5">
               <button
                 type="button"
                 onClick={() => {
                   downloadPdfInvoice(enrichedInvoice);
                 }}
-                className="flex items-center justify-center gap-1.5 rounded-lg border border-slate-300 bg-white py-2 text-xs font-bold text-slate-700 transition hover:bg-slate-50 active:scale-98"
-                title="Download / print A4 tax invoice PDF"
+                className="flex items-center justify-center gap-1.5 rounded-lg border border-slate-300 bg-white py-2.5 text-xs font-bold text-slate-700 transition hover:bg-slate-50 active:scale-98"
+                title="Download / save receipt PDF"
               >
-                <i className="fa-solid fa-file-pdf text-red-600" />
-                <span>Download PDF</span>
+                <i className="fa-solid fa-download text-slate-600" />
+                <span>Download Receipt</span>
               </button>
 
               <button
                 type="button"
                 onClick={handleShareWhatsApp}
-                className="flex items-center justify-center gap-1.5 rounded-lg border border-emerald-300 bg-emerald-50 py-2 text-xs font-bold text-emerald-800 transition hover:bg-emerald-100 active:scale-98"
-                title="Share bill via WhatsApp"
+                className="flex items-center justify-center gap-1.5 rounded-lg border border-emerald-300 bg-emerald-50 py-2.5 text-xs font-bold text-emerald-800 transition hover:bg-emerald-100 active:scale-98"
+                title="Open WhatsApp with receipt message"
               >
                 <i className="fa-brands fa-whatsapp text-emerald-600 text-sm" />
-                <span>{whatsappState === "opened" ? "WhatsApp opened" : "Send Receipt on WhatsApp"}</span>
-              </button>
-
-              <button
-                type="button"
-                onClick={handleSendEmail}
-                className="flex items-center justify-center gap-1.5 rounded-lg border border-indigo-300 bg-indigo-50 py-2 text-xs font-bold text-indigo-800 transition hover:bg-indigo-100 active:scale-98"
-                title="Email receipt to customer"
-              >
-                <i className="fa-regular fa-envelope text-indigo-600 text-sm" />
-                <span>
-                  {emailState === "opened" ? "Email opened" : emailState === "sending" ? "Sending…" : emailState === "failed" ? "Failed — Retry" : "Email Receipt"}
-                </span>
+                <span>{whatsappState === "opened" ? "WhatsApp Opened" : "Send via WhatsApp"}</span>
               </button>
             </div>
+
+            <button
+              type="button"
+              onClick={handleSendEmail}
+              className="flex w-full items-center justify-center gap-1.5 rounded-lg border border-indigo-300 bg-indigo-50 py-2 text-xs font-bold text-indigo-800 transition hover:bg-indigo-100 active:scale-98"
+              title="Email receipt to customer"
+            >
+              <i className="fa-regular fa-envelope text-indigo-600 text-sm" />
+              <span>
+                {emailState === "opened"
+                  ? "Email Opened"
+                  : emailState === "sending"
+                    ? "Sending…"
+                    : emailState === "failed"
+                      ? "Failed — Retry"
+                      : "Email Receipt"}
+              </span>
+            </button>
 
             {onViewSale ? (
               <button
@@ -428,10 +479,12 @@ export function PostSaleDialog({
             <button
               type="button"
               onClick={onNewSale}
-              className="mt-2.5 flex w-full items-center justify-center gap-2 rounded-xl bg-slate-900 py-3 text-xs font-bold text-white transition hover:bg-slate-800 active:scale-98"
+              className="flex w-full items-center justify-center gap-2 rounded-xl bg-slate-900 py-3 text-sm font-black uppercase tracking-wide text-white transition hover:bg-slate-800 active:scale-98"
             >
-              <span>Start New Sale</span>
-              <kbd className="rounded bg-slate-800 px-1.5 py-0.5 text-[10px] text-slate-300">Esc</kbd>
+              <span>New Sale</span>
+              <kbd className="rounded bg-slate-800 px-1.5 py-0.5 text-[10px] font-bold normal-case tracking-normal text-slate-300">
+                Esc
+              </kbd>
             </button>
           </div>
         </div>

@@ -97,7 +97,7 @@ describe("PostSaleDialog (POS Phase 3 - Professional Invoice & Receipt)", () => 
     fireEvent.click(printBtn);
     expect(printSpy).toHaveBeenCalled();
 
-    const pdfBtn = screen.getByRole("button", { name: /Download PDF/i });
+    const pdfBtn = screen.getByRole("button", { name: /Download Receipt/i });
     fireEvent.click(pdfBtn);
     expect(pdfSpy).toHaveBeenCalled();
   });
@@ -118,14 +118,14 @@ describe("PostSaleDialog (POS Phase 3 - Professional Invoice & Receipt)", () => 
       />,
     );
 
-    fireEvent.click(screen.getByRole("button", { name: /Send Receipt on WhatsApp|WhatsApp Receipt/i }));
+    fireEvent.click(screen.getByRole("button", { name: /Send via WhatsApp|WhatsApp Opened/i }));
     expect(waSpy).toHaveBeenCalled();
 
-    fireEvent.click(screen.getByRole("button", { name: /Email Receipt/i }));
+    fireEvent.click(screen.getByRole("button", { name: /Email Receipt|Email Opened/i }));
     expect(emailSpy).toHaveBeenCalled();
   });
 
-  it("triggers Start New Sale action on CTA button", () => {
+  it("triggers New Sale action on CTA button", () => {
     const onNewSale = vi.fn();
     render(
       <PostSaleDialog
@@ -139,7 +139,7 @@ describe("PostSaleDialog (POS Phase 3 - Professional Invoice & Receipt)", () => 
       />,
     );
 
-    const newSaleBtn = screen.getByRole("button", { name: /Start New Sale/i });
+    const newSaleBtn = screen.getByRole("button", { name: /^New Sale/i });
     fireEvent.click(newSaleBtn);
     expect(onNewSale).toHaveBeenCalledTimes(1);
   });

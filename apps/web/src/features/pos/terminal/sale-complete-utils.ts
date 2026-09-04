@@ -18,6 +18,9 @@ export function validateSaleBeforeComplete(input: {
   cashReceived?: number;
   grandTotal: number;
   overridePayments?: PosPaymentLine[];
+  paymentLines?: PosPaymentLine[];
+  paymentReference?: string;
+  installmentConfirmed?: boolean;
   defaultUnitId: string | null;
 }): { ok: true } | { ok: false; title: string; description?: string } {
   for (const line of input.lines) {
@@ -70,6 +73,44 @@ export function validateSaleBeforeComplete(input: {
       ok: false,
       title: "Customer required",
       description: "Credit, partial, and installment sales require an attached customer.",
+    };
+  }
+
+  if (input.paymentKind === "split") {
+    const lines = input.overridePayments?.length
+      ? input.overridePayments
+      : input.paymentLines ?? [];
+    const allocated = lines.reduce((s, p) => s + (Number(p.amount) || 0), 0);
+    if (!lines.length) {
+      return {
+        ok: false,
+        title: "Split payment incomplete",
+        description: "Configure and confirm split payment so allocated amount equals total due.",
+      };
+    }
+    if (Math.abs(allocated - input.grandTotal) > 0.009) {
+      return {
+        ok: false,
+        title: "Split not fully allocated",
+        description: `Allocated Rs. ${allocated.toFixed(2)} of Rs. ${input.grandTotal.toFixed(2)}. Remaining must be Rs. 0.00.`,
+      };
+    }
+  }
+
+  if (input.paymentKind === "installment" && !input.installmentConfirmed) {
+    return {
+      ok: false,
+      title: "Confirm installment plan",
+      description: "Open Installment, review the schedule, then Confirm Installment before COMPLETE SALE.",
+    };
+  }
+
+  const recordKinds = new Set(["card", "bank", "qr", "jazzcash", "easypaisa", "sadapay", "wallet"]);
+  if (recordKinds.has(input.paymentKind) && !(input.paymentReference ?? "").trim() && !usingOverride) {
+    return {
+      ok: false,
+      title: "Payment reference required",
+      description: "Enter a card/bank/wallet transaction reference before completing the sale.",
     };
   }
 
